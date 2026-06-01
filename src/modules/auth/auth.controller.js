@@ -59,6 +59,45 @@ async function registerProfile(req, res) {
 
 }
 
+async function me(req, res) {
+
+    try {
+
+        const firebaseUid =
+            req.user.uid;
+
+        const user =
+            await authService.getUserByFirebaseUid(
+                firebaseUid
+            );
+
+        if (!user) {
+
+            return res.status(404).json({
+                success: false,
+                message: "Profile not found"
+            });
+
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: user
+        });
+
+    }
+    catch(error) {
+
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+
+    }
+
+}
+
 module.exports = {
-    registerProfile
+    registerProfile,
+    me
 };

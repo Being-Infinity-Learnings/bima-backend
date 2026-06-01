@@ -17,6 +17,12 @@ router.post(
 );
 
 router.get(
+    "/me",
+    authenticate,
+    authController.me
+);
+
+router.get(
   "/test",
   authenticate,
   (req, res) => {
