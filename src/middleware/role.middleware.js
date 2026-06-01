@@ -5,11 +5,7 @@ function authorize(...allowedRoles) {
     try {
       const firebaseUid = req.user.uid;
 
-      const user = await prisma.user.findUnique({
-        where: {
-          firebaseUid,
-        },
-      });
+      const user = req.dbUser;
 
       if (!user) {
         return res.status(404).json({

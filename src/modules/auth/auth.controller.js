@@ -66,10 +66,7 @@ async function me(req, res) {
         const firebaseUid =
             req.user.uid;
 
-        const user =
-            await authService.getUserByFirebaseUid(
-                firebaseUid
-            );
+        const user = req.dbUser;
 
         if (!user) {
 

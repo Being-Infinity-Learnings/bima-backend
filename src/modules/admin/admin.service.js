@@ -1,23 +1,63 @@
-const prisma =
-require("../../config/prisma");
+const prisma = require("../../config/prisma");
 
 async function getPendingUsers() {
+  return await prisma.user.findMany({
+    where: {
+      approved: false,
+      blocked: false,
+    },
 
-    return await prisma.user.findMany({
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+}
 
-        where: {
-            approved: false,
-            blocked: false
-        },
+async function getAllUsers() {
+  return await prisma.user.findMany({
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+}
 
-        orderBy: {
-            createdAt: "asc"
-        }
+async function approveUser(userId) {
+  return await prisma.user.update({
+    where: {
+      id: userId,
+    },
+    data: {
+      approved: true,
+    },
+  });
+}
 
-    });
+async function blockUser(userId) {
+  return await prisma.user.update({
+    where: {
+      id: userId,
+    },
+    data: {
+      blocked: true,
+    },
+  });
+}
 
+async function unblockUser(userId) {
+  return await prisma.user.update({
+    where: {
+      id: userId,
+    },
+    data: {
+      blocked: false,
+    },
+  });
 }
 
 module.exports = {
-    getPendingUsers
+  getPendingUsers,
+  getAllUsers,
+  approveUser,
+  blockUser,
+  unblockUser,
 };
