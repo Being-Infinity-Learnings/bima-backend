@@ -1,4 +1,4 @@
-const { createGroupSchema } = require("./group.validation");
+const { createGroupSchema, updateGroupSchema } = require("./group.validation");
 
 const groupService = require("./group.service");
 
@@ -44,9 +44,7 @@ async function getGroupById(req, res) {
   try {
     const { groupId } = req.params;
 
-    const group = await groupService.getGroupById(
-      groupId
-    );
+    const group = await groupService.getGroupById(groupId);
 
     return res.status(200).json({
       success: true,
@@ -64,11 +62,7 @@ async function addUserToGroup(req, res) {
   try {
     const { groupId, userId } = req.params;
 
-    const membership =
-      await groupService.addUserToGroup(
-        groupId,
-        userId
-      );
+    const membership = await groupService.addUserToGroup(groupId, userId);
 
     return res.status(201).json({
       success: true,
@@ -82,18 +76,11 @@ async function addUserToGroup(req, res) {
   }
 }
 
-async function removeUserFromGroup(
-  req,
-  res
-) {
+async function removeUserFromGroup(req, res) {
   try {
     const { groupId, userId } = req.params;
 
-    const result =
-      await groupService.removeUserFromGroup(
-        groupId,
-        userId
-      );
+    const result = await groupService.removeUserFromGroup(groupId, userId);
 
     return res.status(200).json({
       success: true,
@@ -111,14 +98,49 @@ async function getGroupMembers(req, res) {
   try {
     const { groupId } = req.params;
 
-    const users =
-      await groupService.getGroupMembers(
-        groupId
-      );
+    const users = await groupService.getGroupMembers(groupId);
 
     return res.status(200).json({
       success: true,
       data: users,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: error.message,
+    });
+  }
+}
+
+async function deleteGroup(req, res) {
+  try {
+    const { groupId } = req.params;
+
+    const result = await groupService.deleteGroup(groupId);
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: error.message,
+    });
+  }
+}
+
+async function updateGroup(req, res) {
+  try {
+    const { groupId } = req.params;
+
+    const validated = updateGroupSchema.parse(req.body);
+
+    const group = await groupService.updateGroup(groupId, validated);
+
+    return res.status(200).json({
+      success: true,
+      data: group,
     });
   } catch (error) {
     return res.status(400).json({
@@ -135,4 +157,6 @@ module.exports = {
   addUserToGroup,
   removeUserFromGroup,
   getGroupMembers,
+  deleteGroup,
+  updateGroup,
 };

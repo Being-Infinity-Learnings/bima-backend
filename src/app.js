@@ -54,6 +54,21 @@ const options = {
             },
           },
         },
+        MessageResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean", example: true },
+            data: {
+              type: "object",
+              properties: {
+                message: {
+                  type: "string",
+                  example: "Group deleted successfully",
+                },
+              },
+            },
+          },
+        },
         User: {
           type: "object",
           properties: {

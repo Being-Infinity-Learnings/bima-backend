@@ -74,10 +74,7 @@ async function getGroupById(groupId) {
   return group;
 }
 
-async function addUserToGroup(
-  groupId,
-  userId
-) {
+async function addUserToGroup(groupId, userId) {
   const group = await prisma.group.findUnique({
     where: {
       id: groupId,
@@ -98,20 +95,17 @@ async function addUserToGroup(
     throw new Error("User not found");
   }
 
-  const existingMembership =
-    await prisma.userGroup.findUnique({
-      where: {
-        userId_groupId: {
-          userId,
-          groupId,
-        },
+  const existingMembership = await prisma.userGroup.findUnique({
+    where: {
+      userId_groupId: {
+        userId,
+        groupId,
       },
-    });
+    },
+  });
 
   if (existingMembership) {
-    throw new Error(
-      "User already belongs to this group"
-    );
+    throw new Error("User already belongs to this group");
   }
 
   return prisma.userGroup.create({
@@ -127,24 +121,18 @@ async function addUserToGroup(
   });
 }
 
-async function removeUserFromGroup(
-  groupId,
-  userId
-) {
-  const membership =
-    await prisma.userGroup.findUnique({
-      where: {
-        userId_groupId: {
-          userId,
-          groupId,
-        },
+async function removeUserFromGroup(groupId, userId) {
+  const membership = await prisma.userGroup.findUnique({
+    where: {
+      userId_groupId: {
+        userId,
+        groupId,
       },
-    });
+    },
+  });
 
   if (!membership) {
-    throw new Error(
-      "User is not a member of this group"
-    );
+    throw new Error("User is not a member of this group");
   }
 
   await prisma.userGroup.delete({
@@ -172,31 +160,86 @@ async function getGroupMembers(groupId) {
     throw new Error("Group not found");
   }
 
-  const memberships =
-    await prisma.userGroup.findMany({
+  const memberships = await prisma.userGroup.findMany({
+    where: {
+      groupId,
+    },
+
+    include: {
+      user: true,
+    },
+
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return memberships.map((membership) => membership.user);
+}
+
+async function deleteGroup(groupId) {
+  const group = await prisma.group.findUnique({
+    where: {
+      id: groupId,
+    },
+  });
+
+  if (!group) {
+    throw new Error("Group not found");
+  }
+
+  await prisma.group.delete({
+    where: {
+      id: groupId,
+    },
+  });
+
+  return {
+    message: "Group deleted successfully",
+  };
+}
+
+async function updateGroup(groupId, updateData) {
+  const group = await prisma.group.findUnique({
+    where: {
+      id: groupId,
+    },
+  });
+
+  if (!group) {
+    throw new Error("Group not found");
+  }
+
+  if (updateData.name && updateData.name !== group.name) {
+    const existingGroup = await prisma.group.findUnique({
       where: {
-        groupId,
-      },
-
-      include: {
-        user: true,
-      },
-
-      orderBy: {
-        createdAt: "desc",
+        name: updateData.name,
       },
     });
 
-  return memberships.map(
-    (membership) => membership.user
-  );
+    if (existingGroup) {
+      throw new Error("Group name already exists");
+    }
+  }
+
+  return prisma.group.update({
+    where: {
+      id: groupId,
+    },
+
+    data: {
+      ...updateData,
+    },
+  });
 }
 
 module.exports = {
   createGroup,
   getAllGroups,
   getGroupById,
-  addUserToGroup, 
+  addUserToGroup,
   removeUserFromGroup,
   getGroupMembers,
+  deleteGroup,
+  updateGroup,
 };

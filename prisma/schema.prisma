@@ -59,12 +59,13 @@ model Group {
 }
 
 model UserGroup {
-  userId  String
+
+  userId String
   groupId String
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId],references: [id])
 
-  group Group @relation(fields: [groupId], references: [id])
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
