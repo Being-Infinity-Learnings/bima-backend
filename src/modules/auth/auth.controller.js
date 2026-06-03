@@ -1,100 +1,67 @@
-const {
- registerProfileSchema
-}
-=
-require("./auth.validation");
+const { registerProfileSchema } = require("./auth.validation");
 
-const authService =
-require("./auth.service");
+const authService = require("./auth.service");
 
 async function registerProfile(req, res) {
+  try {
+    const validated = registerProfileSchema.parse(req.body);
 
-    try {
+    const firebaseUser = req.user;
 
-        const validated =
-            registerProfileSchema.parse(req.body);
+    const user = await authService.createUserProfile({
+      firebaseUid: firebaseUser.uid,
 
-        const firebaseUser =
-            req.user;
+      email: firebaseUser.email,
 
-        const user =
-            await authService.createUserProfile({
+      phone: firebaseUser.phone_number,
 
-                firebaseUid:
-                    firebaseUser.uid,
+      fullName: validated.fullName,
 
-                email:
-                    firebaseUser.email,
+      gender: validated.gender,
 
-                phone:
-                    firebaseUser.phone_number,
+      collegeName: validated.collegeName,
 
-                fullName:
-                    validated.fullName,
+      rollNumber: validated.rollNumber,
+    });
 
-                gender:
-                    validated.gender,
-
-                collegeName:
-                    validated.collegeName,
-
-                rollNumber:
-                    validated.rollNumber
-
-            });
-
-        return res.status(201).json({
-            success: true,
-            data: user
-        });
-
-    } catch (error) {
-
-        return res.status(400).json({
-            success: false,
-            error: error.message
-        });
-
-    }
-
+    return res.status(201).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: error.message,
+    });
+  }
 }
 
 async function me(req, res) {
+  try {
+    const firebaseUid = req.user.uid;
 
-    try {
+    const user = req.dbUser;
 
-        const firebaseUid =
-            req.user.uid;
-
-        const user = req.dbUser;
-
-        if (!user) {
-
-            return res.status(404).json({
-                success: false,
-                message: "Profile not found"
-            });
-
-        }
-
-        return res.status(200).json({
-            success: true,
-            data: user
-        });
-
-    }
-    catch(error) {
-
-        return res.status(500).json({
-            success: false,
-            message: error.message
-        });
-
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile not found",
+      });
     }
 
+    return res.status(200).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 }
 
 module.exports = {
-    registerProfile,
-    me
+  registerProfile,
+  me,
 };

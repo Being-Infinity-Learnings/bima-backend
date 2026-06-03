@@ -14,7 +14,6 @@ enum UserRole {
 }
 
 model User {
-
   id String @id @default(uuid())
 
   firebaseUid String @unique
@@ -27,7 +26,7 @@ model User {
   gender String?
 
   collegeName String?
-  rollNumber String?
+  rollNumber  String?
 
   role UserRole @default(STUDENT)
 
@@ -35,6 +34,39 @@ model User {
 
   blocked Boolean @default(false)
 
+  groupMemberships UserGroup[]
+  createdGroups    Group[]     @relation("GroupCreator")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Group {
+  id String @id @default(uuid())
+
+  name String @unique
+
+  description String?
+
+  createdById String
+
+  createdBy User @relation("GroupCreator", fields: [createdById], references: [id])
+
+  members UserGroup[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserGroup {
+  userId  String
+  groupId String
+
+  user User @relation(fields: [userId], references: [id])
+
+  group Group @relation(fields: [groupId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@id([userId, groupId])
 }
