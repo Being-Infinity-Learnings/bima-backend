@@ -22,7 +22,7 @@ async function main() {
   const credential =
     await signInWithEmailAndPassword(
       auth,
-      "student1@bima.com",
+      "test@bima.com",
       "123456"
     );
 
