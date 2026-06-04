@@ -1,3 +1,7 @@
+// Simple health-check route(s) used by monitoring and local
+// sanity checks. Keeps a lightweight response that can be used by
+// load balancers or uptime monitors.
+
 const express = require("express");
 
 const router = express.Router();
@@ -24,10 +28,10 @@ const router = express.Router();
  *               $ref: '#/components/schemas/HealthResponse'
  */
 router.get("/", (req, res) => {
-    res.status(200).json({
-        success: true,
-        message: "Backend Running"
-    });
+  res.status(200).json({
+    success: true,
+    message: "Backend Running",
+  });
 });
 
 module.exports = router;

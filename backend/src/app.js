@@ -1,3 +1,6 @@
+// Purpose: Configure and export the Express application.
+// Registers middleware, Swagger API docs, and mounts feature routes.
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");

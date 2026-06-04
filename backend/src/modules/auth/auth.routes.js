@@ -4,6 +4,8 @@ const router = express.Router();
 
 const authenticate = require("../../middleware/auth.middleware");
 
+const authenticateFirebaseOnly = require("../../middleware/firebaseOnly.middleware");
+
 const authController = require("./auth.controller");
 
 /**
@@ -59,7 +61,11 @@ const authController = require("./auth.controller");
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post("/register-profile", authenticate, authController.registerProfile);
+router.post(
+  "/register-profile",
+  authenticateFirebaseOnly,
+  authController.registerProfile,
+);
 
 /**
  * @swagger

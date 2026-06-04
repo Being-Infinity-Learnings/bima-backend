@@ -1,7 +1,14 @@
+// HTTP handlers for authenticated user profile operations
+// - `registerProfile` creates a profile for the currently authenticated Firebase user
+// - `me` returns the authenticated user's database profile
+
 const { registerProfileSchema } = require("./auth.validation");
 
 const authService = require("./auth.service");
 
+// Handler: registerProfile(req, res)
+// - Validates the request body and creates or returns an existing
+//   profile for the authenticated Firebase user.
 async function registerProfile(req, res) {
   try {
     const validated = registerProfileSchema.parse(req.body);
@@ -36,6 +43,8 @@ async function registerProfile(req, res) {
   }
 }
 
+//   Handler: me(req, res)
+// - Returns the database profile attached by the `authenticate` middleware as `req.dbUser`.
 async function me(req, res) {
   try {
     const firebaseUid = req.user.uid;
