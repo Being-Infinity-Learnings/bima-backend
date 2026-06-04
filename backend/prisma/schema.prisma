@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  AUTHOR
+  STUDENT
+}
+
+model User {
+  id String @id @default(uuid())
+
+  firebaseUid String @unique
+
+  email String? @unique
+  phone String? @unique
+
+  fullName String
+
+  gender String?
+
+  collegeName String?
+  rollNumber  String?
+
+  role UserRole @default(STUDENT)
+
+  approved Boolean @default(false)
+
+  blocked Boolean @default(false)
+
+  groupMemberships UserGroup[]
+  createdGroups    Group[]     @relation("GroupCreator")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Group {
+  id String @id @default(uuid())
+
+  name String @unique
+
+  description String?
+
+  createdById String
+
+  createdBy User @relation("GroupCreator", fields: [createdById], references: [id])
+
+  members UserGroup[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserGroup {
+
+  userId String
+  groupId String
+
+  user User @relation(fields: [userId],references: [id])
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([userId, groupId])
+}
