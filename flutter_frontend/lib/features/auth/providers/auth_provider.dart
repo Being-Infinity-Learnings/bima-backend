@@ -1,3 +1,7 @@
+/// Riverpod provider and auth notifier for user authentication flows.
+///
+/// This file contains the state notifier responsible for sign-in, sign-up,
+/// profile completion, and auth status transitions.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/enums/auth_status.dart';
@@ -12,15 +16,21 @@ import 'package:dio/dio.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 
+/// A provider that exposes authentication state to the rest of the app.
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
   (ref) => AuthNotifier(),
 );
 
+/// Manages auth-related actions and state transitions.
 class AuthNotifier extends StateNotifier<AuthState> {
   AuthNotifier() : super(const AuthState(status: AuthStatus.loading));
 
   final AuthRepository _repo = AuthRepository();
 
+  /// Checks whether the user is currently authenticated.
+  ///
+  /// This method reads the Firebase user, retrieves the profile, and updates
+  /// auth state to the appropriate status for routing.
   Future<void> checkAuth() async {
     state = state.copyWith(isLoading: true);
 
@@ -81,6 +91,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Attempts to sign in the user with email and password.
+  ///
+  /// On success it refreshes auth state via [checkAuth]. On failure it sets a
+  /// user-friendly error message.
   Future<void> login({required String email, required String password}) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
 
@@ -125,12 +139,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Signs the current user out and resets auth state.
   Future<void> logout() async {
     await _repo.signOut();
 
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
+  /// Creates a new Firebase account using email and password.
+  ///
+  /// After account creation, this method updates state to indicate the
+  /// profile still needs to be completed.
   Future<void> createFirebaseAccount({
     required String email,
     required String password,
@@ -169,6 +188,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Submits profile completion data to the backend.
+  ///
+  /// This is the second registration step after creating a Firebase account.
   Future<void> completeProfile({
     required String fullName,
     required String gender,
@@ -225,6 +247,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Clears any active authentication error message.
   void clearError() {
     if (state.errorMessage == null) {
       return;

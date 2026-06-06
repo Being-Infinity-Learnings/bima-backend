@@ -1,3 +1,4 @@
+/// Request payload used to submit the user's completed profile.
 class RegisterProfileRequest {
   final String fullName;
   final String gender;
@@ -11,6 +12,7 @@ class RegisterProfileRequest {
     required this.rollNumber,
   });
 
+  /// Converts the profile request into JSON for API consumption.
   Map<String, dynamic> toJson() {
     return {
       'fullName': fullName,

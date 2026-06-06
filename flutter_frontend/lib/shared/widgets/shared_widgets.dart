@@ -1,3 +1,6 @@
+/// Shared reusable UI widgets used across the application.
+///
+/// This file contains common branding, button, divider, and error widgets.
 import 'package:flutter/material.dart';
 import '../../config/app_config.dart';
 

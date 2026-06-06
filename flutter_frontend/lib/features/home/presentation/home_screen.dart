@@ -1,3 +1,6 @@
+/// Home screen shown to authenticated users.
+///
+/// Displays basic profile details and logout actions.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +12,7 @@ class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
+  /// Builds the authenticated home screen and handles logout routing.
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
 
@@ -69,6 +73,7 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
+/// Simple information tile used to display a label/value pair.
 class _InfoTile extends StatelessWidget {
   final String label;
   final String value;

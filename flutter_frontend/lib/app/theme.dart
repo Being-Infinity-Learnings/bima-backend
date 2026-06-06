@@ -1,34 +1,81 @@
+/// Application theming utilities.
+///
+/// This file builds the light and dark theme data for the app using
+/// the shared app configuration palette.
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../config/app_config.dart';
 
 class AppTheme {
+  static const _radius = 18.0;
+
+  /// Light theme configuration for the application.
   static ThemeData get lightTheme {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: AppConfig.primaryColor,
       brightness: Brightness.light,
     );
 
+    return _buildTheme(
+      colorScheme: colorScheme,
+      scaffoldColor: const Color(0xFFF7F8FC),
+      cardColor: Colors.white,
+      inputFillColor: Colors.white,
+    );
+  }
+
+  static ThemeData get darkTheme {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: AppConfig.primaryColor,
+      brightness: Brightness.dark,
+    );
+
+    return _buildTheme(
+      colorScheme: colorScheme,
+      scaffoldColor: const Color(0xFF0F1117),
+      cardColor: const Color(0xFF1A1D24),
+      inputFillColor: const Color(0xFF232733),
+    );
+  }
+
+  /// Builds a reusable [ThemeData] from the provided colors.
+  ///
+  /// This helper is shared by both the light and dark theme definitions.
+  static ThemeData _buildTheme({
+    required ColorScheme colorScheme,
+    required Color scaffoldColor,
+    required Color cardColor,
+    required Color inputFillColor,
+  }) {
     return ThemeData(
       useMaterial3: true,
 
       colorScheme: colorScheme,
 
-      scaffoldBackgroundColor: const Color(0xFFF7F8FC),
+      scaffoldBackgroundColor: scaffoldColor,
 
-      textTheme: GoogleFonts.outfitTextTheme(),
+      textTheme: GoogleFonts.outfitTextTheme().apply(
+        bodyColor: colorScheme.onSurface,
+        displayColor: colorScheme.onSurface,
+      ),
 
       cardTheme: CardThemeData(
         elevation: 0,
-        color: Colors.white,
+        color: cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
+
+      appBarTheme: AppBarTheme(
+        backgroundColor: scaffoldColor,
+        foregroundColor: colorScheme.onSurface,
+        elevation: 0,
+        centerTitle: false,
       ),
 
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-
-        fillColor: Colors.white,
+        fillColor: inputFillColor,
 
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 18,
@@ -36,21 +83,23 @@ class AppTheme {
         ),
 
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-
+          borderRadius: BorderRadius.circular(_radius),
           borderSide: BorderSide.none,
         ),
 
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-
+          borderRadius: BorderRadius.circular(_radius),
           borderSide: BorderSide.none,
         ),
 
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(_radius),
+          borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+        ),
 
-          borderSide: BorderSide(color: AppConfig.primaryColor, width: 1.5),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(_radius),
+          borderSide: const BorderSide(color: Colors.red),
         ),
       ),
 
@@ -58,21 +107,27 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           minimumSize: const Size.fromHeight(56),
 
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+
+          elevation: 0,
+
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(_radius),
           ),
         ),
       ),
-    );
-  }
 
-  static ThemeData get darkTheme {
-    return ThemeData(
-      useMaterial3: true,
+      dividerTheme: DividerThemeData(
+        color: colorScheme.outline.withValues(alpha: 0.2),
+      ),
 
-      brightness: Brightness.dark,
-
-      textTheme: GoogleFonts.interTextTheme(),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: cardColor,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+      ),
     );
   }
 }

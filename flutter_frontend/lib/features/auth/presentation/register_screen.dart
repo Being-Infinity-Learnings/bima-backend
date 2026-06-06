@@ -1,3 +1,7 @@
+/// Registration screen for creating a new account.
+///
+/// This screen presents email/password inputs and navigates to profile
+/// completion when account creation succeeds.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -32,6 +36,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _confirmCtrl.addListener(_clearError);
   }
 
+  /// Clears the current auth error when form fields change.
   void _clearError() {
     ref.read(authProvider.notifier).clearError();
   }
@@ -49,6 +54,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     super.dispose();
   }
 
+  /// Validates the registration inputs and creates a Firebase account.
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -71,8 +77,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   @override
+  /// Builds the signup page UI and navigates when registration state changes.
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    final isDark = theme.brightness == Brightness.dark;
 
     final authState = ref.watch(authProvider);
 
@@ -84,11 +94,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFF8F9FC), Color(0xFFF2F4F9)],
+            colors: isDark
+                ? [const Color(0xFF0F1117), const Color(0xFF161B22)]
+                : [const Color(0xFFF8F9FC), const Color(0xFFF2F4F9)],
           ),
         ),
         child: SafeArea(
@@ -110,9 +122,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       padding: const EdgeInsets.all(24),
 
                       decoration: BoxDecoration(
-                        color: Colors.white,
-
+                        color: theme.cardColor,
                         borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark
+                                ? Colors.black.withValues(alpha: 0.15)
+                                : Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 30,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
                       ),
 
                       child: Form(
@@ -124,7 +144,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           children: [
                             Text(
                               'Create Account',
-
                               style: Theme.of(context).textTheme.headlineMedium
                                   ?.copyWith(fontWeight: FontWeight.w700),
                             ),
@@ -151,7 +170,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             TextFormField(
                               controller: _emailCtrl,
                               decoration: const InputDecoration(
-                                labelText: 'Email',
+                                labelText: 'Your Email',
                                 prefixIcon: Icon(Icons.mail),
                               ),
                               validator: (value) {
@@ -171,7 +190,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                               obscureText: _obscurePassword,
 
                               decoration: InputDecoration(
-                                labelText: 'Password',
+                                labelText: 'Create Password',
 
                                 prefixIcon: const Icon(Icons.lock),
 
@@ -249,11 +268,22 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
                     const SizedBox(height: 24),
 
-                    TextButton(
-                      onPressed: () {
-                        context.go('/login');
-                      },
-                      child: const Text('Already have an account? Sign In'),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Already have an account?',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            context.go('/login');
+                          },
+                          child: const Text('Sign In'),
+                        ),
+                      ],
                     ),
                   ],
                 ),

@@ -1,3 +1,6 @@
+/// Login screen for users to sign into the application.
+///
+/// This screen renders the email/password form and triggers auth actions.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -30,6 +33,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     _passwordCtrl.addListener(_clearError);
   }
 
+  /// Clears the current auth error once the user edits any of the fields.
   void _clearError() {
     ref.read(authProvider.notifier).clearError();
   }
@@ -45,6 +49,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  /// Validates the login form and sends the sign-in request.
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -56,8 +61,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   @override
+  /// Builds the login page UI and listens for auth state changes.
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    final isDark = theme.brightness == Brightness.dark;
 
     final authState = ref.watch(authProvider);
 
@@ -82,11 +91,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFF8F9FC), Color(0xFFF2F4F9)],
+            colors: isDark
+                ? [const Color(0xFF0F1117), const Color(0xFF161B22)]
+                : [const Color(0xFFF8F9FC), const Color(0xFFF2F4F9)],
           ),
         ),
         child: SafeArea(
@@ -107,11 +118,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: theme.cardColor,
                         borderRadius: BorderRadius.circular(28),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
+                            color: isDark
+                                ? Colors.black.withValues(alpha: 0.15)
+                                : Colors.black.withValues(alpha: 0.04),
                             blurRadius: 30,
                             offset: const Offset(0, 10),
                           ),
@@ -124,8 +137,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           children: [
                             Text(
                               'Welcome back',
-                              style: Theme.of(context).textTheme.headlineMedium
-                                  ?.copyWith(fontWeight: FontWeight.w700),
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurface,
+                              ),
                             ),
 
                             const SizedBox(height: 8),
@@ -225,7 +240,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       children: [
                         Text(
                           "Don't have an account?",
-                          style: TextStyle(color: cs.onSurfaceVariant),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
                         ),
                         TextButton(
                           onPressed: () {

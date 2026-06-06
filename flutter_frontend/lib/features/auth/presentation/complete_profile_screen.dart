@@ -1,3 +1,6 @@
+/// Screen for collecting the remaining profile data after signup.
+///
+/// The user enters name, gender, college, and roll number on this screen.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -35,6 +38,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     _rollCtrl.addListener(_clearError);
   }
 
+  /// Clears auth errors when any input value changes.
   void _clearError() {
     ref.read(authProvider.notifier).clearError();
   }
@@ -52,6 +56,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     super.dispose();
   }
 
+  /// Submits the completed profile data to the auth notifier.
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -68,10 +73,14 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   }
 
   @override
+  /// Builds the profile completion UI and handles navigation after profile save.
   Widget build(BuildContext context) {
-    final authState = ref.watch(authProvider);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
-    final cs = Theme.of(context).colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final authState = ref.watch(authProvider);
 
     ref.listen(authProvider, (previous, next) {
       switch (next.status) {
@@ -90,11 +99,13 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFF8F9FC), Color(0xFFF2F4F9)],
+            colors: isDark
+                ? [const Color(0xFF0F1117), const Color(0xFF161B22)]
+                : [const Color(0xFFF8F9FC), const Color(0xFFF2F4F9)],
           ),
         ),
 
@@ -117,9 +128,17 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                       padding: const EdgeInsets.all(24),
 
                       decoration: BoxDecoration(
-                        color: Colors.white,
-
+                        color: theme.cardColor,
                         borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark
+                                ? Colors.black.withValues(alpha: 0.15)
+                                : Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 30,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
                       ),
 
                       child: Form(
@@ -130,10 +149,11 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
                           children: [
                             Text(
-                              'Complete Profile',
-
-                              style: Theme.of(context).textTheme.headlineMedium
-                                  ?.copyWith(fontWeight: FontWeight.w700),
+                              'Complete Your Profile',
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurface,
+                              ),
                             ),
 
                             const SizedBox(height: 8),
@@ -141,8 +161,9 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                             Text(
                               'Tell us a bit about yourself',
 
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: cs.onSurfaceVariant),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
                             ),
 
                             if (authState.errorMessage != null) ...[
@@ -175,7 +196,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                             const SizedBox(height: 18),
 
                             DropdownButtonFormField<String>(
-                              value: _selectedGender,
+                              initialValue: _selectedGender,
 
                               decoration: const InputDecoration(
                                 labelText: 'Gender',

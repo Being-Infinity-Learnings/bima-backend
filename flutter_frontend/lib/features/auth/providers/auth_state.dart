@@ -1,3 +1,7 @@
+/// Authentication state model for the app.
+///
+/// This file defines the current auth stage, the signed-in user (when
+/// available), any loading state, and an optional error message.
 import '../../../shared/enums/auth_status.dart';
 import '../data/auth_models.dart';
 
@@ -17,6 +21,9 @@ class AuthState {
     this.errorMessage,
   });
 
+  /// Returns a new [AuthState] with updated fields.
+  ///
+  /// This helper is used to mutate auth state immutably from the notifier.
   AuthState copyWith({
     AuthStatus? status,
     UserModel? user,

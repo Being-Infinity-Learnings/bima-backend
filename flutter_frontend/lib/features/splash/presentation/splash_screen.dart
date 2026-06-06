@@ -1,3 +1,6 @@
+/// Splash screen that checks authentication state before routing.
+///
+/// This screen is shown on startup while auth status is validated.
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,8 +10,6 @@ import 'package:go_router/go_router.dart';
 import '../../auth/providers/auth_provider.dart';
 
 import '../../../shared/enums/auth_status.dart';
-
-import 'package:firebase_auth/firebase_auth.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -28,6 +29,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   @override
+  /// Builds the splash UI and routes the user once auth state resolves.
   Widget build(BuildContext context) {
     ref.listen(authProvider, (previous, next) {
       switch (next.status) {

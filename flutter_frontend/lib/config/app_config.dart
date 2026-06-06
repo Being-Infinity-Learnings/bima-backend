@@ -1,3 +1,6 @@
+/// App configuration constants used across the Flutter app.
+///
+/// This file keeps static values such as the app name, colors and asset paths.
 import 'package:flutter/material.dart';
 
 class AppConfig {
@@ -5,11 +8,15 @@ class AppConfig {
 
   static const appTagline = "Learn. Compete. Grow.";
 
-  static const primaryColor = Color(0xFF6D5DFB);
+  /// Primary brand color used throughout the app.
+  static const primaryColor = Color(0xFFB5E82C);
 
-  static const secondaryColor = Color(0xFF8B7FFF);
+  /// Secondary color to complement the brand palette.
+  static const secondaryColor = Color.fromARGB(255, 189, 235, 63);
 
+  /// Default surface color for cards and backgrounds.
   static const surfaceColor = Color(0xFFF8F9FC);
 
+  /// Path to the app logo asset used on auth and welcome screens.
   static const logoAsset = "lib/config/assets/logo.png";
 }

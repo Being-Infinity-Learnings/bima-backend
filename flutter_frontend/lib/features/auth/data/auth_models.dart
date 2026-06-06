@@ -1,3 +1,6 @@
+/// Data model representing the authenticated user.
+///
+/// This model is built from the backend auth profile response.
 class UserModel {
   final String id;
   final String firebaseUid;
@@ -30,6 +33,7 @@ class UserModel {
     required this.blocked,
   });
 
+  /// Creates a [UserModel] from the JSON payload returned by the backend.
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       id: json['id'],

@@ -1,3 +1,6 @@
+/// Screen shown while waiting for admin approval after registration.
+///
+/// Provides refresh and logout controls during the pending approval state.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +13,7 @@ class WaitingApprovalScreen extends ConsumerWidget {
   const WaitingApprovalScreen({super.key});
 
   @override
+  /// Builds the waiting approval UI and offers refresh/logout actions.
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
 
