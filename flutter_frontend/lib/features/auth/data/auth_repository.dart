@@ -5,7 +5,6 @@ import '../../../core/network/api_client.dart';
 import 'auth_models.dart';
 
 import 'register_profile_request.dart';
-import 'package:dio/dio.dart';
 
 class AuthRepository {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
