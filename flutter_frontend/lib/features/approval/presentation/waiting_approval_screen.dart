@@ -15,6 +15,11 @@ class WaitingApprovalScreen extends ConsumerWidget {
   @override
   /// Builds the waiting approval UI and offers refresh/logout actions.
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    final isDark = theme.brightness == Brightness.dark;
+
     final authState = ref.watch(authProvider);
 
     ref.listen(authProvider, (previous, next) {
@@ -34,11 +39,13 @@ class WaitingApprovalScreen extends ConsumerWidget {
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFF8F9FC), Color(0xFFF2F4F9)],
+            colors: isDark
+                ? [const Color(0xFF0F1117), const Color(0xFF161B22)]
+                : [const Color(0xFFF8F9FC), const Color(0xFFF2F4F9)],
           ),
         ),
         child: SafeArea(
@@ -56,22 +63,33 @@ class WaitingApprovalScreen extends ConsumerWidget {
                     Container(
                       padding: const EdgeInsets.all(28),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: theme.cardColor,
                         borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark
+                                ? Colors.black.withValues(alpha: 0.15)
+                                : Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 30,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
                       ),
                       child: Column(
                         children: [
                           Container(
                             width: 72,
                             height: 72,
-                            decoration: const BoxDecoration(
+                            decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Color(0xFFE8F5E9),
+                              color: isDark
+                                  ? const Color(0xFF1B3A24)
+                                  : const Color(0xFFE8F5E9),
                             ),
                             child: const Icon(
                               Icons.check_circle_rounded,
                               size: 42,
-                              color: Colors.green,
+                              color: Color(0xFF22C55E),
                             ),
                           ),
 
@@ -80,8 +98,10 @@ class WaitingApprovalScreen extends ConsumerWidget {
                           Text(
                             'Registration Submitted',
                             textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface,
+                            ),
                           ),
 
                           const SizedBox(height: 12),
@@ -89,7 +109,10 @@ class WaitingApprovalScreen extends ConsumerWidget {
                           Text(
                             'Your account has been created successfully.\n\nAn administrator must approve your account before you can access the platform.',
                             textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodyMedium,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              height: 1.5,
+                            ),
                           ),
 
                           const SizedBox(height: 32),
