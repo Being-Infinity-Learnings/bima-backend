@@ -25,6 +25,15 @@ async function getAllUsers() {
   });
 }
 
+// Return a user by id.
+async function getUserById(userId) {
+  return await prisma.user.findUnique({
+    where: {
+      id: userId,
+    },
+  });
+}
+
 // Approve a user account by id.
 async function approveUser(userId) {
   return await prisma.user.update({
@@ -61,10 +70,24 @@ async function unblockUser(userId) {
   });
 }
 
+// Update a user's role by id.
+async function updateUserRole(userId, role) {
+  return await prisma.user.update({
+    where: {
+      id: userId,
+    },
+    data: {
+      role,
+    },
+  });
+}
+
 module.exports = {
   getPendingUsers,
   getAllUsers,
   approveUser,
   blockUser,
   unblockUser,
+  updateUserRole,
+  getUserById,
 };

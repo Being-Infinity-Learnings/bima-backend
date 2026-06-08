@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { adminApi } from "../../services/api.service.js";
 import { useAuth } from "../../context/AuthContext.jsx";
+import UserDetailModal from "../../components/admin/UserDetailModal.jsx";
 import {
   Button,
   Badge,
@@ -25,6 +26,27 @@ export default function UsersPage() {
   const [actionLoading, setAction] = useState(null);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [hoveredRow, setHoveredRow] = useState(null);
+
+  //Funciton to open user details modal and fetch user data by id. Shows skeleton while loading.
+  async function openUserModal(id) {
+    setModalLoading(true);
+    setSelectedUser({ id }); // open modal immediately with skeleton
+    try {
+      const data = await adminApi.getUserById(id);
+      setSelectedUser(data);
+    } catch (err) {
+      toast(
+        "Failed to load user details: " + (err.message || "Unknown error"),
+        "error",
+      );
+      setSelectedUser(null);
+    } finally {
+      setModalLoading(false);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +84,20 @@ export default function UsersPage() {
     }
   }
 
+  // Handle role changing action for a user.
+  async function changeRole(id, newRole) {
+    setAction(id + "role");
+    try {
+      await adminApi.updateUserRole(id, newRole);
+      toast(`User role updated to ${newRole} successfully.`, "success");
+      await load();
+    } catch (err) {
+      toast(err.message || "Failed to update role", "error");
+    } finally {
+      setAction(null);
+    }
+  }
+
   // Compute the display status for each user row.
   function userStatus(user) {
     if (user.blocked) return "BLOCKED";
@@ -83,6 +119,55 @@ export default function UsersPage() {
 
     return matchStatus && matchSearch;
   });
+
+  function getRoleStyles(role) {
+    switch (role) {
+      case "ADMIN":
+        return {
+          background: "#082f49",
+          borderColor: "#38bdf8",
+          color: "#38bdf8",
+        };
+
+      case "AUTHOR":
+        return {
+          background: "#261f2e",
+          borderColor: "#bf97ff",
+          color: "#bf97ff",
+        };
+
+      default: // STUDENT
+        return {
+          background: "#1e293b",
+          borderColor: "#cbd5e1",
+          color: "#cbd5e1",
+        };
+    }
+  }
+
+  function getStatusStyles(status) {
+    switch (status) {
+      case "APPROVED":
+        return {
+          background: "rgba(60, 60, 58, 0.9)",
+          color: "#a8a8a8",
+          dotColor: "#6b6b6b",
+        };
+      case "PENDING":
+        return {
+          background: "rgba(58, 54, 49, 0.9)",
+          color: "#c2b49a",
+          dotColor: "#a08060",
+        };
+      case "BLOCKED":
+      default:
+        return {
+          background: "rgba(61, 31, 31, 0.9)",
+          color: "#d07070",
+          dotColor: "#c04040",
+        };
+    }
+  }
 
   return (
     <div style={{ padding: "32px 40px", maxWidth: 1100 }}>
@@ -127,8 +212,8 @@ export default function UsersPage() {
               textAlign: "right",
             }}
           >
-            Role changes are not available here because the backend currently
-            exposes approval and blocking endpoints only.
+            Change any user's role instantly using the role selector dropdown
+            below.
           </div>
         )}
       </div>
@@ -180,7 +265,8 @@ export default function UsersPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr 1.5fr",
+            gridTemplateColumns: "2.2fr 2fr 2fr 1.2fr 1.4fr 1.6fr",
+            gap: "0 20px",
             padding: "10px 20px",
             background: T.pageBg,
             borderBottom: `1px solid ${T.cardBorder}`,
@@ -227,16 +313,31 @@ export default function UsersPage() {
                 key={user.id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr 1.5fr",
+                  gridTemplateColumns: "2.2fr 2fr 2fr 1.2fr 1.4fr 1.6fr",
                   padding: "14px 20px",
                   alignItems: "center",
                   borderBottom:
                     index < filtered.length - 1
                       ? `1px solid ${T.cardBorder}`
                       : "none",
+                  background:
+                    hoveredRow === user.id
+                      ? (T.cardHoverBg ?? "rgba(255,255,255,0.03)")
+                      : "transparent",
+                  transition: "background 0.15s",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => openUserModal(user.id)}
+                  onMouseEnter={() => setHoveredRow(user.id)}
+                  onMouseLeave={() => setHoveredRow(null)}
+                >
                   <Avatar name={user.fullName || user.email} size={34} />
                   <div style={{ minWidth: 0 }}>
                     <div
@@ -282,7 +383,39 @@ export default function UsersPage() {
                 </div>
 
                 <div>
-                  <Badge label={user.role || "STUDENT"} />
+                  {myRole === "ADMIN" ? (
+                    <select
+                      value={user.role || "STUDENT"}
+                      onChange={(e) => changeRole(user.id, e.target.value)}
+                      disabled={!!actionLoading}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        border: "1px solid",
+                        background: getRoleStyles(user.role).background,
+                        borderColor: getRoleStyles(user.role).borderColor,
+                        color: getRoleStyles(user.role).color,
+                        fontSize: 12,
+                        fontFamily: "inherit",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        outline: "none",
+                      }}
+                    >
+                      <option value="STUDENT">Student</option>
+                      <option value="AUTHOR">Author</option>
+                      <option value="ADMIN">Admin</option>
+                    </select>
+                  ) : (
+                    <Badge
+                      label={user.role || "STUDENT"}
+                      style={{
+                        background: getRoleStyles(user.role).background,
+                        color: getRoleStyles(user.role).color,
+                        border: `1px solid ${getRoleStyles(user.role).borderColor}`,
+                      }}
+                    />
+                  )}
                 </div>
                 <div>
                   <Badge label={status} />
@@ -335,6 +468,17 @@ export default function UsersPage() {
           })
         )}
       </Card>
+      {selectedUser && (
+        <UserDetailModal
+          user={selectedUser}
+          loading={modalLoading}
+          onClose={() => setSelectedUser(null)}
+          onAction={async (id, action) => {
+            await doAction(id, action);
+            openUserModal(id);
+          }}
+        />
+      )}
     </div>
   );
 }

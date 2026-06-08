@@ -40,6 +40,29 @@ async function getAllUsers(req, res) {
   }
 }
 
+async function getUserById(req, res) {
+  try {
+    const user = await adminService.getUserById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      data: user,
+    });
+  }
+    catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
 // Handler: approveUser(req, res)
 // - Marks the target user as approved.
 async function approveUser(req, res) {
@@ -94,10 +117,40 @@ async function unblockUser(req, res) {
   }
 }
 
+// Handler: updateUserRole(req, res)
+// - Validates and updates the role of a target user.
+async function updateUserRole(req, res) {
+  try {
+    const { role } = req.body;
+    const allowedRoles = ["ADMIN", "AUTHOR", "STUDENT"];
+
+    if (!role || !allowedRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid role. Allowed roles are: ${allowedRoles.join(", ")}`,
+      });
+    }
+
+    const user = await adminService.updateUserRole(req.params.id, role);
+
+    return res.status(200).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
 module.exports = {
   getPendingUsers,
   getAllUsers,
   approveUser,
   blockUser,
   unblockUser,
+  updateUserRole,
+  getUserById,
 };

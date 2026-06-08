@@ -78,6 +78,9 @@ export const adminApi = {
   approveUser: (id) => request("POST", `/admin/users/${id}/approve`),
   blockUser: (id) => request("POST", `/admin/users/${id}/block`),
   unblockUser: (id) => request("POST", `/admin/users/${id}/unblock`),
+  updateUserRole: (id, role) =>
+    request("PATCH", `/admin/users/${id}/role`, { role }),
+  getUserById: (id) => request("GET", `/admin/users/${id}`),
 };
 
 export const groupsApi = {
