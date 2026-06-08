@@ -1,0 +1,298 @@
+/// Screen for collecting the remaining profile data after signup.
+///
+/// The user enters name, gender, college, and roll number on this screen.
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../shared/widgets/shared_widgets.dart';
+import '../../../shared/enums/auth_status.dart';
+
+import '../providers/auth_provider.dart';
+
+class CompleteProfileScreen extends ConsumerStatefulWidget {
+  const CompleteProfileScreen({super.key});
+
+  @override
+  ConsumerState<CompleteProfileScreen> createState() =>
+      _CompleteProfileScreenState();
+}
+
+class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
+  final _formKey = GlobalKey<FormState>();
+
+  final _nameCtrl = TextEditingController();
+
+  final _collegeCtrl = TextEditingController();
+
+  final _rollCtrl = TextEditingController();
+
+  String? _selectedGender;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _nameCtrl.addListener(_clearError);
+    _collegeCtrl.addListener(_clearError);
+    _rollCtrl.addListener(_clearError);
+  }
+
+  /// Clears auth errors when any input value changes.
+  void _clearError() {
+    ref.read(authProvider.notifier).clearError();
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.removeListener(_clearError);
+    _collegeCtrl.removeListener(_clearError);
+    _rollCtrl.removeListener(_clearError);
+
+    _nameCtrl.dispose();
+    _collegeCtrl.dispose();
+    _rollCtrl.dispose();
+
+    super.dispose();
+  }
+
+  /// Submits the completed profile data to the auth notifier.
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    await ref
+        .read(authProvider.notifier)
+        .completeProfile(
+          fullName: _nameCtrl.text.trim(),
+          gender: _selectedGender!,
+          collegeName: _collegeCtrl.text.trim(),
+          rollNumber: _rollCtrl.text.trim(),
+        );
+  }
+
+  @override
+  /// Builds the profile completion UI and handles navigation after profile save.
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    final isDark = theme.brightness == Brightness.dark;
+
+    final authState = ref.watch(authProvider);
+
+    ref.listen(authProvider, (previous, next) {
+      switch (next.status) {
+        case AuthStatus.pendingApproval:
+          context.go('/approval');
+          break;
+
+        case AuthStatus.authenticated:
+          context.go('/home');
+          break;
+
+        default:
+          break;
+      }
+    });
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: isDark
+                ? [const Color(0xFF0F1117), const Color(0xFF161B22)]
+                : [const Color(0xFFF8F9FC), const Color(0xFFF2F4F9)],
+          ),
+        ),
+
+        child: SafeArea(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 450),
+
+                child: Column(
+                  children: [
+                    const AppBrandWidget(size: 72, showTagline: true),
+
+                    const SizedBox(height: 32),
+
+                    Container(
+                      padding: const EdgeInsets.all(24),
+
+                      decoration: BoxDecoration(
+                        color: theme.cardColor,
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark
+                                ? Colors.black.withValues(alpha: 0.15)
+                                : Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 30,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+
+                      child: Form(
+                        key: _formKey,
+
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+
+                          children: [
+                            Text(
+                              'Complete Your Profile',
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurface,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            Text(
+                              'Tell us a bit about yourself',
+
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+
+                            if (authState.errorMessage != null) ...[
+                              const SizedBox(height: 20),
+
+                              ErrorBanner(message: authState.errorMessage!),
+
+                              const SizedBox(height: 20),
+                            ],
+
+                            const SizedBox(height: 28),
+
+                            TextFormField(
+                              controller: _nameCtrl,
+
+                              decoration: const InputDecoration(
+                                labelText: 'Full Name',
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Required';
+                                }
+
+                                return null;
+                              },
+                            ),
+
+                            const SizedBox(height: 18),
+
+                            DropdownButtonFormField<String>(
+                              initialValue: _selectedGender,
+
+                              decoration: const InputDecoration(
+                                labelText: 'Gender',
+                                prefixIcon: Icon(Icons.wc_outlined),
+                              ),
+
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'Male',
+                                  child: Text('Male'),
+                                ),
+
+                                DropdownMenuItem(
+                                  value: 'Female',
+                                  child: Text('Female'),
+                                ),
+
+                                DropdownMenuItem(
+                                  value: 'Other',
+                                  child: Text('Other'),
+                                ),
+                              ],
+
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedGender = value;
+                                });
+                              },
+
+                              validator: (value) {
+                                if (value == null) {
+                                  return 'Select gender';
+                                }
+
+                                return null;
+                              },
+                            ),
+
+                            const SizedBox(height: 18),
+
+                            TextFormField(
+                              controller: _collegeCtrl,
+
+                              decoration: const InputDecoration(
+                                labelText: 'College Name',
+                                prefixIcon: Icon(Icons.school_outlined),
+                              ),
+
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Required';
+                                }
+
+                                return null;
+                              },
+                            ),
+
+                            const SizedBox(height: 18),
+
+                            TextFormField(
+                              controller: _rollCtrl,
+
+                              decoration: const InputDecoration(
+                                labelText: 'Roll Number',
+                                prefixIcon: Icon(Icons.badge_outlined),
+                              ),
+
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Required';
+                                }
+
+                                return null;
+                              },
+                            ),
+
+                            const SizedBox(height: 24),
+
+                            PrimaryButton(
+                              label: 'Complete Registration',
+
+                              loading: authState.isLoading,
+
+                              onPressed: _submit,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

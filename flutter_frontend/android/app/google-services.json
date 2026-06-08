@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "9986530081",
+    "project_id": "bima-f83d5",
+    "storage_bucket": "bima-f83d5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:9986530081:android:658e4c05a16633b2857c60",
+        "android_client_info": {
+          "package_name": "com.example.flutter_frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATop1IKo2W2a76ngnIq92BZYW5Ioon3LY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
