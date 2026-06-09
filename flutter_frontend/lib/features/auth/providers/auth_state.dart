@@ -12,6 +12,10 @@ class AuthState {
 
   final String? errorMessage;
 
+  final String? verificationId;
+
+  final String? phoneNumber;
+
   final bool isLoading;
 
   const AuthState({
@@ -19,6 +23,8 @@ class AuthState {
     this.user,
     this.isLoading = false,
     this.errorMessage,
+    this.verificationId,
+    this.phoneNumber,
   });
 
   /// Returns a new [AuthState] with updated fields.
@@ -29,12 +35,16 @@ class AuthState {
     UserModel? user,
     bool? isLoading,
     String? errorMessage,
+    String? verificationId,
+    String? phoneNumber,
   }) {
     return AuthState(
       status: status ?? this.status,
       user: user ?? this.user,
       isLoading: isLoading ?? this.isLoading,
-      errorMessage: errorMessage ?? this.errorMessage,
+      errorMessage: errorMessage,
+      verificationId: verificationId ?? this.verificationId,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
     );
   }
 }

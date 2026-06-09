@@ -27,6 +27,8 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
   final _rollCtrl = TextEditingController();
 
+  final _emailCtrl = TextEditingController();
+
   String? _selectedGender;
 
   @override
@@ -36,6 +38,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     _nameCtrl.addListener(_clearError);
     _collegeCtrl.addListener(_clearError);
     _rollCtrl.addListener(_clearError);
+    _emailCtrl.addListener(_clearError);
   }
 
   /// Clears auth errors when any input value changes.
@@ -48,10 +51,12 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     _nameCtrl.removeListener(_clearError);
     _collegeCtrl.removeListener(_clearError);
     _rollCtrl.removeListener(_clearError);
+    _emailCtrl.removeListener(_clearError);
 
     _nameCtrl.dispose();
     _collegeCtrl.dispose();
     _rollCtrl.dispose();
+    _emailCtrl.dispose();
 
     super.dispose();
   }
@@ -69,6 +74,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
           gender: _selectedGender!,
           collegeName: _collegeCtrl.text.trim(),
           rollNumber: _rollCtrl.text.trim(),
+          email: _emailCtrl.text.trim(),
         );
   }
 
@@ -90,6 +96,10 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
         case AuthStatus.authenticated:
           context.go('/home');
+          break;
+
+        case AuthStatus.blocked:
+          context.go('/blocked');
           break;
 
         default:
@@ -267,6 +277,33 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
                                   return 'Required';
+                                }
+
+                                return null;
+                              },
+                            ),
+
+                            const SizedBox(height: 18),
+
+                            TextFormField(
+                              controller: _emailCtrl,
+                              keyboardType: TextInputType.emailAddress,
+                              decoration: const InputDecoration(
+                                labelText: 'Email Address',
+                                hintText: 'you@example.com',
+                                prefixIcon: Icon(Icons.mail_outline_rounded),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Email is required';
+                                }
+
+                                final email = value.trim();
+
+                                if (!RegExp(
+                                  r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                                ).hasMatch(email)) {
+                                  return 'Enter a valid email address';
                                 }
 
                                 return null;

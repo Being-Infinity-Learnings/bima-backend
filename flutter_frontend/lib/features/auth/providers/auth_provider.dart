@@ -196,6 +196,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String gender,
     required String collegeName,
     required String rollNumber,
+    required String email,
   }) async {
     state = state.copyWith(isLoading: true);
 
@@ -206,6 +207,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           gender: gender,
           collegeName: collegeName,
           rollNumber: rollNumber,
+          email: email,
         ),
       );
 
@@ -254,5 +256,75 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
 
     state = state.copyWith(errorMessage: null);
+  }
+
+  Future<void> sendOtp(String phoneNumber) async {
+    print("SEND OTP CALLED");
+    print(phoneNumber);
+
+    state = state.copyWith(isLoading: true, errorMessage: null);
+
+    await _repo.verifyPhoneNumber(
+      phoneNumber: phoneNumber,
+
+      verificationCompleted: (_) {
+        print("verificationCompleted");
+      },
+
+      verificationFailed: (e) {
+        print("verificationFailed");
+        print(e.code);
+        print(e.message);
+
+        state = state.copyWith(isLoading: false, errorMessage: e.message);
+      },
+
+      codeSent: (verificationId, _) {
+        print("codeSent");
+        print(verificationId);
+
+        state = state.copyWith(
+          isLoading: false,
+          verificationId: verificationId,
+          phoneNumber: phoneNumber,
+        );
+      },
+
+      codeAutoRetrievalTimeout: (_) {
+        print("timeout");
+      },
+    );
+  }
+
+  Future<void> resendOtp() async {
+    final phoneNumber = state.phoneNumber;
+
+    if (phoneNumber == null) {
+      return;
+    }
+
+    await sendOtp(phoneNumber);
+  }
+
+  Future<void> verifyOtp(String otp) async {
+    final verificationId = state.verificationId;
+
+    if (verificationId == null) {
+      return;
+    }
+
+    state = state.copyWith(isLoading: true, errorMessage: null);
+
+    try {
+      await _repo.signInWithOtp(verificationId: verificationId, otp: otp);
+
+      await checkAuth();
+    } on FirebaseAuthException {
+      state = state.copyWith(isLoading: false, errorMessage: 'Invalid OTP.');
+    }
+  }
+
+  void setError(String message) {
+    state = state.copyWith(errorMessage: message);
   }
 }

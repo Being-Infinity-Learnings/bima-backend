@@ -50,7 +50,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           break;
 
         case AuthStatus.blocked:
-          context.go('/login');
+          context.go('/blocked');
           break;
 
         case AuthStatus.loading:

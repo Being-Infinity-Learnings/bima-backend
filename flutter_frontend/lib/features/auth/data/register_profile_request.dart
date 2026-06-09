@@ -4,12 +4,14 @@ class RegisterProfileRequest {
   final String gender;
   final String collegeName;
   final String rollNumber;
+  final String email;
 
-  RegisterProfileRequest({
+  const RegisterProfileRequest({
     required this.fullName,
     required this.gender,
     required this.collegeName,
     required this.rollNumber,
+    required this.email,
   });
 
   /// Converts the profile request into JSON for API consumption.
@@ -19,6 +21,7 @@ class RegisterProfileRequest {
       'gender': gender,
       'collegeName': collegeName,
       'rollNumber': rollNumber,
+      'email': email,
     };
   }
 }

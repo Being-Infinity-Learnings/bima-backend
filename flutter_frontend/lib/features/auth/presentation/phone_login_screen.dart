@@ -1,6 +1,3 @@
-// Not in use 
-
-
 /// Login screen for users to sign into the application.
 ///
 /// This screen renders the email/password form and triggers auth actions.
@@ -13,27 +10,23 @@ import '../providers/auth_provider.dart';
 
 import '../../../shared/enums/auth_status.dart';
 
-class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+class PhoneLoginScreen extends ConsumerStatefulWidget {
+  const PhoneLoginScreen({super.key});
 
   @override
-  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<PhoneLoginScreen> createState() => _PhoneLoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _emailCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-
-  bool _obscure = true;
+  final _phoneCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
 
-    _emailCtrl.addListener(_clearError);
-    _passwordCtrl.addListener(_clearError);
+    _phoneCtrl.addListener(_clearError);
   }
 
   /// Clears the current auth error once the user edits any of the fields.
@@ -43,11 +36,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   void dispose() {
-    _emailCtrl.removeListener(_clearError);
-    _passwordCtrl.removeListener(_clearError);
-
-    _emailCtrl.dispose();
-    _passwordCtrl.dispose();
+    _phoneCtrl.removeListener(_clearError);
+    _phoneCtrl.dispose();
 
     super.dispose();
   }
@@ -58,9 +48,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return;
     }
 
-    await ref
-        .read(authProvider.notifier)
-        .login(email: _emailCtrl.text.trim(), password: _passwordCtrl.text);
+    final phone = _phoneCtrl.text.trim();
+
+    await ref.read(authProvider.notifier).sendOtp('+91$phone');
   }
 
   @override
@@ -74,6 +64,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authProvider);
 
     ref.listen(authProvider, (previous, next) {
+      if (next.verificationId != null) {
+        context.go('/otp');
+        return;
+      }
       switch (next.status) {
         case AuthStatus.pendingApproval:
           context.go('/approval');
@@ -139,7 +133,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Welcome back',
+                              'Welcome',
                               style: theme.textTheme.headlineMedium?.copyWith(
                                 fontWeight: FontWeight.w700,
                                 color: cs.onSurface,
@@ -149,7 +143,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             const SizedBox(height: 8),
 
                             Text(
-                              'Sign in to continue your learning journey',
+                              'Continue with your mobile number',
                               style: Theme.of(context).textTheme.bodyMedium
                                   ?.copyWith(color: cs.onSurfaceVariant),
                             ),
@@ -165,60 +159,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             const SizedBox(height: 28),
 
                             TextFormField(
-                              controller: _emailCtrl,
-                              keyboardType: TextInputType.emailAddress,
+                              controller: _phoneCtrl,
+                              keyboardType: TextInputType.phone,
+                              maxLength: 10,
                               decoration: const InputDecoration(
-                                labelText: 'Email address',
-                                hintText: 'you@example.com',
-                                prefixIcon: Icon(Icons.mail_outline_rounded),
+                                labelText: 'Mobile Number',
+                                prefixIcon: Icon(Icons.phone_outlined),
+                                prefixText: '+91 ',
                               ),
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
-                                  return 'Email is required';
+                                  return 'Mobile number is required';
                                 }
+
+                                if (value.trim().length != 10) {
+                                  return 'Enter a valid mobile number';
+                                }
+
                                 return null;
                               },
-                            ),
-
-                            const SizedBox(height: 18),
-
-                            TextFormField(
-                              controller: _passwordCtrl,
-                              obscureText: _obscure,
-                              decoration: InputDecoration(
-                                labelText: 'Password',
-                                prefixIcon: const Icon(
-                                  Icons.lock_outline_rounded,
-                                ),
-                                suffixIcon: IconButton(
-                                  icon: Icon(
-                                    _obscure
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
-                                  ),
-                                  onPressed: () {
-                                    setState(() {
-                                      _obscure = !_obscure;
-                                    });
-                                  },
-                                ),
-                              ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Password is required';
-                                }
-                                return null;
-                              },
-                            ),
-
-                            const SizedBox(height: 12),
-
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () {},
-                                child: const Text('Forgot password?'),
-                              ),
                             ),
 
                             const SizedBox(height: 8),
@@ -226,7 +185,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             SizedBox(
                               width: double.infinity,
                               child: PrimaryButton(
-                                label: 'Sign In',
+                                label: 'Continue',
                                 loading: authState.isLoading,
                                 onPressed: _submit,
                               ),
@@ -237,24 +196,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
 
                     const SizedBox(height: 24),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          "Don't have an account?",
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            context.go('/signup');
-                          },
-                          child: const Text('Create account'),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),

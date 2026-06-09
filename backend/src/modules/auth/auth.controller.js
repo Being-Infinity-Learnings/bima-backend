@@ -18,16 +18,13 @@ async function registerProfile(req, res) {
     const user = await authService.createUserProfile({
       firebaseUid: firebaseUser.uid,
 
-      email: firebaseUser.email,
+      email: validated.email,
 
       phone: firebaseUser.phone_number,
 
       fullName: validated.fullName,
-
       gender: validated.gender,
-
       collegeName: validated.collegeName,
-
       rollNumber: validated.rollNumber,
     });
 
