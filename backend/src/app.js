@@ -161,6 +161,28 @@ const options = {
             },
           },
         },
+        UpdateProfileRequest: {
+          type: "object",
+          properties: {
+            fullName: {
+              type: "string",
+              minLength: 2,
+              example: "Gourav Kumar",
+            },
+            gender: {
+              type: "string",
+              example: "Male",
+            },
+            collegeName: {
+              type: "string",
+              example: "ABC Institute of Technology",
+            },
+            rollNumber: {
+              type: "string",
+              example: "BIMA-2026-001",
+            },
+          },
+        },
         UserResponse: {
           type: "object",
           properties: {

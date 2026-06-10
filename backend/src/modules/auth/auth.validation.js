@@ -11,6 +11,15 @@ const registerProfileSchema = z.object({
   email: z.string().email("Invalid email address"),
 });
 
+const updateProfileSchema = z.object({
+  fullName: z.string().min(2).optional(),
+  gender: z.string().optional(),
+  collegeName: z.string().optional(),
+  rollNumber: z.string().optional(),
+  email: z.string().email("Invalid email address").optional(),
+});
+
 module.exports = {
   registerProfileSchema,
+  updateProfileSchema,
 };

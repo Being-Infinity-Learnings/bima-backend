@@ -2,7 +2,10 @@
 // - `registerProfile` creates a profile for the currently authenticated Firebase user
 // - `me` returns the authenticated user's database profile
 
-const { registerProfileSchema } = require("./auth.validation");
+const {
+  registerProfileSchema,
+  updateProfileSchema,
+} = require("./auth.validation");
 
 const authService = require("./auth.service");
 
@@ -67,7 +70,31 @@ async function me(req, res) {
   }
 }
 
+async function updateProfile(req, res) {
+  try {
+    const validated = updateProfileSchema.parse(req.body);
+
+    const firebaseUid = req.user.uid;
+
+    const updatedUser = await authService.updateUserProfile(
+      firebaseUid,
+      validated,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: updatedUser,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   registerProfile,
   me,
+  updateProfile,
 };

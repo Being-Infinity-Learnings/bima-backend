@@ -16,6 +16,8 @@ import '../features/auth/presentation/otp_verification_screen.dart';
 
 import '../features/auth/presentation/blocked_screen.dart';
 
+import '../core/navigation/app_shell.dart';
+
 /// The global router configuration for the app.
 ///
 /// This GoRouter instance maps paths to their corresponding screens.
@@ -40,7 +42,8 @@ final appRouter = GoRouter(
       builder: (context, state) => const WaitingApprovalScreen(),
     ),
 
-    GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
+    GoRoute(path: '/home', builder: (context, state) => const AppShell()),
+
     GoRoute(
       path: '/otp',
       builder: (context, state) => const OtpVerificationScreen(),

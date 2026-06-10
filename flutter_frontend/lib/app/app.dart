@@ -4,6 +4,7 @@
 /// behavior.
 import 'package:flutter/material.dart';
 
+
 import 'router.dart';
 
 import 'theme.dart';
@@ -15,6 +16,7 @@ class App extends StatelessWidget {
   /// Builds the root MaterialApp router with light/dark theme configuration.
   Widget build(BuildContext context) {
     return MaterialApp.router(
+      // scrollBehavior: const AppScrollBehavior(),
       debugShowCheckedModeBanner: false,
 
       theme: AppTheme.lightTheme,

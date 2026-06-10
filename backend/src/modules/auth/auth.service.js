@@ -29,7 +29,17 @@ async function getUserByFirebaseUid(firebaseUid) {
   });
 }
 
+async function updateUserProfile(firebaseUid, data) {
+  return await prisma.user.update({
+    where: {
+      firebaseUid,
+    },
+    data,
+  });
+}
+
 module.exports = {
   createUserProfile,
   getUserByFirebaseUid,
+  updateUserProfile,
 };

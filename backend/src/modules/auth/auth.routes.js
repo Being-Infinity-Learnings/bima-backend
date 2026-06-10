@@ -149,5 +149,34 @@ router.get("/test", authenticate, (req, res) => {
     firebaseUser: req.user,
   });
 });
+/**
+ * @swagger
+ * /auth/me:
+ *   patch:
+ *     summary: Update authenticated user's profile
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UpdateProfileRequest'
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UserResponse'
+ *       401:
+ *         description: Missing or invalid authentication token
+ *       403:
+ *         description: Authenticated account is blocked
+ *       404:
+ *         description: User profile not found
+ */
+router.patch("/me", authenticate, authController.updateProfile);
 
 module.exports = router;

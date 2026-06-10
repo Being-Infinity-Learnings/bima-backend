@@ -42,7 +42,7 @@ class AuthState {
       status: status ?? this.status,
       user: user ?? this.user,
       isLoading: isLoading ?? this.isLoading,
-      errorMessage: errorMessage,
+      errorMessage: this.errorMessage,
       verificationId: verificationId ?? this.verificationId,
       phoneNumber: phoneNumber ?? this.phoneNumber,
     );
