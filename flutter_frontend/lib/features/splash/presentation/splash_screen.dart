@@ -38,7 +38,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           break;
 
         case AuthStatus.profileIncomplete:
-          context.go('/signup');
+          context.go('/complete-profile');
           break;
 
         case AuthStatus.pendingApproval:

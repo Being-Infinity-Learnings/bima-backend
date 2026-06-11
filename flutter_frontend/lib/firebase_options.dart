@@ -50,19 +50,20 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyATop1IKo2W2a76ngnIq92BZYW5Ioon3LY',
-    appId: '1:9986530081:android:658e4c05a16633b2857c60',
-    messagingSenderId: '9986530081',
-    projectId: 'bima-f83d5',
-    storageBucket: 'bima-f83d5.firebasestorage.app',
+    apiKey: 'AIzaSyDphisnr7vX_AODnGR4fvEtBl-TgTM60go',
+    appId: '1:149920918666:android:e7224741d1cf7383d49173',
+    messagingSenderId: '149920918666',
+    projectId: 'beinginfinity-36b21',
+    storageBucket: 'beinginfinity-36b21.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAzrx_aK5nZhLmI2YUPnFffrKHaCACK5kY',
-    appId: '1:9986530081:ios:46307cbe994deb1b857c60',
-    messagingSenderId: '9986530081',
-    projectId: 'bima-f83d5',
-    storageBucket: 'bima-f83d5.firebasestorage.app',
-    iosBundleId: 'com.example.flutterFrontend',
+    apiKey: 'AIzaSyDobnH1_OUjmP1CTu7bqcR5NQFMWGjP338',
+    appId: '1:149920918666:ios:d20edf4f0754da94d49173',
+    messagingSenderId: '149920918666',
+    projectId: 'beinginfinity-36b21',
+    storageBucket: 'beinginfinity-36b21.firebasestorage.app',
+    iosBundleId: 'com.beinginfinity.bima',
   );
+
 }
