@@ -1,18 +1,20 @@
 /// Application route definitions.
 ///
 /// This file defines the URL routes and corresponding screens used by the app.
+import 'package:flutter_frontend/features/auth/presentation/phone_login_screen.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/splash/presentation/splash_screen.dart';
-
-import '../features/auth/presentation/login_screen.dart';
 
 import '../features/home/presentation/home_screen.dart';
 
 import '../features/approval/presentation/waiting_approval_screen.dart';
 
 import '../features/auth/presentation/complete_profile_screen.dart';
-import '../features/auth/presentation/register_screen.dart';
+
+import '../features/auth/presentation/otp_verification_screen.dart';
+
+import '../features/auth/presentation/blocked_screen.dart';
 
 /// The global router configuration for the app.
 ///
@@ -22,11 +24,10 @@ final appRouter = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
 
-    GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
-
+    // GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
     GoRoute(
-      path: '/signup',
-      builder: (context, state) => const RegisterScreen(),
+      path: '/login',
+      builder: (context, state) => const PhoneLoginScreen(),
     ),
 
     GoRoute(
@@ -40,5 +41,14 @@ final appRouter = GoRouter(
     ),
 
     GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
+    GoRoute(
+      path: '/otp',
+      builder: (context, state) => const OtpVerificationScreen(),
+    ),
+
+    GoRoute(
+      path: '/blocked',
+      builder: (context, state) => const BlockedScreen(),
+    ),
   ],
 );

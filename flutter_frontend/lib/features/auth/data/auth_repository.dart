@@ -68,4 +68,36 @@ class AuthRepository {
 
     return UserModel.fromJson(response.data['data']);
   }
+
+  Future<void> verifyPhoneNumber({
+    required String phoneNumber,
+    required PhoneVerificationCompleted verificationCompleted,
+    required PhoneVerificationFailed verificationFailed,
+    required PhoneCodeSent codeSent,
+    required PhoneCodeAutoRetrievalTimeout codeAutoRetrievalTimeout,
+  }) {
+    return FirebaseAuth.instance.verifyPhoneNumber(
+      phoneNumber: phoneNumber,
+
+      verificationCompleted: verificationCompleted,
+
+      verificationFailed: verificationFailed,
+
+      codeSent: codeSent,
+
+      codeAutoRetrievalTimeout: codeAutoRetrievalTimeout,
+    );
+  }
+
+  Future<UserCredential> signInWithOtp({
+    required String verificationId,
+    required String otp,
+  }) async {
+    final credential = PhoneAuthProvider.credential(
+      verificationId: verificationId,
+      smsCode: otp,
+    );
+
+    return FirebaseAuth.instance.signInWithCredential(credential);
+  }
 }

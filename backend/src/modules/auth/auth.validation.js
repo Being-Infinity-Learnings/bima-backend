@@ -8,6 +8,7 @@ const registerProfileSchema = z.object({
   gender: z.string(),
   collegeName: z.string(),
   rollNumber: z.string(),
+  email: z.string().email("Invalid email address"),
 });
 
 module.exports = {
