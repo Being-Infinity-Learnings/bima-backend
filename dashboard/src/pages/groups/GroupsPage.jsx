@@ -1,7 +1,7 @@
 // Group management page for admins and authors.
 //
-// Allows creating/editing groups, managing memberships, and deleting groups.
-import { useState, useEffect, useCallback } from "react";
+// Allows creating/editing groups, managing memberships (including bulk file upload), and deleting groups.
+import { useState, useEffect, useCallback, useRef } from "react";
 import { groupsApi, adminApi } from "../../services/api.service.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import {
@@ -19,7 +19,7 @@ import APP_CONFIG from "../../config/app.config.js";
 
 const T = APP_CONFIG.theme;
 
-// Modal used for group creation and editing.
+// ── Group form (create / edit) ────────────────────────────────────────────
 function GroupFormModal({ open, onClose, group, onSaved }) {
   const isEdit = !!group;
   const [name, setName] = useState(group?.name || "");
@@ -35,17 +35,14 @@ function GroupFormModal({ open, onClose, group, onSaved }) {
     }
   }, [open, group]);
 
-  // Submit handler for creating or updating a group.
   async function submit(e) {
     e.preventDefault();
     if (!name.trim()) {
       setError("Name is required.");
       return;
     }
-
     setLoading(true);
     setError("");
-
     try {
       if (isEdit) {
         await groupsApi.update(group.id, {
@@ -60,7 +57,6 @@ function GroupFormModal({ open, onClose, group, onSaved }) {
         });
         toast("Group created.", "success");
       }
-
       onSaved();
       onClose();
     } catch (err) {
@@ -130,17 +126,23 @@ function GroupFormModal({ open, onClose, group, onSaved }) {
   );
 }
 
-// Modal to show and manage group membership.
+// ── Members modal with bulk file upload ───────────────────────────────────
 function MembersModal({ open, onClose, group, allUsers }) {
   const [members, setMembers] = useState([]);
   const [loadingM, setLoadingM] = useState(false);
   const [search, setSearch] = useState("");
   const [actionId, setActionId] = useState(null);
 
-  // Load the current members of the selected group from the backend.
+  // Bulk file upload state
+  const [tab, setTab] = useState("members"); // "members" | "search" | "file"
+  const [fileText, setFileText] = useState("");
+  const [fileError, setFileError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState(null);
+  const fileInputRef = useRef(null);
+
   const loadMembers = useCallback(async () => {
     if (!group) return;
-
     setLoadingM(true);
     try {
       const data = await groupsApi.getMembers(group.id);
@@ -153,21 +155,24 @@ function MembersModal({ open, onClose, group, allUsers }) {
   }, [group]);
 
   useEffect(() => {
-    if (open) loadMembers();
+    if (open) {
+      loadMembers();
+      setTab("members");
+      setFileText("");
+      setUploadResult(null);
+      setFileError("");
+    }
   }, [open, loadMembers]);
 
-  const memberIds = new Set(
-    members.map((member) => member.id || member.userId),
-  );
+  const memberIds = new Set(members.map((m) => m.id || m.userId));
   const query = search.toLowerCase();
   const nonMembers = allUsers.filter(
-    (user) =>
-      !memberIds.has(user.id) &&
-      (user.email?.toLowerCase().includes(query) ||
-        user.fullName?.toLowerCase().includes(query)),
+    (u) =>
+      !memberIds.has(u.id) &&
+      (u.email?.toLowerCase().includes(query) ||
+        u.fullName?.toLowerCase().includes(query)),
   );
 
-  // Add a user to the selected group.
   async function addUser(userId) {
     setActionId(userId);
     try {
@@ -181,7 +186,6 @@ function MembersModal({ open, onClose, group, allUsers }) {
     }
   }
 
-  // Remove a user from the selected group.
   async function removeUser(userId) {
     setActionId(userId);
     try {
@@ -195,123 +199,194 @@ function MembersModal({ open, onClose, group, allUsers }) {
     }
   }
 
+  // Parse a file (txt/csv) into an array of trimmed identifiers
+  function parseFileContent(text) {
+    return text
+      .split(/[\n,;]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0);
+  }
+
+  function handleFileSelect(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setFileText(ev.target.result);
+      setFileError("");
+      setUploadResult(null);
+    };
+    reader.onerror = () => setFileError("Could not read file.");
+    reader.readAsText(file);
+  }
+
+  async function submitFileUpload() {
+    const identifiers = parseFileContent(fileText);
+    if (identifiers.length === 0) {
+      setFileError(
+        "No identifiers found. Add emails or phone numbers, one per line.",
+      );
+      return;
+    }
+    setUploading(true);
+    setFileError("");
+    setUploadResult(null);
+    try {
+      const result = await groupsApi.bulkAssignByFile(group.id, identifiers);
+      setUploadResult(result);
+      toast(`Done — ${result.added} added.`, "success");
+      await loadMembers();
+    } catch (err) {
+      setFileError(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const TAB_STYLE = (active) => ({
+    padding: "7px 14px",
+    borderRadius: 8,
+    fontSize: 12,
+    fontWeight: active ? 700 : 500,
+    cursor: "pointer",
+    border: "1px solid",
+    fontFamily: "inherit",
+    borderColor: active ? T.primary : T.cardBorder,
+    background: active ? T.primaryLight : "transparent",
+    color: active ? T.primaryText : T.textMuted,
+    transition: "all 0.12s",
+  });
+
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={`Members - ${group?.name}`}
-      width={520}
+      title={`Members — ${group?.name}`}
+      width={540}
     >
-      <div style={{ marginBottom: 20 }}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: T.textMuted,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            marginBottom: 10,
-          }}
+      {/* Tab switcher */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
+        <button
+          style={TAB_STYLE(tab === "members")}
+          onClick={() => setTab("members")}
         >
-          Current Members ({members.length})
-        </div>
-        {loadingM ? (
-          <div
-            style={{ display: "flex", justifyContent: "center", padding: 20 }}
-          >
-            <Spinner size={24} />
-          </div>
-        ) : members.length === 0 ? (
-          <EmptyState
-            icon="Group"
-            title="No members yet"
-            subtitle="Add users from the list below"
-          />
-        ) : (
-          <div
-            style={{
-              maxHeight: 200,
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}
-          >
-            {members.map((member) => (
-              <div
-                key={member.id || member.userId}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  background: T.pageBg,
-                }}
-              >
-                <Avatar name={member.fullName || member.email} size={30} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: T.textPrimary,
-                    }}
-                  >
-                    {member.fullName || "-"}
-                  </div>
-                  <div style={{ fontSize: 11, color: T.textMuted }}>
-                    {member.email}
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  onClick={() => removeUser(member.id || member.userId)}
-                  disabled={!!actionId}
-                >
-                  {actionId === (member.id || member.userId) ? (
-                    <Spinner size={12} />
-                  ) : (
-                    "Remove"
-                  )}
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
+          Current ({members.length})
+        </button>
+        <button
+          style={TAB_STYLE(tab === "search")}
+          onClick={() => setTab("search")}
+        >
+          Add by Search
+        </button>
+        <button
+          style={TAB_STYLE(tab === "file")}
+          onClick={() => setTab("file")}
+        >
+          Bulk Upload
+        </button>
       </div>
 
-      <div style={{ borderTop: `1px solid ${T.cardBorder}`, paddingTop: 16 }}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: T.textMuted,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            marginBottom: 10,
-          }}
-        >
-          Add Users
-        </div>
-        <Input
-          placeholder="Search by name or email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ marginBottom: 10 }}
-        />
-        {search && (
+      {/* ── Current Members tab ── */}
+      {tab === "members" && (
+        <>
+          {loadingM ? (
+            <div
+              style={{ display: "flex", justifyContent: "center", padding: 20 }}
+            >
+              <Spinner size={24} />
+            </div>
+          ) : members.length === 0 ? (
+            <EmptyState
+              icon="Group"
+              title="No members yet"
+              subtitle='Use "Add by Search" or "Bulk Upload" to add users.'
+            />
+          ) : (
+            <div
+              style={{
+                maxHeight: 360,
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              {members.map((member) => (
+                <div
+                  key={member.id || member.userId}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    background: T.pageBg,
+                  }}
+                >
+                  <Avatar name={member.fullName || member.email} size={30} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: T.textPrimary,
+                      }}
+                    >
+                      {member.fullName || "-"}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textMuted }}>
+                      {member.email}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => removeUser(member.id || member.userId)}
+                    disabled={!!actionId}
+                  >
+                    {actionId === (member.id || member.userId) ? (
+                      <Spinner size={12} />
+                    ) : (
+                      "Remove"
+                    )}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Add by Search tab ── */}
+      {tab === "search" && (
+        <>
+          <Input
+            placeholder="Search by name or email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ marginBottom: 10 }}
+          />
           <div
             style={{
-              maxHeight: 200,
+              maxHeight: 320,
               overflowY: "auto",
               display: "flex",
               flexDirection: "column",
               gap: 4,
             }}
           >
-            {nonMembers.length === 0 ? (
+            {!search ? (
+              <div
+                style={{
+                  color: T.textMuted,
+                  fontSize: 13,
+                  textAlign: "center",
+                  padding: 20,
+                }}
+              >
+                Type to search users not yet in this group
+              </div>
+            ) : nonMembers.length === 0 ? (
               <EmptyState icon="Search" title="No results" />
             ) : (
               nonMembers.map((user) => (
@@ -356,17 +431,162 @@ function MembersModal({ open, onClose, group, allUsers }) {
               ))
             )}
           </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {/* ── Bulk Upload tab ── */}
+      {tab === "file" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div
+            style={{
+              padding: "12px 16px",
+              borderRadius: 10,
+              background: T.pageBg,
+              border: `1px solid ${T.cardBorder}`,
+              fontSize: 12,
+              color: T.textMuted,
+              lineHeight: 1.7,
+            }}
+          >
+            Upload a <strong style={{ color: T.textSecondary }}>.txt</strong> or{" "}
+            <strong style={{ color: T.textSecondary }}>.csv</strong> file
+            containing email addresses or phone numbers — one per line, or
+            comma/semicolon-separated. Users are matched by their registered
+            email or phone.
+          </div>
+
+          {/* File picker */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              border: `2px dashed ${T.cardBorder}`,
+              borderRadius: 12,
+              padding: "20px 16px",
+              textAlign: "center",
+              cursor: "pointer",
+              background: T.pageBg,
+              transition: "border-color 0.15s",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.borderColor = T.primary)
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.borderColor = T.cardBorder)
+            }
+          >
+            <div style={{ fontSize: 22, marginBottom: 6 }}>📂</div>
+            <div
+              style={{ fontSize: 13, color: T.textSecondary, fontWeight: 600 }}
+            >
+              Click to choose a file
+            </div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
+              .txt or .csv, plain text identifiers
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.csv,text/plain,text/csv"
+              style={{ display: "none" }}
+              onChange={handleFileSelect}
+            />
+          </div>
+
+          {/* Preview / edit area */}
+          {fileText && (
+            <div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: T.textMuted,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.07em",
+                  marginBottom: 6,
+                }}
+              >
+                Preview — edit if needed
+              </div>
+              <textarea
+                value={fileText}
+                onChange={(e) => {
+                  setFileText(e.target.value);
+                  setUploadResult(null);
+                  setFileError("");
+                }}
+                rows={7}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  background: T.pageBg,
+                  border: `1px solid ${T.cardBorder}`,
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  color: T.textPrimary,
+                  fontSize: 12,
+                  fontFamily: "monospace",
+                  resize: "vertical",
+                  outline: "none",
+                }}
+              />
+              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
+                {parseFileContent(fileText).length} identifier
+                {parseFileContent(fileText).length !== 1 ? "s" : ""} detected
+              </div>
+            </div>
+          )}
+
+          {fileError && (
+            <div
+              style={{
+                background: T.danger.bg,
+                color: T.danger.text,
+                borderRadius: 8,
+                padding: "10px 14px",
+                fontSize: 13,
+              }}
+            >
+              {fileError}
+            </div>
+          )}
+
+          {uploadResult && (
+            <div
+              style={{
+                background: T.success.bg,
+                color: T.success.text,
+                borderRadius: 8,
+                padding: "12px 14px",
+                fontSize: 13,
+              }}
+            >
+              <strong>Upload complete</strong> — {uploadResult.added} added,{" "}
+              {uploadResult.skipped} already in group, {uploadResult.notFound}{" "}
+              not found.
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button
+              onClick={submitFileUpload}
+              disabled={!fileText.trim() || uploading}
+            >
+              {uploading ? (
+                <Spinner size={14} color="rgba(255,255,255,0.7)" />
+              ) : (
+                "Import Users"
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }
 
-// Confirmation modal for deleting a group permanently.
+// ── Delete confirm ────────────────────────────────────────────────────────
 function DeleteModal({ open, onClose, group, onDeleted }) {
   const [loading, setLoading] = useState(false);
-
-  // Send group deletion request and refresh the list on success.
   async function confirm() {
     setLoading(true);
     try {
@@ -380,7 +600,6 @@ function DeleteModal({ open, onClose, group, onDeleted }) {
       setLoading(false);
     }
   }
-
   return (
     <Modal open={open} onClose={onClose} title="Delete Group" width={400}>
       <p style={{ color: T.textSecondary, fontSize: 14, marginBottom: 24 }}>
@@ -403,6 +622,7 @@ function DeleteModal({ open, onClose, group, onDeleted }) {
   );
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────
 export default function GroupsPage() {
   const { role } = useAuth();
   const isAdmin = role === "ADMIN";
@@ -416,7 +636,6 @@ export default function GroupsPage() {
   const [membersGroup, setMembersGroup] = useState(null);
   const [deleteGroup, setDeleteGroup] = useState(null);
 
-  // Load all groups and, for admins, all users for membership assignment.
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -424,7 +643,6 @@ export default function GroupsPage() {
         groupsApi.getAll(),
         isAdmin ? adminApi.getAllUsers() : Promise.resolve([]),
       ]);
-
       setGroups(Array.isArray(groupData) ? groupData : []);
       setAllUsers(Array.isArray(userData) ? userData : []);
     } catch (err) {

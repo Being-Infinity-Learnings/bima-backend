@@ -171,3 +171,21 @@ module.exports = {
   getUserById,
   getUserGroups,
 };
+
+// Handler: bulkApproveUsers(req, res)
+async function bulkApproveUsers(req, res) {
+  try {
+    const { userIds } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "userIds must be a non-empty array" });
+    }
+    const result = await adminService.bulkApproveUsers(userIds);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+Object.assign(module.exports, { bulkApproveUsers });

@@ -108,3 +108,18 @@ module.exports = {
   getUserById,
   getUserGroups,
 };
+
+// Bulk-approve an array of user IDs. Returns count of updated records.
+async function bulkApproveUsers(userIds) {
+  const result = await prisma.user.updateMany({
+    where: {
+      id: { in: userIds },
+      approved: false,
+      blocked: false,
+    },
+    data: { approved: true },
+  });
+  return { approved: result.count };
+}
+
+Object.assign(module.exports, { bulkApproveUsers });

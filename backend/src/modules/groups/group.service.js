@@ -245,6 +245,86 @@ async function updateGroup(groupId, updateData) {
   });
 }
 
+// Bulk-assign an array of user IDs to a group.
+// Skips duplicates gracefully; returns counts of added and skipped.
+async function bulkAssignUsersByIds(groupId, userIds) {
+  const group = await prisma.group.findUnique({ where: { id: groupId } });
+  if (!group) throw new Error("Group not found");
+
+  // Find which of the given IDs are valid users
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true },
+  });
+  const validIds = new Set(users.map((u) => u.id));
+
+  // Find already-existing memberships to skip
+  const existing = await prisma.userGroup.findMany({
+    where: { groupId, userId: { in: [...validIds] } },
+    select: { userId: true },
+  });
+  const existingIds = new Set(existing.map((m) => m.userId));
+
+  const toAdd = [...validIds].filter((id) => !existingIds.has(id));
+
+  if (toAdd.length > 0) {
+    await prisma.userGroup.createMany({
+      data: toAdd.map((userId) => ({ userId, groupId })),
+      skipDuplicates: true,
+    });
+  }
+
+  return {
+    added: toAdd.length,
+    skipped: existingIds.size,
+    notFound: userIds.length - validIds.size,
+  };
+}
+
+// Bulk-add users to a group by matching email addresses or phone numbers
+// parsed from an uploaded file's text content.
+// Returns per-identifier results so the client can show a summary.
+async function bulkAssignUsersByIdentifiers(groupId, identifiers) {
+  const group = await prisma.group.findUnique({ where: { id: groupId } });
+  if (!group) throw new Error("Group not found");
+
+  const emails = identifiers.filter((s) => s.includes("@"));
+  const phones = identifiers.filter((s) => !s.includes("@"));
+
+  const users = await prisma.user.findMany({
+    where: {
+      OR: [
+        ...(emails.length ? [{ email: { in: emails } }] : []),
+        ...(phones.length ? [{ phone: { in: phones } }] : []),
+      ],
+    },
+    select: { id: true, email: true, phone: true },
+  });
+
+  const foundIds = users.map((u) => u.id);
+
+  const existing = await prisma.userGroup.findMany({
+    where: { groupId, userId: { in: foundIds } },
+    select: { userId: true },
+  });
+  const existingIds = new Set(existing.map((m) => m.userId));
+
+  const toAdd = foundIds.filter((id) => !existingIds.has(id));
+
+  if (toAdd.length > 0) {
+    await prisma.userGroup.createMany({
+      data: toAdd.map((userId) => ({ userId, groupId })),
+      skipDuplicates: true,
+    });
+  }
+
+  return {
+    added: toAdd.length,
+    skipped: existingIds.size,
+    notFound: identifiers.length - users.length,
+  };
+}
+
 module.exports = {
   createGroup,
   getAllGroups,
@@ -254,4 +334,6 @@ module.exports = {
   getGroupMembers,
   deleteGroup,
   updateGroup,
+  bulkAssignUsersByIds,
+  bulkAssignUsersByIdentifiers,
 };

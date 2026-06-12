@@ -469,4 +469,79 @@ router.delete(
   groupController.deleteGroup,
 );
 
+/**
+ * @swagger
+ * /groups/{groupId}/bulk-assign:
+ *   post:
+ *     summary: Bulk-assign users to a group by user ID array
+ *     tags: [Groups]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userIds]
+ *             properties:
+ *               userIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Bulk assignment result with added/skipped/notFound counts
+ */
+router.post(
+  "/:groupId/bulk-assign",
+  authenticate,
+  authorize("ADMIN"),
+  groupController.bulkAssignUsersByIds,
+);
+
+/**
+ * @swagger
+ * /groups/{groupId}/bulk-assign-by-file:
+ *   post:
+ *     summary: Bulk-assign users to a group by email/phone identifiers from a file
+ *     tags: [Groups]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [identifiers]
+ *             properties:
+ *               identifiers:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of email addresses or phone numbers
+ *     responses:
+ *       200:
+ *         description: Bulk assignment result with added/skipped/notFound counts
+ */
+router.post(
+  "/:groupId/bulk-assign-by-file",
+  authenticate,
+  authorize("ADMIN"),
+  groupController.bulkAssignUsersByFile,
+);
+
 module.exports = router;

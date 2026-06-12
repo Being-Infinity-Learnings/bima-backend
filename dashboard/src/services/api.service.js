@@ -82,6 +82,8 @@ export const adminApi = {
     request("PATCH", `/admin/users/${id}/role`, { role }),
   getUserById: (id) => request("GET", `/admin/users/${id}`),
   getUserGroups: (id) => request("GET", `/admin/users/${id}/groups`),
+  bulkApproveUsers: (userIds) =>
+    request("POST", "/admin/users/bulk-approve", { userIds }),
 };
 
 export const groupsApi = {
@@ -93,4 +95,8 @@ export const groupsApi = {
   getMembers: (id) => request("GET", `/groups/${id}/users`),
   addUser: (gId, uId) => request("POST", `/groups/${gId}/users/${uId}`),
   removeUser: (gId, uId) => request("DELETE", `/groups/${gId}/users/${uId}`),
+  bulkAssignUsers: (gId, userIds) =>
+    request("POST", `/groups/${gId}/bulk-assign`, { userIds }),
+  bulkAssignByFile: (gId, identifiers) =>
+    request("POST", `/groups/${gId}/bulk-assign-by-file`, { identifiers }),
 };

@@ -181,3 +181,59 @@ module.exports = {
   deleteGroup,
   updateGroup,
 };
+
+// Handler: bulkAssignUsersByIds(req, res)
+// - Assigns multiple users (by ID array in body) to a group in one shot.
+async function bulkAssignUsersByIds(req, res) {
+  try {
+    const { groupId } = req.params;
+    const { userIds } = req.body;
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "userIds must be a non-empty array",
+      });
+    }
+
+    const result = await groupService.bulkAssignUsersByIds(groupId, userIds);
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error.message });
+  }
+}
+
+// Handler: bulkAssignUsersByFile(req, res)
+// - Parses a plain-text body of email/phone identifiers (one per line or comma-separated)
+//   and adds matched users to the group.
+async function bulkAssignUsersByFile(req, res) {
+  try {
+    const { groupId } = req.params;
+    const { identifiers } = req.body;
+
+    if (!Array.isArray(identifiers) || identifiers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "identifiers must be a non-empty array of emails or phone numbers",
+      });
+    }
+
+    const cleaned = identifiers
+      .map((s) => String(s).trim().toLowerCase())
+      .filter(Boolean);
+
+    const result = await groupService.bulkAssignUsersByIdentifiers(
+      groupId,
+      cleaned,
+    );
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error.message });
+  }
+}
+
+// Re-export everything including new handlers
+Object.assign(module.exports, { bulkAssignUsersByIds, bulkAssignUsersByFile });

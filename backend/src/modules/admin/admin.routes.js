@@ -453,4 +453,41 @@ router.get(
   adminController.getUserGroups,
 );
 
+/**
+ * @swagger
+ * /admin/users/bulk-approve:
+ *   post:
+ *     summary: Approve multiple users at once
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userIds]
+ *             properties:
+ *               userIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Users approved successfully
+ *       400:
+ *         description: Invalid request body
+ *       401:
+ *         description: Missing or invalid authentication token
+ *       403:
+ *         description: Forbidden for non-admin users
+ */
+router.post(
+  "/users/bulk-approve",
+  authenticate,
+  authorize("ADMIN"),
+  adminController.bulkApproveUsers,
+);
+
 module.exports = router;
