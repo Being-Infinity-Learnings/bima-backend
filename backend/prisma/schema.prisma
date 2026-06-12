@@ -37,6 +37,9 @@ model User {
   groupMemberships UserGroup[]
   createdGroups    Group[]     @relation("GroupCreator")
 
+  fcmTokens    FcmToken[]
+  notifications Notification[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -70,4 +73,56 @@ model UserGroup {
   createdAt DateTime @default(now())
 
   @@id([userId, groupId])
+}
+
+model FcmToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String   // "android" | "ios"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  body      String
+  type      NotificationType @default(ANNOUNCEMENT)
+  
+  // Targeting
+  targetType  NotifTargetType @default(ALL)
+  groupId     String?         // set when targetType = GROUP
+
+  // Scheduling
+  sendAt    DateTime?   // null = immediate
+  sentAt    DateTime?   // null = not yet sent
+  status    NotifStatus @default(PENDING)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum NotificationType {
+  QUIZ_REMINDER
+  ANNOUNCEMENT
+  CONTEST
+  RESULT
+}
+
+enum NotifTargetType {
+  ALL
+  GROUP
+  APPROVED_ONLY
+}
+
+enum NotifStatus {
+  PENDING
+  SENT
+  FAILED
 }

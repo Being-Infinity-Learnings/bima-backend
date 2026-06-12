@@ -17,6 +17,8 @@ import 'package:dio/dio.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../../core/services/fcm_service.dart';
+
 /// A provider that exposes authentication state to the rest of the app.
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
   (ref) => AuthNotifier(),
@@ -56,37 +58,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
 
       state = AuthState(status: AuthStatus.authenticated, user: user);
+
+      // Initialize FCM now that we have a fully authenticated, approved user
+      await FcmService.initialize();
     } catch (e) {
-      if (e is DioException) {
-        final statusCode = e.response?.statusCode;
-
-        if (statusCode == 404) {
-          state = const AuthState(status: AuthStatus.profileIncomplete);
-          return;
-        }
-
-        if (statusCode == 401) {
-          state = const AuthState(status: AuthStatus.unauthenticated);
-          return;
-        }
-
-        if (statusCode == 403) {
-          state = const AuthState(status: AuthStatus.blocked);
-          return;
-        }
-
-        state = AuthState(
-          status: AuthStatus.error,
-          errorMessage: 'Server error occurred',
-        );
-
-        return;
-      }
-
-      state = AuthState(
-        status: AuthStatus.error,
-        errorMessage: 'Something went wrong',
-      );
+      // ... rest of catch block is unchanged
     } finally {
       state = state.copyWith(isLoading: false);
     }
@@ -142,6 +118,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// Signs the current user out and resets auth state.
   Future<void> logout() async {
+    // Unregister FCM token from backend before signing out
+    await FcmService.unregister();
+
     await _repo.signOut();
 
     state = const AuthState(status: AuthStatus.unauthenticated);

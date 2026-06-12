@@ -100,3 +100,9 @@ export const groupsApi = {
   bulkAssignByFile: (gId, identifiers) =>
     request("POST", `/groups/${gId}/bulk-assign-by-file`, { identifiers }),
 };
+
+export const notificationsApi = {
+  send: (body) => request("POST", "/notifications/send", body),
+  list: () => request("GET", "/notifications"),
+  myNotifications: () => request("GET", "/notifications/my"),
+};

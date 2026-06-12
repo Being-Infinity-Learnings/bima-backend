@@ -1,106 +1,103 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:dio/dio.dart';
+import '../../../config/environment.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dummy data model
+// Data model
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum _NotifType { quizReminder, announcement, result, contest }
 
 class _Notif {
+  final String id;
   final String title;
   final String body;
-  final String time;
+  final String timeLabel;
   final _NotifType type;
-  final bool isUnread;
 
   const _Notif({
+    required this.id,
     required this.title,
     required this.body,
-    required this.time,
+    required this.timeLabel,
     required this.type,
-    this.isUnread = false,
   });
+
+  factory _Notif.fromJson(Map<String, dynamic> json) {
+    final typeStr = (json['type'] as String? ?? 'ANNOUNCEMENT').toUpperCase();
+    _NotifType type;
+    switch (typeStr) {
+      case 'QUIZ_REMINDER':
+        type = _NotifType.quizReminder;
+        break;
+      case 'RESULT':
+        type = _NotifType.result;
+        break;
+      case 'CONTEST':
+        type = _NotifType.contest;
+        break;
+      default:
+        type = _NotifType.announcement;
+    }
+
+    final sentAt = json['sentAt'] != null
+        ? DateTime.tryParse(json['sentAt'])
+        : null;
+    final timeLabel = sentAt != null ? _formatRelativeTime(sentAt) : 'Just now';
+
+    return _Notif(
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
+      body: json['body'] ?? '',
+      timeLabel: timeLabel,
+      type: type,
+    );
+  }
+
+  static String _formatRelativeTime(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays} days ago';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
 }
 
-const _dummyNotifs = [
-  _Notif(
-    title: 'Daily Quiz #14 starts in 30 min!',
-    body: 'Get ready — 20 questions, autopilot mode. Lobby is now open.',
-    time: 'Just now',
-    type: _NotifType.quizReminder,
-    isUnread: true,
-  ),
-  _Notif(
-    title: 'You ranked #4 in Daily Quiz #13',
-    body: 'Great performance! You scored 860 pts out of 127 participants.',
-    time: '2h ago',
-    type: _NotifType.result,
-    isUnread: true,
-  ),
-  _Notif(
-    title: 'Daily Quiz #14 tonight at 9:00 PM',
-    body: 'Tonight\'s quiz covers Aptitude & Reasoning. Set a reminder!',
-    time: '9:00 AM',
-    type: _NotifType.quizReminder,
-    isUnread: true,
-  ),
-  _Notif(
-    title: 'CodeChef Starters 140 — Register Now',
-    body:
-        'CodeChef\'s weekly rated contest is live. Don\'t miss it this Wednesday.',
-    time: 'Yesterday',
-    type: _NotifType.contest,
-    isUnread: false,
-  ),
-  _Notif(
-    title: 'Weekly Special Quiz this Friday!',
-    body:
-        'A special 25-question challenge with a bigger leaderboard is scheduled for Friday 7 PM.',
-    time: '2 days ago',
-    type: _NotifType.announcement,
-    isUnread: false,
-  ),
-  _Notif(
-    title: 'You ranked #2 in Aptitude Challenge',
-    body: 'Outstanding! 1240 pts. You came within 80 pts of first place.',
-    time: '3 days ago',
-    type: _NotifType.result,
-    isUnread: false,
-  ),
-  _Notif(
-    title: 'Codeforces Round 1020 — Announced',
-    body:
-        'Codeforces Div. 2 round scheduled this Saturday. Practice problems are live.',
-    time: '4 days ago',
-    type: _NotifType.contest,
-    isUnread: false,
-  ),
-  _Notif(
-    title: 'Platform update — Streak tracking is live',
-    body:
-        'You can now see your daily quiz streak on the home screen. Keep it going!',
-    time: '5 days ago',
-    type: _NotifType.announcement,
-    isUnread: false,
-  ),
-];
+// ─────────────────────────────────────────────────────────────────────────────
+// Provider
+// ─────────────────────────────────────────────────────────────────────────────
+
+final _notificationsProvider = FutureProvider<List<_Notif>>((ref) async {
+  final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+  if (idToken == null) return [];
+
+  final dio = Dio(BaseOptions(
+    baseUrl: Environment.apiBaseUrl,
+    headers: {'Authorization': 'Bearer $idToken'},
+  ));
+
+  final response = await dio.get('/notifications/my');
+  final List data = response.data['data'] ?? [];
+  return data.map((e) => _Notif.fromJson(e as Map<String, dynamic>)).toList();
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
 
-  int get _unreadCount => _dummyNotifs.where((n) => n.isUnread).length;
-
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
-    final unread = _dummyNotifs.where((n) => n.isUnread).toList();
-    final read = _dummyNotifs.where((n) => !n.isUnread).toList();
+    final asyncNotifs = ref.watch(_notificationsProvider);
 
     return Scaffold(
       backgroundColor: isDark
@@ -124,7 +121,7 @@ class NotificationsScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Page header ──────────────────────────────────────────
+              // ── Header ──────────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
                 child: Row(
@@ -139,46 +136,48 @@ class NotificationsScreen extends StatelessWidget {
                               fontSize: 26,
                               fontWeight: FontWeight.w800,
                               letterSpacing: -0.5,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF0C0E14),
+                              color: isDark ? Colors.white : const Color(0xFF0C0E14),
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            '$_unreadCount unread',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: isDark
-                                  ? const Color(0xFF7A8499)
-                                  : const Color(0xFF6B7280),
+                          asyncNotifs.when(
+                            data: (notifs) => Text(
+                              '${notifs.length} notification${notifs.length == 1 ? '' : 's'}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: isDark
+                                    ? const Color(0xFF7A8499)
+                                    : const Color(0xFF6B7280),
+                              ),
                             ),
+                            loading: () => const SizedBox.shrink(),
+                            error: (_, __) => const SizedBox.shrink(),
                           ),
                         ],
                       ),
                     ),
-                    // Mark all read button
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF161B26) : Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isDark
-                              ? const Color(0xFFFFFFFF).withOpacity(0.06)
-                              : const Color(0xFF000000).withOpacity(0.06),
+                    // Refresh button
+                    GestureDetector(
+                      onTap: () => ref.refresh(_notificationsProvider),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF161B26) : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFFFFFFFF).withOpacity(0.06)
+                                : const Color(0xFF000000).withOpacity(0.06),
+                          ),
                         ),
-                      ),
-                      child: Text(
-                        'Mark all read',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFFC8FF57),
+                        child: Text(
+                          'Refresh',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFFC8FF57),
+                          ),
                         ),
                       ),
                     ),
@@ -188,33 +187,92 @@ class NotificationsScreen extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              // ── List ────────────────────────────────────────────────
+              // ── Body ────────────────────────────────────────────────
               Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                  children: [
-                    if (unread.isNotEmpty) ...[
-                      _SectionLabel(label: 'NEW', isDark: isDark),
-                      const SizedBox(height: 12),
-                      ...unread.map(
-                        (n) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _NotifCard(isDark: isDark, notif: n),
-                        ),
+                child: asyncNotifs.when(
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (error, _) => Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.wifi_off_outlined,
+                              size: 48,
+                              color: isDark
+                                  ? const Color(0xFF7A8499)
+                                  : const Color(0xFF9CA3AF)),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Could not load notifications',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Check your connection and tap Refresh.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: isDark
+                                  ? const Color(0xFF7A8499)
+                                  : const Color(0xFF6B7280),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 20),
-                    ],
-                    if (read.isNotEmpty) ...[
-                      _SectionLabel(label: 'EARLIER', isDark: isDark),
-                      const SizedBox(height: 12),
-                      ...read.map(
-                        (n) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _NotifCard(isDark: isDark, notif: n),
+                    ),
+                  ),
+                  data: (notifs) {
+                    if (notifs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.notifications_none_outlined,
+                                size: 48,
+                                color: isDark
+                                    ? const Color(0xFF7A8499)
+                                    : const Color(0xFF9CA3AF)),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No notifications yet',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF0C0E14),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Quiz reminders and announcements will appear here.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark
+                                    ? const Color(0xFF7A8499)
+                                    : const Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
                         ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                      itemCount: notifs.length,
+                      itemBuilder: (context, index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _NotifCard(isDark: isDark, notif: notifs[index]),
                       ),
-                    ],
-                  ],
+                    );
+                  },
                 ),
               ),
             ],
@@ -226,7 +284,7 @@ class NotificationsScreen extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Notification Card
+// Notification Card — same visual style as before
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _NotifCard extends StatelessWidget {
@@ -238,49 +296,23 @@ class _NotifCard extends StatelessWidget {
   _TypeMeta get _meta {
     switch (notif.type) {
       case _NotifType.quizReminder:
-        return _TypeMeta(
-          icon: Icons.timer_outlined,
-          color: const Color(0xFFC8FF57),
-          label: 'Quiz',
-        );
+        return _TypeMeta(icon: Icons.timer_outlined, color: const Color(0xFFC8FF57), label: 'Quiz');
       case _NotifType.result:
-        return _TypeMeta(
-          icon: Icons.emoji_events_outlined,
-          color: const Color(0xFFFFD166),
-          label: 'Result',
-        );
+        return _TypeMeta(icon: Icons.emoji_events_outlined, color: const Color(0xFFFFD166), label: 'Result');
       case _NotifType.contest:
-        return _TypeMeta(
-          icon: Icons.code_rounded,
-          color: const Color(0xFFFF6B6B),
-          label: 'Contest',
-        );
+        return _TypeMeta(icon: Icons.code_rounded, color: const Color(0xFFFF6B6B), label: 'Contest');
       case _NotifType.announcement:
-        return _TypeMeta(
-          icon: Icons.campaign_outlined,
-          color: const Color(0xFF6C8EFF),
-          label: 'Update',
-        );
+        return _TypeMeta(icon: Icons.campaign_outlined, color: const Color(0xFF6C8EFF), label: 'Update');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final meta = _meta;
-    final cardBg = notif.isUnread
-        ? (isDark
-              ? Color.alphaBlend(
-                  meta.color.withOpacity(0.05),
-                  const Color(0xFF161B26),
-                )
-              : Color.alphaBlend(meta.color.withOpacity(0.05), Colors.white))
-        : (isDark ? const Color(0xFF161B26) : Colors.white);
-
-    final borderColor = notif.isUnread
-        ? meta.color.withOpacity(isDark ? 0.15 : 0.2)
-        : (isDark
-              ? const Color(0xFFFFFFFF).withOpacity(0.06)
-              : const Color(0xFF000000).withOpacity(0.06));
+    final cardBg = isDark ? const Color(0xFF161B26) : Colors.white;
+    final borderColor = isDark
+        ? const Color(0xFFFFFFFF).withOpacity(0.06)
+        : const Color(0xFF000000).withOpacity(0.06);
 
     return Container(
       decoration: BoxDecoration(
@@ -306,68 +338,35 @@ class _NotifCard extends StatelessWidget {
 
             const SizedBox(width: 12),
 
-            // Content
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          notif.title,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: notif.isUnread
-                                ? FontWeight.w700
-                                : FontWeight.w600,
-                            letterSpacing: -0.1,
-                            color: isDark
-                                ? Colors.white
-                                : const Color(0xFF0C0E14),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Unread dot
-                      if (notif.isUnread)
-                        Container(
-                          width: 8,
-                          height: 8,
-                          margin: const EdgeInsets.only(top: 4),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: meta.color,
-                          ),
-                        ),
-                    ],
+                  Text(
+                    notif.title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.1,
+                      color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                    ),
                   ),
-
                   const SizedBox(height: 4),
-
                   Text(
                     notif.body,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: FontWeight.w400,
                       height: 1.4,
                       color: isDark
                           ? const Color(0xFF7A8499)
                           : const Color(0xFF6B7280),
                     ),
                   ),
-
                   const SizedBox(height: 8),
-
                   Row(
                     children: [
-                      // Type pill
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: meta.color.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
@@ -384,7 +383,7 @@ class _NotifCard extends StatelessWidget {
                       ),
                       const Spacer(),
                       Text(
-                        notif.time,
+                        notif.timeLabel,
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
@@ -405,42 +404,9 @@ class _NotifCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Type metadata helper
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _TypeMeta {
   final IconData icon;
   final Color color;
   final String label;
-
-  const _TypeMeta({
-    required this.icon,
-    required this.color,
-    required this.label,
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared section label
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _SectionLabel extends StatelessWidget {
-  final String label;
-  final bool isDark;
-
-  const _SectionLabel({required this.label, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1.4,
-        color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
-      ),
-    );
-  }
+  const _TypeMeta({required this.icon, required this.color, required this.label});
 }

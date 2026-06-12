@@ -482,6 +482,8 @@ const adminRoutes = require("./modules/admin/admin.routes");
 
 const groupRoutes = require("./modules/groups/group.routes");
 
+const notificationRoutes = require("./modules/notifications/notification.routes");
+
 const app = express();
 
 app.use(cors());
@@ -498,5 +500,7 @@ app.use("/auth", authRoutes);
 app.use("/admin", adminRoutes);
 
 app.use("/groups", groupRoutes);
+
+app.use("/notifications", notificationRoutes);
 
 module.exports = app;

@@ -74,15 +74,6 @@ export function QuizzesPage() {
   );
 }
 
-export function NotificationsPage() {
-  return (
-    <ComingSoon
-      title="Notifications"
-      section="Notification System"
-      description="Compose and schedule push notifications for quiz reminders, announcements, and external contest alerts. Target all users or specific groups."
-    />
-  );
-}
 
 export function AnalyticsPage() {
   return (
@@ -93,3 +84,5 @@ export function AnalyticsPage() {
     />
   );
 }
+
+export { default as NotificationsPage } from "../notifications/NotificationsPage.jsx";
