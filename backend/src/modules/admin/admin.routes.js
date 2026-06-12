@@ -404,4 +404,53 @@ router.patch(
   adminController.updateUserRole,
 );
 
+/**
+ * @swagger
+ * /admin/users/{id}/groups:
+ *   get:
+ *     summary: Get all groups a user belongs to
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: User id
+ *     responses:
+ *       200:
+ *         description: User groups fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       name:
+ *                         type: string
+ *       401:
+ *         description: Missing or invalid authentication token
+ *       403:
+ *         description: Forbidden for non-admin users
+ *       500:
+ *         description: Unexpected server error
+ */
+router.get(
+  "/users/:id/groups",
+  authenticate,
+  authorize("ADMIN"),
+  adminController.getUserGroups,
+);
+
 module.exports = router;

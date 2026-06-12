@@ -81,6 +81,7 @@ export const adminApi = {
   updateUserRole: (id, role) =>
     request("PATCH", `/admin/users/${id}/role`, { role }),
   getUserById: (id) => request("GET", `/admin/users/${id}`),
+  getUserGroups: (id) => request("GET", `/admin/users/${id}/groups`),
 };
 
 export const groupsApi = {

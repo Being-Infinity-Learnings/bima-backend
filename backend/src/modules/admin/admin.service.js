@@ -82,6 +82,22 @@ async function updateUserRole(userId, role) {
   });
 }
 
+// Return all groups a user belongs to (id + name only — lean query).
+async function getUserGroups(userId) {
+  const memberships = await prisma.userGroup.findMany({
+    where: { userId },
+    select: {
+      group: {
+        select: { id: true, name: true },
+      },
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+  return memberships.map((m) => m.group);
+}
+
 module.exports = {
   getPendingUsers,
   getAllUsers,
@@ -90,4 +106,5 @@ module.exports = {
   unblockUser,
   updateUserRole,
   getUserById,
+  getUserGroups,
 };

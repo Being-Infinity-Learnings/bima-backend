@@ -22,6 +22,7 @@ const T = APP_CONFIG.theme;
 export default function UsersPage() {
   const { role: myRole } = useAuth();
   const [users, setUsers] = useState([]);
+  const [userGroups, setUserGroups] = useState({}); // { [userId]: [{id, name}] }
   const [loading, setLoading] = useState(true);
   const [actionLoading, setAction] = useState(null);
   const [filter, setFilter] = useState("all");
@@ -35,8 +36,11 @@ export default function UsersPage() {
     setModalLoading(true);
     setSelectedUser({ id }); // open modal immediately with skeleton
     try {
-      const data = await adminApi.getUserById(id);
-      setSelectedUser(data);
+      const [data, groups] = await Promise.all([
+        adminApi.getUserById(id),
+        adminApi.getUserGroups(id).catch(() => []),
+      ]);
+      setSelectedUser({ ...data, groups });
     } catch (err) {
       toast(
         "Failed to load user details: " + (err.message || "Unknown error"),
@@ -52,7 +56,19 @@ export default function UsersPage() {
     setLoading(true);
     try {
       const data = await adminApi.getAllUsers();
-      setUsers(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setUsers(list);
+
+      // Fetch groups for all users in parallel (fire-and-forget per user)
+      const entries = await Promise.all(
+        list.map((u) =>
+          adminApi
+            .getUserGroups(u.id)
+            .then((g) => [u.id, g])
+            .catch(() => [u.id, []]),
+        ),
+      );
+      setUserGroups(Object.fromEntries(entries));
     } catch (err) {
       toast(
         "Failed to load users: " + (err.message || "Unknown error"),
@@ -265,15 +281,15 @@ export default function UsersPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2.2fr 2fr 2fr 1.2fr 1.4fr 1.6fr",
-            gap: "0 20px",
+            gridTemplateColumns: "2fr 1.6fr 1.6fr 1.1fr 1.3fr 1.8fr 1.5fr",
+            gap: "0 16px",
             padding: "10px 20px",
             background: T.pageBg,
             borderBottom: `1px solid ${T.cardBorder}`,
             borderRadius: "16px 16px 0 0",
           }}
         >
-          {["Student", "Email", "College", "Role", "Status", "Actions"].map(
+          {["Student", "Email", "College", "Role", "Status", "Groups", "Actions"].map(
             (header) => (
               <div
                 key={header}
@@ -313,9 +329,10 @@ export default function UsersPage() {
                 key={user.id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "2.2fr 2fr 2fr 1.2fr 1.4fr 1.6fr",
+                  gridTemplateColumns: "2fr 1.6fr 1.6fr 1.1fr 1.3fr 1.8fr 1.5fr",
                   padding: "14px 20px",
                   alignItems: "center",
+                  gap: "0 16px",
                   borderBottom:
                     index < filtered.length - 1
                       ? `1px solid ${T.cardBorder}`
@@ -419,6 +436,56 @@ export default function UsersPage() {
                 </div>
                 <div>
                   <Badge label={status} />
+                </div>
+
+                {/* Groups column — show up to 2 tags + overflow count */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                  {(() => {
+                    const groups = userGroups[user.id] || [];
+                    if (groups.length === 0) {
+                      return <span style={{ fontSize: 11, color: T.textMuted }}>—</span>;
+                    }
+                    const visible = groups.slice(0, 2);
+                    const overflow = groups.length - 2;
+                    return (
+                      <>
+                        {visible.map((g) => (
+                          <span
+                            key={g.id}
+                            title={g.name}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: "2px 7px",
+                              borderRadius: 6,
+                              background: "#1e293b",
+                              color: "#94a3b8",
+                              border: "1px solid #334155",
+                              maxWidth: 80,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              display: "inline-block",
+                            }}
+                          >
+                            {g.name}
+                          </span>
+                        ))}
+                        {overflow > 0 && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: T.textMuted,
+                              padding: "2px 5px",
+                            }}
+                          >
+                            +{overflow}
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

@@ -54,8 +54,7 @@ async function getUserById(req, res) {
       success: true,
       data: user,
     });
-  }
-    catch (error) {
+  } catch (error) {
     return res.status(500).json({
       success: false,
       message: error.message,
@@ -145,6 +144,23 @@ async function updateUserRole(req, res) {
   }
 }
 
+// Handler: getUserGroups(req, res)
+// - Returns all groups the given user is a member of.
+async function getUserGroups(req, res) {
+  try {
+    const groups = await adminService.getUserGroups(req.params.id);
+    return res.status(200).json({
+      success: true,
+      data: groups,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
 module.exports = {
   getPendingUsers,
   getAllUsers,
@@ -153,4 +169,5 @@ module.exports = {
   unblockUser,
   updateUserRole,
   getUserById,
+  getUserGroups,
 };
