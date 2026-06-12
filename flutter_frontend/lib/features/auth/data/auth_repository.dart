@@ -8,6 +8,7 @@ import '../../../core/network/api_client.dart';
 import 'auth_models.dart';
 
 import 'register_profile_request.dart';
+import 'update_profile_request.dart';
 
 class AuthRepository {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
@@ -62,6 +63,18 @@ class AuthRepository {
 
     final response = await ApiClient.dio.post(
       '/auth/register-profile',
+      data: request.toJson(),
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+
+    return UserModel.fromJson(response.data['data']);
+  }
+
+  Future<UserModel> updateProfile(UpdateProfileRequest request) async {
+    final token = await getIdToken();
+
+    final response = await ApiClient.dio.patch(
+      '/auth/me',
       data: request.toJson(),
       options: Options(headers: {'Authorization': 'Bearer $token'}),
     );

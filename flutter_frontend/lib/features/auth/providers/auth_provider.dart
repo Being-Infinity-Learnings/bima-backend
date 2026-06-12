@@ -11,6 +11,7 @@ import '../data/auth_repository.dart';
 import 'auth_state.dart';
 
 import '../data/register_profile_request.dart';
+import '../data/update_profile_request.dart';
 
 import 'package:dio/dio.dart';
 
@@ -246,6 +247,37 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = state.copyWith(isLoading: false, errorMessage: message);
     } finally {
       state = state.copyWith(isLoading: false);
+    }
+  }
+
+  Future<void> updateProfile({
+    required String fullName,
+    required String gender,
+    required String collegeName,
+    required String rollNumber,
+    required String email,
+  }) async {
+    state = state.copyWith(status: AuthStatus.loading, errorMessage: null);
+
+    try {
+      final user = await _repo.updateProfile(
+        UpdateProfileRequest(
+          fullName: fullName,
+          gender: gender,
+          collegeName: collegeName,
+          rollNumber: rollNumber,
+          email: email,
+        ),
+      );
+
+      state = AuthState(status: AuthStatus.authenticated, user: user);
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: 'Failed to update profile',
+      );
+
+      rethrow;
     }
   }
 
