@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "9986530081",
-    "project_id": "bima-f83d5",
-    "storage_bucket": "bima-f83d5.firebasestorage.app"
+    "project_number": "149920918666",
+    "project_id": "beinginfinity-36b21",
+    "storage_bucket": "beinginfinity-36b21.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:9986530081:android:658e4c05a16633b2857c60",
+        "mobilesdk_app_id": "1:149920918666:android:e7224741d1cf7383d49173",
         "android_client_info": {
-          "package_name": "com.example.flutter_frontend"
+          "package_name": "com.beinginfinity.bima"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyATop1IKo2W2a76ngnIq92BZYW5Ioon3LY"
+          "current_key": "AIzaSyDphisnr7vX_AODnGR4fvEtBl-TgTM60go"
         }
       ],
       "services": {

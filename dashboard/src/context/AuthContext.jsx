@@ -1,13 +1,12 @@
 // Authentication context for the dashboard.
 //
-// Keeps Firebase auth state, loads the matching backend profile, and exposes login/signup/logout helpers.
-import { createContext, useContext, useEffect, useState } from "react";
+// Handles Firebase Phone Auth (OTP) flow, backend profile lookup, and role-based access.
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  sendPasswordResetEmail,
+  PhoneAuthProvider,
+  signInWithCredential,
 } from "firebase/auth";
 import { auth } from "../config/firebase.config.js";
 import { authApi } from "../services/api.service.js";
@@ -21,8 +20,11 @@ export function AuthProvider({ children }) {
   const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Convert backend profile data into the shape this app expects.
-  // Ensures the user role is uppercase and gracefully handles null values.
+  // While verifyOtp() is in flight, ALL onAuthStateChanged firings are ignored.
+  // Firebase can fire the listener multiple times during phone sign-in; we let
+  // verifyOtp be the sole owner of state during that window.
+  const verifyingOtp = useRef(false);
+
   function normalizeProfile(nextProfile) {
     if (!nextProfile) return null;
     return {
@@ -34,8 +36,6 @@ export function AuthProvider({ children }) {
     };
   }
 
-  // Load the current user's profile from the backend and store it in context.
-  // Handles errors such as missing profile or forbidden access with friendly messages.
   async function fetchProfile() {
     setProfileLoading(true);
     try {
@@ -46,11 +46,8 @@ export function AuthProvider({ children }) {
     } catch (err) {
       console.error("Failed to fetch profile", err);
       setProfile(null);
-
       if (err?.status === 404) {
-        setError(
-          "Your Firebase account exists, but no backend profile was found for it.",
-        );
+        return null;
       } else if (err?.status === 403) {
         setError(
           err.message || "This account cannot access the admin backend.",
@@ -60,7 +57,6 @@ export function AuthProvider({ children }) {
           err?.message || "Failed to load your account from the backend.",
         );
       }
-
       return null;
     } finally {
       setProfileLoading(false);
@@ -69,6 +65,12 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
+      // Block every listener fire while verifyOtp() owns the flow.
+      if (verifyingOtp.current) {
+        setLoading(false);
+        return;
+      }
+
       setFirebaseUser(user);
       setError(null);
 
@@ -84,33 +86,46 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  // Sign in with Firebase credentials then fetch the admin profile from the backend.
-  async function login(email, password) {
+  async function sendOtp(phoneNumber, appVerifier) {
     setError(null);
-    const cred = await signInWithEmailAndPassword(auth, email, password);
-    await fetchProfile();
-    return cred;
+    const provider = new PhoneAuthProvider(auth);
+    const verificationId = await provider.verifyPhoneNumber(
+      phoneNumber,
+      appVerifier,
+    );
+    return verificationId;
   }
 
-  // Create a new Firebase user, register the backend admin profile, then refresh context.
-  async function signup(email, password, profileInput) {
+  async function verifyOtp(verificationId, otp) {
     setError(null);
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
+
+    // Lock out the auth listener for the entire duration of this function.
+    verifyingOtp.current = true;
+    try {
+      const credential = PhoneAuthProvider.credential(verificationId, otp);
+      const cred = await signInWithCredential(auth, credential);
+      setFirebaseUser(cred.user);
+
+      const fetchedProfile = await fetchProfile();
+      const isNewUser = fetchedProfile === null;
+      return { isNewUser, profile: fetchedProfile };
+    } finally {
+      // Always release the lock, even if an error is thrown.
+      verifyingOtp.current = false;
+    }
+  }
+
+  async function completeSignup(profileInput) {
+    setError(null);
     await authApi.registerProfile(profileInput);
-    await fetchProfile();
-    return cred;
+    const fetchedProfile = await fetchProfile();
+    return fetchedProfile;
   }
 
-  // Sign the user out of Firebase and clear profile state.
   async function logout() {
     await signOut(auth);
     setProfile(null);
     setError(null);
-  }
-
-  // Trigger Firebase password reset email for the provided address.
-  async function resetPassword(email) {
-    await sendPasswordResetEmail(auth, email);
   }
 
   const role = profile?.role ?? null;
@@ -124,10 +139,10 @@ export function AuthProvider({ children }) {
         loading,
         profileLoading,
         error,
-        login,
-        signup,
+        sendOtp,
+        verifyOtp,
+        completeSignup,
         logout,
-        resetPassword,
         refetchProfile: fetchProfile,
       }}
     >
@@ -136,7 +151,6 @@ export function AuthProvider({ children }) {
   );
 }
 
-// Hook for consuming authentication state from any component.
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
