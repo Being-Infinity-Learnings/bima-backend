@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:dio/dio.dart';
 import '../../../config/environment.dart';
+import '../../../core/network/api_client.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data model
@@ -71,17 +72,16 @@ class _Notif {
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
-
 final _notificationsProvider = FutureProvider<List<_Notif>>((ref) async {
   final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
   if (idToken == null) return [];
 
-  final dio = Dio(BaseOptions(
-    baseUrl: Environment.apiBaseUrl,
-    headers: {'Authorization': 'Bearer $idToken'},
-  ));
+  // Use ApiClient.dio — baseUrl already set, no trailing slash issues
+  final response = await ApiClient.dio.get(
+    '/notifications/my',
+    options: Options(headers: {'Authorization': 'Bearer $idToken'}),
+  );
 
-  final response = await dio.get('/notifications/my');
   final List data = response.data['data'] ?? [];
   return data.map((e) => _Notif.fromJson(e as Map<String, dynamic>)).toList();
 });
@@ -136,7 +136,9 @@ class NotificationsScreen extends ConsumerWidget {
                               fontSize: 26,
                               fontWeight: FontWeight.w800,
                               letterSpacing: -0.5,
-                              color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF0C0E14),
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -161,9 +163,14 @@ class NotificationsScreen extends ConsumerWidget {
                     GestureDetector(
                       onTap: () => ref.refresh(_notificationsProvider),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF161B26) : Colors.white,
+                          color: isDark
+                              ? const Color(0xFF161B26)
+                              : Colors.white,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: isDark
@@ -190,25 +197,30 @@ class NotificationsScreen extends ConsumerWidget {
               // ── Body ────────────────────────────────────────────────
               Expanded(
                 child: asyncNotifs.when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                   error: (error, _) => Center(
                     child: Padding(
                       padding: const EdgeInsets.all(32),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.wifi_off_outlined,
-                              size: 48,
-                              color: isDark
-                                  ? const Color(0xFF7A8499)
-                                  : const Color(0xFF9CA3AF)),
+                          Icon(
+                            Icons.wifi_off_outlined,
+                            size: 48,
+                            color: isDark
+                                ? const Color(0xFF7A8499)
+                                : const Color(0xFF9CA3AF),
+                          ),
                           const SizedBox(height: 16),
                           Text(
                             'Could not load notifications',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
-                              color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF0C0E14),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -232,11 +244,13 @@ class NotificationsScreen extends ConsumerWidget {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.notifications_none_outlined,
-                                size: 48,
-                                color: isDark
-                                    ? const Color(0xFF7A8499)
-                                    : const Color(0xFF9CA3AF)),
+                            Icon(
+                              Icons.notifications_none_outlined,
+                              size: 48,
+                              color: isDark
+                                  ? const Color(0xFF7A8499)
+                                  : const Color(0xFF9CA3AF),
+                            ),
                             const SizedBox(height: 16),
                             Text(
                               'No notifications yet',
@@ -296,13 +310,29 @@ class _NotifCard extends StatelessWidget {
   _TypeMeta get _meta {
     switch (notif.type) {
       case _NotifType.quizReminder:
-        return _TypeMeta(icon: Icons.timer_outlined, color: const Color(0xFFC8FF57), label: 'Quiz');
+        return _TypeMeta(
+          icon: Icons.timer_outlined,
+          color: const Color(0xFFC8FF57),
+          label: 'Quiz',
+        );
       case _NotifType.result:
-        return _TypeMeta(icon: Icons.emoji_events_outlined, color: const Color(0xFFFFD166), label: 'Result');
+        return _TypeMeta(
+          icon: Icons.emoji_events_outlined,
+          color: const Color(0xFFFFD166),
+          label: 'Result',
+        );
       case _NotifType.contest:
-        return _TypeMeta(icon: Icons.code_rounded, color: const Color(0xFFFF6B6B), label: 'Contest');
+        return _TypeMeta(
+          icon: Icons.code_rounded,
+          color: const Color(0xFFFF6B6B),
+          label: 'Contest',
+        );
       case _NotifType.announcement:
-        return _TypeMeta(icon: Icons.campaign_outlined, color: const Color(0xFF6C8EFF), label: 'Update');
+        return _TypeMeta(
+          icon: Icons.campaign_outlined,
+          color: const Color(0xFF6C8EFF),
+          label: 'Update',
+        );
     }
   }
 
@@ -366,7 +396,10 @@ class _NotifCard extends StatelessWidget {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: meta.color.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
@@ -408,5 +441,9 @@ class _TypeMeta {
   final IconData icon;
   final Color color;
   final String label;
-  const _TypeMeta({required this.icon, required this.color, required this.label});
+  const _TypeMeta({
+    required this.icon,
+    required this.color,
+    required this.label,
+  });
 }

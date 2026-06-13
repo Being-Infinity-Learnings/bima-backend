@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dio/dio.dart';
 import '../../config/environment.dart';
+import 'package:dio/dio.dart';
+import '../../../core/network/api_client.dart';
 
 class FcmService {
   FcmService._();
@@ -150,20 +152,23 @@ class FcmService {
       final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (idToken == null) return;
 
-      final dio = Dio(
-        BaseOptions(
-          baseUrl: Environment.apiBaseUrl,
-          headers: {
-            'Authorization': 'Bearer $idToken',
-            'Content-Type': 'application/json',
-          },
-        ),
-      );
+      // Reuse the singleton ApiClient instead of creating a new Dio instance.
+      // This ensures the correct baseUrl and avoids double-slash issues.
+      final dio = ApiClient.dio;
+      final headers = {'Authorization': 'Bearer $idToken'};
 
       if (method == 'POST') {
-        await dio.post(path, data: body);
+        await dio.post(
+          path,
+          data: body,
+          options: Options(headers: headers),
+        );
       } else if (method == 'DELETE') {
-        await dio.delete(path, data: body);
+        await dio.delete(
+          path,
+          data: body,
+          options: Options(headers: headers),
+        );
       }
     } on DioException catch (e) {
       debugPrint(
