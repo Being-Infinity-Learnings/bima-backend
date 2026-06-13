@@ -173,25 +173,30 @@ class FcmService {
   }
 
   static void _showLocalNotification(RemoteMessage message) {
-    final notification = message.notification;
-    if (notification == null) return;
+    // Title/body can come from message.notification OR message.data
+    final title = message.notification?.title ?? message.data['title'];
+    final body = message.notification?.body ?? message.data['body'];
+
+    if (title == null && body == null) return;
 
     _localNotifications.show(
-      notification.title.hashCode ^ notification.body.hashCode,
-      notification.title,
-      notification.body,
+      message.hashCode,
+      title,
+      body,
       NotificationDetails(
         android: AndroidNotificationDetails(
           _channelId,
           _channelName,
           channelDescription: _channelDescription,
-          importance: Importance.high,
-          priority: Priority.high,
+          importance:
+              Importance.max, // max, not high — this forces heads-up popup
+          priority:
+              Priority.max, // max forces the notification to pop over the app
           icon: '@mipmap/ic_launcher',
-          // Use Color from dart:ui, NOT from package:flutter/material.dart
           color: const Color(0xFFC8FF57),
           playSound: true,
           enableVibration: true,
+          fullScreenIntent: false,
         ),
         iOS: const DarwinNotificationDetails(
           presentAlert: true,

@@ -18,7 +18,15 @@ async function unregisterFcmToken(userId, token) {
 
 // ── Send notification ─────────────────────────────────────────────────────────
 
-async function sendNotification({ title, body, type, targetType, groupId, sendAt, createdById }) {
+async function sendNotification({
+  title,
+  body,
+  type,
+  targetType,
+  groupId,
+  sendAt,
+  createdById,
+}) {
   // 1. Save to DB
   const notification = await prisma.notification.create({
     data: {
@@ -89,18 +97,45 @@ async function dispatchNotification(notification) {
     for (const chunk of chunks) {
       const message = {
         tokens: chunk,
-        notification: { title: notification.title, body: notification.body },
+
+        // This 'notification' block is what Android uses to show the
+        // system notification when the app is in background or killed.
+        // Without this, only foreground (handled by flutter_local_notifications)
+        // works. With it, ALL states work.
+        notification: {
+          title: notification.title,
+          body: notification.body,
+        },
+
+        // Extra data your Flutter app can read
         data: {
           notificationId: notification.id,
           type: notification.type,
           click_action: "FLUTTER_NOTIFICATION_CLICK",
         },
+
         android: {
           priority: "high",
-          notification: { channelId: "bima_default" },
+          notification: {
+            channelId: "bima_default", // must match the channel you created in Flutter
+            priority: "high",
+            defaultSound: true,
+            defaultVibrateTimings: true,
+            notificationCount: 1,
+          },
         },
+
         apns: {
-          payload: { aps: { sound: "default", badge: 1 } },
+          headers: {
+            "apns-priority": "10",
+          },
+          payload: {
+            aps: {
+              sound: "default",
+              badge: 1,
+              contentAvailable: true,
+            },
+          },
         },
       };
       await admin.messaging().sendEachForMulticast(message);
@@ -144,7 +179,8 @@ async function listNotifications() {
 
 function chunkArray(arr, size) {
   const result = [];
-  for (let i = 0; i < arr.length; i += size) result.push(arr.slice(i, i + size));
+  for (let i = 0; i < arr.length; i += size)
+    result.push(arr.slice(i, i + size));
   return result;
 }
 
