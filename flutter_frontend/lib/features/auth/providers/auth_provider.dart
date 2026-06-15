@@ -62,7 +62,36 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Initialize FCM now that we have a fully authenticated, approved user
       await FcmService.initialize();
     } catch (e) {
-      // ... rest of catch block is unchanged
+      if (e is DioException) {
+        final statusCode = e.response?.statusCode;
+
+        if (statusCode == 404) {
+          state = const AuthState(status: AuthStatus.profileIncomplete);
+          return;
+        }
+
+        if (statusCode == 401) {
+          state = const AuthState(status: AuthStatus.unauthenticated);
+          return;
+        }
+
+        if (statusCode == 403) {
+          state = const AuthState(status: AuthStatus.blocked);
+          return;
+        }
+
+        state = AuthState(
+          status: AuthStatus.error,
+          errorMessage: 'Server error occurred',
+        );
+
+        return;
+      }
+
+      state = AuthState(
+        status: AuthStatus.error,
+        errorMessage: 'Something went wrong',
+      );
     } finally {
       state = state.copyWith(isLoading: false);
     }
