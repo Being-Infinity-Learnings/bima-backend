@@ -3,7 +3,7 @@
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="Being Infinity"
-        android:name="${applicationName}"
+        android:name=".Application"
         android:icon="@mipmap/ic_launcher">
         <!-- FCM default notification channel -->
 <meta-data

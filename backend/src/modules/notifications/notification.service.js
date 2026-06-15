@@ -4,7 +4,6 @@ const admin = require("../../config/firebase");
 // ── FCM Token management ──────────────────────────────────────────────────────
 
 async function registerFcmToken(userId, token, platform) {
-  // upsert: if token exists for another user, reassign it (device changed hands)
   await prisma.fcmToken.upsert({
     where: { token },
     update: { userId, platform, updatedAt: new Date() },
@@ -27,7 +26,6 @@ async function sendNotification({
   sendAt,
   createdById,
 }) {
-  // 1. Save to DB
   const notification = await prisma.notification.create({
     data: {
       title,
@@ -36,12 +34,11 @@ async function sendNotification({
       targetType: targetType || "ALL",
       groupId: groupId || null,
       sendAt: sendAt ? new Date(sendAt) : null,
-      status: sendAt ? "PENDING" : "PENDING",
+      status: "PENDING",
       createdById,
     },
   });
 
-  // 2. If immediate (no sendAt), dispatch now
   if (!sendAt) {
     await dispatchNotification(notification);
   }
@@ -50,8 +47,8 @@ async function sendNotification({
 }
 
 async function dispatchNotification(notification) {
+  console.log("INSIDE DISPATCH");
   try {
-    // Resolve target FCM tokens
     let tokens = [];
 
     if (notification.targetType === "ALL") {
@@ -65,11 +62,7 @@ async function dispatchNotification(notification) {
       const members = await prisma.userGroup.findMany({
         where: { groupId: notification.groupId },
         include: {
-          user: {
-            include: {
-              fcmTokens: true,
-            },
-          },
+          user: { include: { fcmTokens: true } },
         },
       });
       tokens = members
@@ -84,6 +77,8 @@ async function dispatchNotification(notification) {
         .map((r) => r.token);
     }
 
+    console.log(`[FCM] Dispatching to ${tokens.length} tokens`);
+
     if (tokens.length === 0) {
       await prisma.notification.update({
         where: { id: notification.id },
@@ -92,22 +87,23 @@ async function dispatchNotification(notification) {
       return;
     }
 
-    // FCM sendEachForMulticast (max 500 tokens per call)
     const chunks = chunkArray(tokens, 500);
+    let successCount = 0;
+    let failCount = 0;
+
     for (const chunk of chunks) {
       const message = {
         tokens: chunk,
 
-        // This 'notification' block is what Android uses to show the
-        // system notification when the app is in background or killed.
-        // Without this, only foreground (handled by flutter_local_notifications)
-        // works. With it, ALL states work.
+        // The `notification` block tells FCM to show a system notification
+        // automatically when the app is in background or killed.
+        // This is handled by Android OS — no flutter_local_notifications needed.
         notification: {
           title: notification.title,
           body: notification.body,
         },
 
-        // Extra data your Flutter app can read
+        // data is readable by your Flutter app in all states
         data: {
           notificationId: notification.id,
           type: notification.type,
@@ -115,38 +111,64 @@ async function dispatchNotification(notification) {
         },
 
         android: {
-          priority: "high",
+          // CRITICAL: "HIGH" uppercase is required by the Admin SDK enum.
+          // Lowercase "high" is silently ignored and the message is sent
+          // at normal priority, which Android may batch or delay.
+          priority: "HIGH",
           notification: {
-            channelId: "bima_default", // must match the channel you created in Flutter
-            priority: "high",
+            // Must match the channel created in Flutter
+            channelId: "bima_default",
+            // Do NOT set `priority` here — it's not a valid field on
+            // AndroidNotification in the Admin SDK and is silently dropped.
             defaultSound: true,
             defaultVibrateTimings: true,
-            notificationCount: 1,
           },
         },
 
         apns: {
-          headers: {
-            "apns-priority": "10",
-          },
+          headers: { "apns-priority": "10" },
           payload: {
             aps: {
               sound: "default",
               badge: 1,
-              contentAvailable: true,
             },
           },
         },
       };
-      await admin.messaging().sendEachForMulticast(message);
+
+      const result = await admin.messaging().sendEachForMulticast(message);
+      successCount += result.successCount;
+      failCount += result.failureCount;
+
+      // Clean up invalid tokens so they don't clog the DB
+      result.responses.forEach(async (resp, idx) => {
+        if (!resp.success) {
+          const code = resp.error?.code;
+          console.warn(
+            `[FCM] Token failed (${code}): ${chunk[idx].substring(0, 20)}...`,
+          );
+          if (
+            code === "messaging/invalid-registration-token" ||
+            code === "messaging/registration-token-not-registered"
+          ) {
+            await prisma.fcmToken
+              .delete({ where: { token: chunk[idx] } })
+              .catch(() => {}); // ignore if already deleted
+          }
+        }
+      });
     }
+
+    console.log(
+      `[FCM] Dispatch done — success: ${successCount}, failed: ${failCount}`,
+    );
 
     await prisma.notification.update({
       where: { id: notification.id },
       data: { status: "SENT", sentAt: new Date() },
     });
   } catch (err) {
-    console.error("FCM dispatch error:", err);
+    console.error("[FCM] dispatch error:", err);
     await prisma.notification.update({
       where: { id: notification.id },
       data: { status: "FAILED" },
@@ -154,14 +176,11 @@ async function dispatchNotification(notification) {
   }
 }
 
-// ── Scheduled dispatcher (call this on a cron/interval) ──────────────────────
+// ── Scheduled dispatcher ──────────────────────────────────────────────────────
 
 async function dispatchPendingScheduled() {
   const due = await prisma.notification.findMany({
-    where: {
-      status: "PENDING",
-      sendAt: { lte: new Date() },
-    },
+    where: { status: "PENDING", sendAt: { lte: new Date() } },
   });
   for (const n of due) {
     await dispatchNotification(n);

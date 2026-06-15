@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:dio/dio.dart';
-import '../../../config/environment.dart';
 import '../../../core/network/api_client.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,10 +44,10 @@ class _Notif {
         type = _NotifType.announcement;
     }
 
-    final sentAt = json['sentAt'] != null
-        ? DateTime.tryParse(json['sentAt'])
-        : null;
-    final timeLabel = sentAt != null ? _formatRelativeTime(sentAt) : 'Just now';
+    final sentAt =
+        json['sentAt'] != null ? DateTime.tryParse(json['sentAt']) : null;
+    final timeLabel =
+        sentAt != null ? _formatRelativeTime(sentAt) : 'Just now';
 
     return _Notif(
       id: json['id'] ?? '',
@@ -70,39 +71,159 @@ class _Notif {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Provider
+// State notifier — replaces the old FutureProvider so we can push new items
+// in without the user having to tap Refresh.
 // ─────────────────────────────────────────────────────────────────────────────
-final _notificationsProvider = FutureProvider<List<_Notif>>((ref) async {
-  final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
-  if (idToken == null) return [];
 
-  // Use ApiClient.dio — baseUrl already set, no trailing slash issues
-  final response = await ApiClient.dio.get(
-    '/notifications/my',
-    options: Options(headers: {'Authorization': 'Bearer $idToken'}),
-  );
+class _NotifState {
+  final List<_Notif> items;
+  final bool isLoading;
+  final String? error;
 
-  final List data = response.data['data'] ?? [];
-  return data.map((e) => _Notif.fromJson(e as Map<String, dynamic>)).toList();
-});
+  const _NotifState({
+    this.items = const [],
+    this.isLoading = false,
+    this.error,
+  });
+
+  _NotifState copyWith({
+    List<_Notif>? items,
+    bool? isLoading,
+    String? error,
+  }) =>
+      _NotifState(
+        items: items ?? this.items,
+        isLoading: isLoading ?? this.isLoading,
+        error: error,
+      );
+}
+
+class _NotifNotifier extends StateNotifier<_NotifState> {
+  _NotifNotifier() : super(const _NotifState(isLoading: true)) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final idToken =
+          await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (idToken == null) {
+        state = state.copyWith(isLoading: false, items: []);
+        return;
+      }
+      final response = await ApiClient.dio.get(
+        '/notifications/my',
+        options: Options(headers: {'Authorization': 'Bearer $idToken'}),
+      );
+      final List data = response.data['data'] ?? [];
+      final items =
+          data.map((e) => _Notif.fromJson(e as Map<String, dynamic>)).toList();
+      state = state.copyWith(isLoading: false, items: items);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  /// Called by the shell when a foreground FCM message arrives.
+  /// Re-fetches the list so the new notification shows up instantly.
+  Future<void> refresh() => _load();
+
+  /// Prepend a notification from an incoming FCM message immediately,
+  /// before the network round-trip, so the UI updates in <1 frame.
+  void prependFromMessage(RemoteMessage message) {
+    final title =
+        message.notification?.title ?? message.data['title'] as String?;
+    final body =
+        message.notification?.body ?? message.data['body'] as String?;
+    if (title == null && body == null) return;
+
+    final notif = _Notif(
+      id: message.data['notificationId'] as String? ??
+          message.messageId ??
+          DateTime.now().millisecondsSinceEpoch.toString(),
+      title: title ?? '',
+      body: body ?? '',
+      timeLabel: 'Just now',
+      type: _NotifType.announcement,
+    );
+
+    // Avoid duplicate if already in list
+    final alreadyPresent = state.items.any((n) => n.id == notif.id);
+    if (!alreadyPresent) {
+      state = state.copyWith(items: [notif, ...state.items]);
+    }
+
+    // Then do a real fetch to get correct server data (type, sentAt, etc.)
+    _load();
+  }
+}
+
+final notificationsProvider =
+    StateNotifierProvider<_NotifNotifier, _NotifState>(
+  (_) => _NotifNotifier(),
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-class NotificationsScreen extends ConsumerWidget {
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NotificationsScreen> createState() =>
+      _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
+    with WidgetsBindingObserver {
+  StreamSubscription<RemoteMessage>? _fgSub;
+  StreamSubscription<RemoteMessage>? _tapSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Refresh when a foreground message arrives while this screen is active.
+    _fgSub = FirebaseMessaging.onMessage.listen((msg) {
+      ref.read(notificationsProvider.notifier).prependFromMessage(msg);
+    });
+
+    // Also refresh when user taps a notification and app comes to foreground.
+    _tapSub = FirebaseMessaging.onMessageOpenedApp.listen((_) {
+      ref.read(notificationsProvider.notifier).refresh();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Refresh when the user brings the app back from background —
+    // this catches the case where a background/killed notification was received
+    // and the user opens the app manually without tapping the notification.
+    if (state == AppLifecycleState.resumed) {
+      ref.read(notificationsProvider.notifier).refresh();
+    }
+  }
+
+  @override
+  void dispose() {
+    _fgSub?.cancel();
+    _tapSub?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final asyncNotifs = ref.watch(_notificationsProvider);
+    final notifState = ref.watch(notificationsProvider);
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF0C0E14)
-          : const Color(0xFFF5F6FA),
+      backgroundColor:
+          isDark ? const Color(0xFF0C0E14) : const Color(0xFFF5F6FA),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -142,9 +263,9 @@ class NotificationsScreen extends ConsumerWidget {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          asyncNotifs.when(
-                            data: (notifs) => Text(
-                              '${notifs.length} notification${notifs.length == 1 ? '' : 's'}',
+                          if (!notifState.isLoading)
+                            Text(
+                              '${notifState.items.length} notification${notifState.items.length == 1 ? '' : 's'}',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
@@ -153,15 +274,13 @@ class NotificationsScreen extends ConsumerWidget {
                                     : const Color(0xFF6B7280),
                               ),
                             ),
-                            loading: () => const SizedBox.shrink(),
-                            error: (_, __) => const SizedBox.shrink(),
-                          ),
                         ],
                       ),
                     ),
                     // Refresh button
                     GestureDetector(
-                      onTap: () => ref.refresh(_notificationsProvider),
+                      onTap: () =>
+                          ref.read(notificationsProvider.notifier).refresh(),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -178,14 +297,23 @@ class NotificationsScreen extends ConsumerWidget {
                                 : const Color(0xFF000000).withOpacity(0.06),
                           ),
                         ),
-                        child: Text(
-                          'Refresh',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFFC8FF57),
-                          ),
-                        ),
+                        child: notifState.isLoading
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Color(0xFFC8FF57),
+                                ),
+                              )
+                            : const Text(
+                                'Refresh',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFC8FF57),
+                                ),
+                              ),
                       ),
                     ),
                   ],
@@ -196,98 +324,7 @@ class NotificationsScreen extends ConsumerWidget {
 
               // ── Body ────────────────────────────────────────────────
               Expanded(
-                child: asyncNotifs.when(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (error, _) => Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.wifi_off_outlined,
-                            size: 48,
-                            color: isDark
-                                ? const Color(0xFF7A8499)
-                                : const Color(0xFF9CA3AF),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Could not load notifications',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF0C0E14),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Check your connection and tap Refresh.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isDark
-                                  ? const Color(0xFF7A8499)
-                                  : const Color(0xFF6B7280),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  data: (notifs) {
-                    if (notifs.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.notifications_none_outlined,
-                              size: 48,
-                              color: isDark
-                                  ? const Color(0xFF7A8499)
-                                  : const Color(0xFF9CA3AF),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No notifications yet',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: isDark
-                                    ? Colors.white
-                                    : const Color(0xFF0C0E14),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Quiz reminders and announcements will appear here.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: isDark
-                                    ? const Color(0xFF7A8499)
-                                    : const Color(0xFF6B7280),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                      itemCount: notifs.length,
-                      itemBuilder: (context, index) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _NotifCard(isDark: isDark, notif: notifs[index]),
-                      ),
-                    );
-                  },
-                ),
+                child: _buildBody(isDark, notifState),
               ),
             ],
           ),
@@ -295,10 +332,100 @@ class NotificationsScreen extends ConsumerWidget {
       ),
     );
   }
+
+  Widget _buildBody(bool isDark, _NotifState state) {
+    if (state.isLoading && state.items.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (state.error != null && state.items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.wifi_off_outlined,
+                size: 48,
+                color:
+                    isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Could not load notifications',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Check your connection and tap Refresh.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark
+                      ? const Color(0xFF7A8499)
+                      : const Color(0xFF6B7280),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (state.items.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.notifications_none_outlined,
+              size: 48,
+              color:
+                  isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No notifications yet',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white : const Color(0xFF0C0E14),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Quiz reminders and announcements will appear here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark
+                    ? const Color(0xFF7A8499)
+                    : const Color(0xFF6B7280),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      itemCount: state.items.length,
+      itemBuilder: (context, index) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: _NotifCard(isDark: isDark, notif: state.items[index]),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Notification Card — same visual style as before
+// Notification Card
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _NotifCard extends StatelessWidget {
@@ -378,7 +505,8 @@ class _NotifCard extends StatelessWidget {
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.1,
-                      color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                      color:
+                          isDark ? Colors.white : const Color(0xFF0C0E14),
                     ),
                   ),
                   const SizedBox(height: 4),

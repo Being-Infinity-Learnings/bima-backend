@@ -5,8 +5,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dio/dio.dart';
-import '../../config/environment.dart';
-import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
 
 class FcmService {
@@ -15,6 +13,8 @@ class FcmService {
   static final _messaging = FirebaseMessaging.instance;
   static final _localNotifications = FlutterLocalNotificationsPlugin();
 
+  // This channel ID must match android.notification.channelId in the backend payload
+  // and the meta-data in AndroidManifest.xml
   static const _channelId = 'bima_default';
   static const _channelName = 'BIMA Notifications';
   static const _channelDescription =
@@ -31,90 +31,76 @@ class FcmService {
       alert: true,
       badge: true,
       sound: true,
-      announcement: false,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      debugPrint('[FCM] Permission denied by user');
+      debugPrint('[FCM] Permission denied');
       return;
     }
+    debugPrint('[FCM] Permission: ${settings.authorizationStatus}');
 
-    debugPrint('[FCM] Permission status: ${settings.authorizationStatus}');
-
-    // ── 2. Setup flutter_local_notifications ──────────────────────────────
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
-    await _localNotifications.initialize(
-      const InitializationSettings(android: androidInit, iOS: iosInit),
-    );
-
-    // ── 3. Create Android notification channel ────────────────────────────
-    // NOTE: AndroidNotificationChannel must NOT be const here because
-    // it is passed to a platform method, not used as a compile-time constant.
-    final channel = AndroidNotificationChannel(
-      _channelId,
-      _channelName,
-      description: _channelDescription,
-      importance: Importance.high,
-      playSound: true,
-      enableVibration: true,
-    );
-
-    // resolvePlatformSpecificImplementation returns T? but on Android it is
+    // ── 2. Create Android notification channel ────────────────────────────
+    // Must be done BEFORE initialize() so the channel exists when the first
+    // notification arrives.
     final androidPlugin = _localNotifications
         .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
-    await androidPlugin?.createNotificationChannel(channel);
+            AndroidFlutterLocalNotificationsPlugin>();
 
-    // ── 4. Register token with backend ────────────────────────────────────
+    await androidPlugin?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _channelId,
+        _channelName,
+        description: _channelDescription,
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
+
+    // ── 3. Init flutter_local_notifications (foreground display only) ─────
+    await _localNotifications.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        ),
+      ),
+    );
+
+    // ── 4. Disable FCM's own foreground display on iOS ────────────────────
+    // We show via flutter_local_notifications for consistency.
+    await _messaging.setForegroundNotificationPresentationOptions(
+      alert: false,
+      badge: false,
+      sound: false,
+    );
+
+    // ── 5. Register FCM token with backend ────────────────────────────────
     await _registerCurrentToken();
+    _messaging.onTokenRefresh.listen(_sendTokenToBackend);
 
-    _messaging.onTokenRefresh.listen((newToken) async {
-      debugPrint('[FCM] Token refreshed');
-      await _sendTokenToBackend(newToken);
-    });
-
-    // ── 5. Foreground message listener ────────────────────────────────────
+    // ── 6. Foreground message handler ─────────────────────────────────────
+    // When app is in foreground, FCM does NOT show a system notification.
+    // We show one manually via flutter_local_notifications.
+    // NOTE: AppShell and NotificationsScreen also listen to onMessage to
+    // update the badge and list — multiple listeners on a stream are fine.
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       debugPrint('[FCM] Foreground message: ${message.messageId}');
       _showLocalNotification(message);
     });
-
-    // ── 6. Background tap (app was in background, user tapped notification)
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      debugPrint(
-        '[FCM] Notification tapped (background): ${message.messageId}',
-      );
-    });
-
-    // ── 7. Terminated state tap ───────────────────────────────────────────
-    final initialMessage = await _messaging.getInitialMessage();
-    if (initialMessage != null) {
-      debugPrint(
-        '[FCM] App launched from notification: ${initialMessage.messageId}',
-      );
-    }
   }
 
   static Future<void> unregister() async {
     try {
       final token = await _messaging.getToken();
       if (token != null) {
-        await _callBackend('DELETE', '/notifications/fcm-token', {
-          'token': token,
-        });
+        await _callBackend('DELETE', '/notifications/fcm-token', {'token': token});
       }
       await _messaging.deleteToken();
       _initialized = false;
-      debugPrint('[FCM] Token unregistered');
+      debugPrint('[FCM] Unregistered');
     } catch (e) {
       debugPrint('[FCM] Unregister error (non-fatal): $e');
     }
@@ -126,13 +112,13 @@ class FcmService {
     try {
       final token = await _messaging.getToken();
       if (token == null) {
-        debugPrint('[FCM] No token available yet');
+        debugPrint('[FCM] No token yet');
         return;
       }
-      debugPrint('[FCM] Registering token: ${token.substring(0, 20)}...');
+      debugPrint('[FCM] Token: ${token.substring(0, 20)}...');
       await _sendTokenToBackend(token);
     } catch (e) {
-      debugPrint('[FCM] Token registration error (non-fatal): $e');
+      debugPrint('[FCM] Token registration error: $e');
     }
   }
 
@@ -152,64 +138,46 @@ class FcmService {
       final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (idToken == null) return;
 
-      // Reuse the singleton ApiClient instead of creating a new Dio instance.
-      // This ensures the correct baseUrl and avoids double-slash issues.
-      final dio = ApiClient.dio;
       final headers = {'Authorization': 'Bearer $idToken'};
-
       if (method == 'POST') {
-        await dio.post(
-          path,
-          data: body,
-          options: Options(headers: headers),
-        );
+        await ApiClient.dio.post(path, data: body, options: Options(headers: headers));
       } else if (method == 'DELETE') {
-        await dio.delete(
-          path,
-          data: body,
-          options: Options(headers: headers),
-        );
+        await ApiClient.dio.delete(path, data: body, options: Options(headers: headers));
       }
+      debugPrint('[FCM] Backend call OK: $method $path');
     } on DioException catch (e) {
-      debugPrint(
-        '[FCM] Backend call failed ($path): ${e.response?.data ?? e.message}',
-      );
+      debugPrint('[FCM] Backend call failed ($path): ${e.response?.statusCode} ${e.response?.data ?? e.message}');
     }
   }
 
-  static void _showLocalNotification(RemoteMessage message) {
-    // Title/body can come from message.notification OR message.data
-    final title = message.notification?.title ?? message.data['title'];
-    final body = message.notification?.body ?? message.data['body'];
-
+  static Future<void> _showLocalNotification(RemoteMessage message) async {
+    final title = message.notification?.title ?? message.data['title'] as String?;
+    final body  = message.notification?.body  ?? message.data['body']  as String?;
     if (title == null && body == null) return;
 
-    _localNotifications.show(
+    await _localNotifications.show(
       message.hashCode,
       title,
       body,
-      NotificationDetails(
+      const NotificationDetails(
         android: AndroidNotificationDetails(
           _channelId,
           _channelName,
           channelDescription: _channelDescription,
-          importance:
-              Importance.max, // max, not high — this forces heads-up popup
-          priority:
-              Priority.max, // max forces the notification to pop over the app
+          importance: Importance.max,
+          priority: Priority.max,
           icon: '@mipmap/ic_launcher',
-          color: const Color(0xFFC8FF57),
+          color: Color(0xFFC8FF57),
           playSound: true,
           enableVibration: true,
-          fullScreenIntent: false,
         ),
-        iOS: const DarwinNotificationDetails(
+        iOS: DarwinNotificationDetails(
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
         ),
       ),
-      payload: message.data['notificationId'],
+      payload: message.data['notificationId'] as String?,
     );
   }
 }
