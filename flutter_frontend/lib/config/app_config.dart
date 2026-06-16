@@ -1,6 +1,8 @@
 /// App configuration constants used across the Flutter app.
 ///
-/// This file keeps static values such as the app name, colors and asset paths.
+/// This file keeps static values such as the app name, colours, asset paths,
+/// and feature-specific settings (e.g. notification pagination).
+/// Nothing in the app is hardcoded elsewhere — all tunable values live here.
 import 'package:flutter/material.dart';
 
 class AppConfig {
@@ -60,6 +62,24 @@ class AppConfig {
 
   /// Path to the app logo asset used on auth and welcome screens.
   static const logoAsset = "lib/config/assets/logo.png";
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Notification feed settings
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// How many notifications are fetched per page on the Notifications screen.
+  /// Must match (or be ≤) the backend DEFAULT_PAGE_SIZE.
+  static const notificationPageSize = 20;
+
+  /// Accent colors for each notification type badge.
+  static const notifColorQuiz = Color(0xFFC8FF57);
+  static const notifColorResult = Color(0xFFFFD166);
+  static const notifColorContest = Color(0xFFFF6B6B);
+  static const notifColorAnnouncement = Color(0xFF6C8EFF);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────────────────────────────────
 
   static List<Color> backgroundGradient(bool isDark) {
     return isDark

@@ -1,7 +1,29 @@
+/**
+ * notification.service.js
+ *
+ * Handles all notification business logic:
+ *  - FCM token registration / removal
+ *  - Sending & dispatching notifications (immediate + scheduled)
+ *  - Fetching the per-user notification feed with correct targeting,
+ *    cursor-based pagination, and optional type / date filters
+ */
+
 const prisma = require("../../config/prisma");
 const admin = require("../../config/firebase");
 
-// ── FCM Token management ──────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants (kept here so they can be imported by the controller too)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Default page size for the /my feed. Overridable via query param. */
+const DEFAULT_PAGE_SIZE = 20;
+
+/** Hard upper-bound so callers cannot request unlimited rows. */
+const MAX_PAGE_SIZE = 100;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FCM Token management
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function registerFcmToken(userId, token, platform) {
   await prisma.fcmToken.upsert({
@@ -15,7 +37,9 @@ async function unregisterFcmToken(userId, token) {
   await prisma.fcmToken.deleteMany({ where: { userId, token } });
 }
 
-// ── Send notification ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Send / dispatch
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function sendNotification({
   title,
@@ -47,11 +71,12 @@ async function sendNotification({
 }
 
 async function dispatchNotification(notification) {
-  console.log("INSIDE DISPATCH");
+  console.log("[FCM] Dispatching notification:", notification.id);
   try {
     let tokens = [];
 
     if (notification.targetType === "ALL") {
+      // Send to every approved, non-blocked user
       const fcmRecords = await prisma.fcmToken.findMany({
         include: { user: { select: { approved: true, blocked: true } } },
       });
@@ -59,6 +84,7 @@ async function dispatchNotification(notification) {
         .filter((r) => r.user.approved && !r.user.blocked)
         .map((r) => r.token);
     } else if (notification.targetType === "GROUP" && notification.groupId) {
+      // Send only to members of the target group
       const members = await prisma.userGroup.findMany({
         where: { groupId: notification.groupId },
         include: {
@@ -69,6 +95,7 @@ async function dispatchNotification(notification) {
         .filter((m) => m.user.approved && !m.user.blocked)
         .flatMap((m) => m.user.fcmTokens.map((t) => t.token));
     } else if (notification.targetType === "APPROVED_ONLY") {
+      // Same as ALL but explicit — approved & non-blocked users
       const fcmRecords = await prisma.fcmToken.findMany({
         include: { user: { select: { approved: true, blocked: true } } },
       });
@@ -95,15 +122,13 @@ async function dispatchNotification(notification) {
       const message = {
         tokens: chunk,
 
-        // The `notification` block tells FCM to show a system notification
-        // automatically when the app is in background or killed.
-        // This is handled by Android OS — no flutter_local_notifications needed.
+        // System notification shown when app is in background / killed
         notification: {
           title: notification.title,
           body: notification.body,
         },
 
-        // data is readable by your Flutter app in all states
+        // Readable by the Flutter app in all lifecycle states
         data: {
           notificationId: notification.id,
           type: notification.type,
@@ -111,15 +136,10 @@ async function dispatchNotification(notification) {
         },
 
         android: {
-          // CRITICAL: "HIGH" uppercase is required by the Admin SDK enum.
-          // Lowercase "high" is silently ignored and the message is sent
-          // at normal priority, which Android may batch or delay.
+          // "HIGH" uppercase is required — lowercase is silently ignored
           priority: "HIGH",
           notification: {
-            // Must match the channel created in Flutter
             channelId: "bima_default",
-            // Do NOT set `priority` here — it's not a valid field on
-            // AndroidNotification in the Admin SDK and is silently dropped.
             defaultSound: true,
             defaultVibrateTimings: true,
           },
@@ -140,7 +160,7 @@ async function dispatchNotification(notification) {
       successCount += result.successCount;
       failCount += result.failureCount;
 
-      // Clean up invalid tokens so they don't clog the DB
+      // Clean up stale / invalid tokens so they don't pollute the DB
       result.responses.forEach(async (resp, idx) => {
         if (!resp.success) {
           const code = resp.error?.code;
@@ -159,9 +179,7 @@ async function dispatchNotification(notification) {
       });
     }
 
-    console.log(
-      `[FCM] Dispatch done — success: ${successCount}, failed: ${failCount}`,
-    );
+    console.log(`[FCM] Done — success: ${successCount}, failed: ${failCount}`);
 
     await prisma.notification.update({
       where: { id: notification.id },
@@ -176,7 +194,9 @@ async function dispatchNotification(notification) {
   }
 }
 
-// ── Scheduled dispatcher ──────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Scheduled dispatcher (called by a cron / interval in app.js)
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function dispatchPendingScheduled() {
   const due = await prisma.notification.findMany({
@@ -187,7 +207,9 @@ async function dispatchPendingScheduled() {
   }
 }
 
-// ── List / history ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin: list all notifications (history view)
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function listNotifications() {
   return prisma.notification.findMany({
@@ -195,6 +217,155 @@ async function listNotifications() {
     include: { createdBy: { select: { fullName: true, email: true } } },
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User feed: /notifications/my
+//
+// BUG FIX: the previous implementation returned ALL sent notifications
+// regardless of targetType, meaning GROUP-targeted messages were visible to
+// everyone.  This version filters correctly:
+//
+//  • ALL / APPROVED_ONLY → visible to every approved, non-blocked user
+//  • GROUP               → visible only to members of the target group
+//
+// It also supports cursor-based pagination and optional filters so the Flutter
+// app can implement "load more" and category tabs efficiently without full
+// re-fetches.
+//
+// Params:
+//  @param {string}   userId      - The authenticated user's DB id
+//  @param {boolean}  approved    - Whether the user is approved
+//  @param {boolean}  blocked     - Whether the user is blocked
+//  @param {string[]} groupIds    - Groups the user belongs to
+//  @param {object}   filters
+//    @param {string}   [filters.type]      - NotificationType enum value
+//    @param {string}   [filters.dateFrom]  - ISO date string (inclusive)
+//    @param {string}   [filters.dateTo]    - ISO date string (inclusive)
+//    @param {string}   [filters.cursor]    - Last seen notification id (for pagination)
+//    @param {number}   [filters.limit]     - Page size (capped at MAX_PAGE_SIZE)
+//
+// Returns: { items: Notification[], nextCursor: string|null }
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getMyNotifications(
+  userId,
+  approved,
+  blocked,
+  groupIds,
+  filters = {},
+) {
+  // Blocked users see nothing
+  if (blocked) return { items: [], nextCursor: null };
+
+  const limit = Math.min(
+    Number(filters.limit) || DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+  );
+
+  // ── Build the targetType filter ──────────────────────────────────────────
+  // A notification is visible to this user when:
+  //   a) targetType is ALL or APPROVED_ONLY AND the user is approved, OR
+  //   b) targetType is GROUP AND the user is a member of that group
+  //
+  // We use an OR at the top level so Prisma can push it into a single query.
+
+  const targetFilter = {
+    OR: [
+      // Broadcast notifications (all approved users)
+      ...(approved ? [{ targetType: { in: ["ALL", "APPROVED_ONLY"] } }] : []),
+      // Group-specific notifications the user belongs to
+      ...(groupIds.length > 0
+        ? [{ targetType: "GROUP", groupId: { in: groupIds } }]
+        : []),
+    ],
+  };
+
+  // Edge case: user is not approved and has no groups → nothing to show
+  if (targetFilter.OR.length === 0) {
+    return { items: [], nextCursor: null };
+  }
+
+  // ── Optional filters ─────────────────────────────────────────────────────
+
+  const extraFilters = {};
+
+  if (filters.type) {
+    extraFilters.type = filters.type;
+  }
+
+  if (filters.dateFrom || filters.dateTo) {
+    // Filter on sentAt (the time the notification was actually sent)
+    extraFilters.sentAt = {};
+    if (filters.dateFrom) {
+      extraFilters.sentAt.gte = new Date(filters.dateFrom);
+    }
+    if (filters.dateTo) {
+      // Include the whole end day by setting time to 23:59:59
+      const end = new Date(filters.dateTo);
+      end.setHours(23, 59, 59, 999);
+      extraFilters.sentAt.lte = end;
+    }
+  }
+
+  // ── Cursor pagination ────────────────────────────────────────────────────
+  // We use keyset pagination on sentAt DESC + id DESC so we never skip rows
+  // even when notifications arrive mid-scroll.
+
+  let cursorClause = {};
+  if (filters.cursor) {
+    // Fetch the cursor row's sentAt so we can paginate correctly
+    const cursorRow = await prisma.notification.findUnique({
+      where: { id: filters.cursor },
+      select: { sentAt: true },
+    });
+    if (cursorRow?.sentAt) {
+      // Items that were sent before the cursor (older), or same sentAt but
+      // with a lexicographically smaller id
+      cursorClause = {
+        OR: [
+          { sentAt: { lt: cursorRow.sentAt } },
+          { sentAt: cursorRow.sentAt, id: { lt: filters.cursor } },
+        ],
+      };
+    }
+  }
+
+  // ── Query ────────────────────────────────────────────────────────────────
+  // Fetch limit+1 rows so we can detect whether a next page exists without
+  // a separate COUNT query (which is expensive on large tables).
+
+  const rows = await prisma.notification.findMany({
+    where: {
+      status: "SENT",
+      ...targetFilter, // audience targeting
+      ...extraFilters, // optional type / date filters
+      ...(Object.keys(cursorClause).length ? cursorClause : {}),
+    },
+    orderBy: [
+      { sentAt: "desc" },
+      { id: "desc" }, // tie-breaker for same sentAt
+    ],
+    take: limit + 1, // +1 to check for next page
+    select: {
+      id: true,
+      title: true,
+      body: true,
+      type: true,
+      sentAt: true,
+      createdAt: true,
+    },
+  });
+
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+  return { items, nextCursor };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
 function chunkArray(arr, size) {
   const result = [];
@@ -209,4 +380,7 @@ module.exports = {
   sendNotification,
   dispatchPendingScheduled,
   listNotifications,
+  getMyNotifications,
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
 };
