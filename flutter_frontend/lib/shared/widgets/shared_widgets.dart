@@ -132,13 +132,13 @@ class ErrorBanner extends StatelessWidget {
 
       decoration: BoxDecoration(
         color: isDark
-            ? const Color(0xFFFF6B6B).withOpacity(0.10)
-            : const Color(0xFFFFF4F4),
+            ? AppConfig.errorColor.withOpacity(0.10)
+            : AppConfig.errorLightSurface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark
-              ? const Color(0xFFFF6B6B).withOpacity(0.20)
-              : const Color(0xFFDC2626).withOpacity(0.12),
+              ? AppConfig.errorColor.withOpacity(0.20)
+              : AppConfig.errorBorderColor.withOpacity(0.12),
         ),
       ),
 
@@ -150,7 +150,7 @@ class ErrorBanner extends StatelessWidget {
             child: Icon(
               Icons.error_outline_rounded,
               size: 18,
-              color: Color(0xFFDC2626),
+              color: AppConfig.errorBorderColor,
             ),
           ),
 
@@ -163,8 +163,8 @@ class ErrorBanner extends StatelessWidget {
                 fontSize: 13,
                 height: 1.4,
                 color: isDark
-                    ? const Color(0xFFFF9999)
-                    : const Color(0xFFB91C1C),
+                    ? AppConfig.errorDarkSurface
+                    : AppConfig.errorBorderColor,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -190,23 +190,19 @@ class NoInternetBanner extends StatelessWidget {
 
       decoration: BoxDecoration(
         color: isDark
-            ? const Color(0xFFFFD166).withOpacity(0.10)
-            : const Color(0xFFFFFBEB),
+            ? AppConfig.warningColor.withOpacity(0.10)
+            : AppConfig.warningLightSurface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark
-              ? const Color(0xFFFFD166).withOpacity(0.20)
-              : const Color(0xFFD97706).withOpacity(0.18),
+              ? AppConfig.warningColor.withOpacity(0.20)
+              : AppConfig.warningColor.withOpacity(0.18),
         ),
       ),
 
       child: Row(
         children: [
-          Icon(
-            Icons.wifi_off_rounded,
-            size: 18,
-            color: isDark ? const Color(0xFFFFD166) : const Color(0xFFD97706),
-          ),
+          Icon(Icons.wifi_off_rounded, size: 18, color: AppConfig.warningColor),
 
           const SizedBox(width: 10),
 
@@ -216,9 +212,7 @@ class NoInternetBanner extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 height: 1.4,
-                color: isDark
-                    ? const Color(0xFFFFD166)
-                    : const Color(0xFF92400E),
+                color: AppConfig.warningColor,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -243,11 +237,11 @@ Future<bool?> showConfirmationSheet(
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final Color accentColor = isDestructive
-      ? const Color(0xFFFF6B6B)
-      : const Color(0xFFC8FF57);
+      ? AppConfig.errorColor
+      : AppConfig.successColor;
   final Color confirmTextColor = isDestructive
       ? Colors.white
-      : const Color(0xFF0C0E14);
+      : AppConfig.bodyTextLight;
 
   return showModalBottomSheet<bool>(
     context: context,

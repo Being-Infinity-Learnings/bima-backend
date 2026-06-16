@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../config/app_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dummy data model
@@ -85,30 +86,22 @@ class HistoryScreen extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
 
     // summary stats derived from dummy data
-    final avgRank = (_dummyResults.map((r) => r.rank).reduce((a, b) => a + b) /
-            _dummyResults.length)
-        .round();
-    final bestRank =
-        _dummyResults.map((r) => r.rank).reduce((a, b) => a < b ? a : b);
+    final avgRank =
+        (_dummyResults.map((r) => r.rank).reduce((a, b) => a + b) /
+                _dummyResults.length)
+            .round();
+    final bestRank = _dummyResults
+        .map((r) => r.rank)
+        .reduce((a, b) => a < b ? a : b);
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0C0E14) : const Color(0xFFF5F6FA),
+      backgroundColor: AppConfig.scaffoldColor(isDark),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: isDark
-                ? [
-                    const Color(0xFF0C0E14),
-                    const Color(0xFF131720),
-                    const Color(0xFF0F1219),
-                  ]
-                : [
-                    const Color(0xFFF5F6FA),
-                    const Color(0xFFEEF0F7),
-                  ],
+            colors: AppConfig.backgroundGradient(isDark),
           ),
         ),
         child: SafeArea(
@@ -127,8 +120,7 @@ class HistoryScreen extends StatelessWidget {
                         fontSize: 26,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.5,
-                        color:
-                            isDark ? Colors.white : const Color(0xFF0C0E14),
+                        color: isDark ? Colors.white : const Color(0xFF0C0E14),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -175,10 +167,8 @@ class HistoryScreen extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                   itemCount: _dummyResults.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, i) => _ResultCard(
-                    isDark: isDark,
-                    result: _dummyResults[i],
-                  ),
+                  itemBuilder: (context, i) =>
+                      _ResultCard(isDark: isDark, result: _dummyResults[i]),
                 ),
               ),
             ],
@@ -280,9 +270,7 @@ class _SummaryCell extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: isDark
-                  ? const Color(0xFF7A8499)
-                  : const Color(0xFF9CA3AF),
+              color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
             ),
           ),
         ],

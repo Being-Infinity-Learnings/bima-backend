@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../config/app_config.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../shared/enums/auth_status.dart';
 import '../../../shared/widgets/shared_widgets.dart';
@@ -31,21 +32,13 @@ class ProfileScreen extends ConsumerWidget {
         : '?';
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF0C0E14)
-          : const Color(0xFFF5F6FA),
+      backgroundColor: AppConfig.scaffoldColor(isDark),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: isDark
-                ? [
-                    const Color(0xFF0C0E14),
-                    const Color(0xFF131720),
-                    const Color(0xFF0F1219),
-                  ]
-                : [const Color(0xFFF5F6FA), const Color(0xFFEEF0F7)],
+            colors: AppConfig.backgroundGradient(isDark),
           ),
         ),
         child: SafeArea(

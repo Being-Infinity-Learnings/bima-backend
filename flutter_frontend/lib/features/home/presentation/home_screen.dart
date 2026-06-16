@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/providers/auth_provider.dart';
+import '../../../config/app_config.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -15,8 +16,8 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: isDark
-          ? const Color(0xFF0C0E14)
-          : const Color(0xFFF5F6FA),
+          ? AppConfig.backgroundDarkStart
+          : AppConfig.surfaceColor,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -24,11 +25,14 @@ class HomeScreen extends ConsumerWidget {
             end: Alignment.bottomRight,
             colors: isDark
                 ? [
-                    const Color(0xFF0C0E14),
-                    const Color(0xFF131720),
-                    const Color(0xFF0F1219),
+                    AppConfig.backgroundDarkStart,
+                    AppConfig.backgroundDarkEnd,
+                    AppConfig.backgroundDarkEnd,
                   ]
-                : [const Color(0xFFF5F6FA), const Color(0xFFEEF0F7)],
+                : [
+                    AppConfig.backgroundLightStart,
+                    AppConfig.backgroundLightEnd,
+                  ],
           ),
         ),
         child: SafeArea(

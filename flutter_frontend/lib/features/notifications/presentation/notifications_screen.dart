@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:dio/dio.dart';
+import '../../../config/app_config.dart';
 import '../../../core/network/api_client.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,10 +45,10 @@ class _Notif {
         type = _NotifType.announcement;
     }
 
-    final sentAt =
-        json['sentAt'] != null ? DateTime.tryParse(json['sentAt']) : null;
-    final timeLabel =
-        sentAt != null ? _formatRelativeTime(sentAt) : 'Just now';
+    final sentAt = json['sentAt'] != null
+        ? DateTime.tryParse(json['sentAt'])
+        : null;
+    final timeLabel = sentAt != null ? _formatRelativeTime(sentAt) : 'Just now';
 
     return _Notif(
       id: json['id'] ?? '',
@@ -86,11 +87,7 @@ class _NotifState {
     this.error,
   });
 
-  _NotifState copyWith({
-    List<_Notif>? items,
-    bool? isLoading,
-    String? error,
-  }) =>
+  _NotifState copyWith({List<_Notif>? items, bool? isLoading, String? error}) =>
       _NotifState(
         items: items ?? this.items,
         isLoading: isLoading ?? this.isLoading,
@@ -106,8 +103,7 @@ class _NotifNotifier extends StateNotifier<_NotifState> {
   Future<void> _load() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final idToken =
-          await FirebaseAuth.instance.currentUser?.getIdToken();
+      final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (idToken == null) {
         state = state.copyWith(isLoading: false, items: []);
         return;
@@ -117,8 +113,9 @@ class _NotifNotifier extends StateNotifier<_NotifState> {
         options: Options(headers: {'Authorization': 'Bearer $idToken'}),
       );
       final List data = response.data['data'] ?? [];
-      final items =
-          data.map((e) => _Notif.fromJson(e as Map<String, dynamic>)).toList();
+      final items = data
+          .map((e) => _Notif.fromJson(e as Map<String, dynamic>))
+          .toList();
       state = state.copyWith(isLoading: false, items: items);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -134,12 +131,12 @@ class _NotifNotifier extends StateNotifier<_NotifState> {
   void prependFromMessage(RemoteMessage message) {
     final title =
         message.notification?.title ?? message.data['title'] as String?;
-    final body =
-        message.notification?.body ?? message.data['body'] as String?;
+    final body = message.notification?.body ?? message.data['body'] as String?;
     if (title == null && body == null) return;
 
     final notif = _Notif(
-      id: message.data['notificationId'] as String? ??
+      id:
+          message.data['notificationId'] as String? ??
           message.messageId ??
           DateTime.now().millisecondsSinceEpoch.toString(),
       title: title ?? '',
@@ -160,9 +157,7 @@ class _NotifNotifier extends StateNotifier<_NotifState> {
 }
 
 final notificationsProvider =
-    StateNotifierProvider<_NotifNotifier, _NotifState>(
-  (_) => _NotifNotifier(),
-);
+    StateNotifierProvider<_NotifNotifier, _NotifState>((_) => _NotifNotifier());
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -222,20 +217,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     final notifState = ref.watch(notificationsProvider);
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0C0E14) : const Color(0xFFF5F6FA),
+      backgroundColor: AppConfig.scaffoldColor(isDark),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: isDark
-                ? [
-                    const Color(0xFF0C0E14),
-                    const Color(0xFF131720),
-                    const Color(0xFF0F1219),
-                  ]
-                : [const Color(0xFFF5F6FA), const Color(0xFFEEF0F7)],
+            colors: AppConfig.backgroundGradient(isDark),
           ),
         ),
         child: SafeArea(
@@ -323,9 +311,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
               const SizedBox(height: 24),
 
               // ── Body ────────────────────────────────────────────────
-              Expanded(
-                child: _buildBody(isDark, notifState),
-              ),
+              Expanded(child: _buildBody(isDark, notifState)),
             ],
           ),
         ),
@@ -348,8 +334,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
               Icon(
                 Icons.wifi_off_outlined,
                 size: 48,
-                color:
-                    isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+                color: isDark
+                    ? const Color(0xFF7A8499)
+                    : const Color(0xFF9CA3AF),
               ),
               const SizedBox(height: 16),
               Text(
@@ -385,8 +372,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
             Icon(
               Icons.notifications_none_outlined,
               size: 48,
-              color:
-                  isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+              color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
             ),
             const SizedBox(height: 16),
             Text(
@@ -505,8 +491,7 @@ class _NotifCard extends StatelessWidget {
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.1,
-                      color:
-                          isDark ? Colors.white : const Color(0xFF0C0E14),
+                      color: isDark ? Colors.white : const Color(0xFF0C0E14),
                     ),
                   ),
                   const SizedBox(height: 4),

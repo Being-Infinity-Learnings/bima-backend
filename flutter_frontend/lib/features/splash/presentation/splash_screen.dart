@@ -124,9 +124,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: isDark
-                ? [const Color(0xFF0C0E14), const Color(0xFF131720)]
-                : [const Color(0xFFF5F6FA), const Color(0xFFEEF0F7)],
+            colors: AppConfig.backgroundGradient(isDark),
           ),
         ),
         child: SafeArea(
@@ -224,7 +222,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 24),
                   child: Text(
-                    'Being Infinity © 2025',
+                    'Being Infinity © 2026',
                     style: TextStyle(
                       fontSize: 11,
                       color: isDark

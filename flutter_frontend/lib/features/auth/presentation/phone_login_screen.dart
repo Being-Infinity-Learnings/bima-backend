@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../shared/widgets/shared_widgets.dart';
 import '../providers/auth_provider.dart';
-
+import '../../../config/app_config.dart';
 import '../../../shared/enums/auth_status.dart';
 
 class PhoneLoginScreen extends ConsumerStatefulWidget {
@@ -93,9 +93,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: isDark
-                ? [const Color(0xFF0F1117), const Color(0xFF161B22)]
-                : [const Color(0xFFF8F9FC), const Color(0xFFF2F4F9)],
+            colors: AppConfig.backgroundGradient(isDark),
           ),
         ),
         child: SafeArea(
