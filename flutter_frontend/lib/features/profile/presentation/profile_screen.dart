@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../auth/providers/auth_provider.dart';
 import '../../../shared/enums/auth_status.dart';
+import '../../../shared/widgets/shared_widgets.dart';
 import 'edit_profile_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -253,7 +254,7 @@ class ProfileScreen extends ConsumerWidget {
 
                     const SizedBox(height: 10),
 
-                    // ── Logout button ────────────────────────────────────
+                    // ── Logout button — shows confirmation first ──────────
                     _ActionButton(
                       isDark: isDark,
                       icon: Icons.logout_rounded,
@@ -261,7 +262,19 @@ class ProfileScreen extends ConsumerWidget {
                       iconColor: const Color(0xFFFF6B6B),
                       isDestructive: true,
                       onTap: () async {
-                        await ref.read(authProvider.notifier).logout();
+                        final confirmed = await showConfirmationSheet(
+                          context,
+                          title: 'Log Out?',
+                          message:
+                              'You will be signed out of your account. You can log back in anytime.',
+                          confirmLabel: 'Log Out',
+                          icon: Icons.logout_rounded,
+                          isDestructive: true,
+                        );
+
+                        if (confirmed == true) {
+                          await ref.read(authProvider.notifier).logout();
+                        }
                       },
                     ),
 

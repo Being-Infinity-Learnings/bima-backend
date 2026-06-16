@@ -18,6 +18,7 @@ import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/services/fcm_service.dart';
+import '../../../core/services/connectivity_service.dart';
 
 /// A provider that exposes authentication state to the rest of the app.
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
@@ -31,9 +32,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository _repo = AuthRepository();
 
   /// Checks whether the user is currently authenticated.
-  ///
-  /// This method reads the Firebase user, retrieves the profile, and updates
-  /// auth state to the appropriate status for routing.
   Future<void> checkAuth() async {
     state = state.copyWith(isLoading: true);
 
@@ -63,6 +61,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await FcmService.initialize();
     } catch (e) {
       if (e is DioException) {
+        // Check for network/connectivity errors first
+        if (e.type == DioExceptionType.connectionError ||
+            e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout) {
+          final hasInternet = await ConnectivityService.hasInternet();
+          if (!hasInternet) {
+            state = AuthState(
+              status: AuthStatus.error,
+              errorMessage:
+                  'No internet connection. Please check your network.',
+            );
+            return;
+          }
+        }
+
         final statusCode = e.response?.statusCode;
 
         if (statusCode == 404) {
@@ -82,7 +95,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
         state = AuthState(
           status: AuthStatus.error,
-          errorMessage: 'Server error occurred',
+          errorMessage: 'Server error occurred. Please try again.',
         );
 
         return;
@@ -90,7 +103,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       state = AuthState(
         status: AuthStatus.error,
-        errorMessage: 'Something went wrong',
+        errorMessage: 'Something went wrong. Please try again.',
       );
     } finally {
       state = state.copyWith(isLoading: false);
@@ -98,11 +111,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Attempts to sign in the user with email and password.
-  ///
-  /// On success it refreshes auth state via [checkAuth]. On failure it sets a
-  /// user-friendly error message.
   Future<void> login({required String email, required String password}) async {
-    state = state.copyWith(isLoading: true, errorMessage: null);
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    // Check connectivity first
+    final hasInternet = await ConnectivityService.hasInternet();
+    if (!hasInternet) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'No internet connection. Please check your network.',
+      );
+      return;
+    }
 
     try {
       await _repo.signIn(email: email, password: password);
@@ -132,8 +152,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
           message = 'Too many login attempts. Please try again later.';
           break;
 
+        case 'network-request-failed':
+          message = 'No internet connection. Please check your network.';
+          break;
+
         default:
-          message = 'Unable to sign in.';
+          message = 'Unable to sign in. Please try again.';
       }
 
       state = state.copyWith(isLoading: false, errorMessage: message);
@@ -156,14 +180,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Creates a new Firebase account using email and password.
-  ///
-  /// After account creation, this method updates state to indicate the
-  /// profile still needs to be completed.
   Future<void> createFirebaseAccount({
     required String email,
     required String password,
   }) async {
-    state = state.copyWith(isLoading: true, errorMessage: null);
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    final hasInternet = await ConnectivityService.hasInternet();
+    if (!hasInternet) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'No internet connection. Please check your network.',
+      );
+      return;
+    }
 
     try {
       await _repo.createFirebaseUser(email: email, password: password);
@@ -186,11 +216,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
           break;
 
         case 'network-request-failed':
-          message = 'No internet connection.';
+          message = 'No internet connection. Please check your network.';
           break;
 
         default:
-          message = 'Unable to create account.';
+          message = 'Unable to create account. Please try again.';
       }
 
       state = state.copyWith(isLoading: false, errorMessage: message);
@@ -198,8 +228,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Submits profile completion data to the backend.
-  ///
-  /// This is the second registration step after creating a Firebase account.
   Future<void> completeProfile({
     required String fullName,
     required String gender,
@@ -208,6 +236,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String email,
   }) async {
     state = state.copyWith(isLoading: true);
+
+    final hasInternet = await ConnectivityService.hasInternet();
+    if (!hasInternet) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'No internet connection. Please check your network.',
+      );
+      return;
+    }
 
     try {
       final user = await _repo.registerProfile(
@@ -229,27 +266,35 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } on DioException catch (e) {
       String message;
 
-      final statusCode = e.response?.statusCode;
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout) {
+        message = 'No internet connection. Please check your network.';
+      } else {
+        final statusCode = e.response?.statusCode;
 
-      switch (statusCode) {
-        case 400:
-          message = 'Please check the information you entered.';
-          break;
+        switch (statusCode) {
+          case 400:
+            final body = e.response?.data;
+            message = (body is Map && body['error'] != null)
+                ? body['error'].toString()
+                : 'Please check the information you entered.';
+            break;
 
-        case 401:
-          message = 'Session expired. Please sign in again.';
-          break;
+          case 401:
+            message = 'Session expired. Please sign in again.';
+            break;
 
-        case 409:
-          message = 'This roll number is already registered.';
-          break;
+          case 409:
+            message = 'This roll number is already registered.';
+            break;
 
-        case 500:
-          message = 'Server error. Please try again later.';
-          break;
+          case 500:
+            message = 'Server error. Please try again later.';
+            break;
 
-        default:
-          message = 'Unable to complete registration.';
+          default:
+            message = 'Unable to complete registration. Please try again.';
+        }
       }
 
       state = state.copyWith(isLoading: false, errorMessage: message);
@@ -265,7 +310,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String rollNumber,
     required String email,
   }) async {
-    state = state.copyWith(status: AuthStatus.loading, errorMessage: null);
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    final hasInternet = await ConnectivityService.hasInternet();
+    if (!hasInternet) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'No internet connection. Please check your network.',
+      );
+      throw Exception('No internet connection.');
+    }
 
     try {
       final user = await _repo.updateProfile(
@@ -279,10 +333,33 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
 
       state = AuthState(status: AuthStatus.authenticated, user: user);
-    } catch (e) {
+    } on DioException catch (e) {
+      String message;
+
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout) {
+        message = 'No internet connection. Please check your network.';
+      } else {
+        final statusCode = e.response?.statusCode;
+        switch (statusCode) {
+          case 400:
+            message = 'Please check the information you entered.';
+            break;
+          case 409:
+            message = 'This roll number is already in use.';
+            break;
+          case 500:
+            message = 'Server error. Please try again later.';
+            break;
+          default:
+            message = 'Failed to update profile. Please try again.';
+        }
+      }
+
       state = state.copyWith(
-        status: AuthStatus.error,
-        errorMessage: 'Failed to update profile',
+        isLoading: false,
+        status: AuthStatus.authenticated,
+        errorMessage: message,
       );
 
       rethrow;
@@ -295,34 +372,63 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return;
     }
 
-    state = state.copyWith(errorMessage: null);
+    state = state.copyWith(clearError: true);
   }
 
   Future<void> sendOtp(String phoneNumber) async {
-    print("SEND OTP CALLED");
-    print(phoneNumber);
+    state = state.copyWith(isLoading: true, clearError: true);
 
-    state = state.copyWith(isLoading: true, errorMessage: null);
+    // Check connectivity before attempting OTP send
+    final hasInternet = await ConnectivityService.hasInternet();
+    if (!hasInternet) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'No internet connection. Please check your network.',
+      );
+      return;
+    }
 
     await _repo.verifyPhoneNumber(
       phoneNumber: phoneNumber,
 
       verificationCompleted: (_) {
-        print("verificationCompleted");
+        // Auto-verification handled
       },
 
       verificationFailed: (e) {
-        print("verificationFailed");
-        print(e.code);
-        print(e.message);
+        String message;
 
-        state = state.copyWith(isLoading: false, errorMessage: e.message);
+        switch (e.code) {
+          case 'invalid-phone-number':
+            message = 'The phone number entered is invalid.';
+            break;
+
+          case 'too-many-requests':
+            message =
+                'Too many OTP requests. Please wait a moment and try again.';
+            break;
+
+          case 'network-request-failed':
+            message = 'No internet connection. Please check your network.';
+            break;
+
+          case 'quota-exceeded':
+            message = 'SMS quota exceeded. Please try again later.';
+            break;
+
+          case 'app-not-authorized':
+            message = 'App is not authorized to send SMS. Contact support.';
+            break;
+
+          default:
+            // message = e.message ?? 'Failed to send OTP. Please try again.';
+            message = 'Failed to send OTP. Please try again.';
+        }
+
+        state = state.copyWith(isLoading: false, errorMessage: message);
       },
 
       codeSent: (verificationId, _) {
-        print("codeSent");
-        print(verificationId);
-
         state = state.copyWith(
           isLoading: false,
           verificationId: verificationId,
@@ -331,7 +437,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       },
 
       codeAutoRetrievalTimeout: (_) {
-        print("timeout");
+        // Timeout is handled; user can still enter manually
       },
     );
   }
@@ -353,14 +459,48 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return;
     }
 
-    state = state.copyWith(isLoading: true, errorMessage: null);
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    // Check connectivity before verifying
+    final hasInternet = await ConnectivityService.hasInternet();
+    if (!hasInternet) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'No internet connection. Please check your network.',
+      );
+      return;
+    }
 
     try {
       await _repo.signInWithOtp(verificationId: verificationId, otp: otp);
 
       await checkAuth();
-    } on FirebaseAuthException {
-      state = state.copyWith(isLoading: false, errorMessage: 'Invalid OTP.');
+    } on FirebaseAuthException catch (e) {
+      String message;
+
+      switch (e.code) {
+        case 'invalid-verification-code':
+          message = 'Incorrect OTP. Please check and try again.';
+          break;
+
+        case 'session-expired':
+          message = 'OTP has expired. Please go back and request a new code.';
+          break;
+
+        case 'network-request-failed':
+          message = 'No internet connection. Please check your network.';
+          break;
+
+        default:
+          message = 'Verification failed. Please try again.';
+      }
+
+      state = state.copyWith(isLoading: false, errorMessage: message);
+    } catch (_) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Something went wrong. Please try again.',
+      );
     }
   }
 

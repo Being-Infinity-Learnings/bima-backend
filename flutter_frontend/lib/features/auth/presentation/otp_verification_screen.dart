@@ -24,6 +24,8 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
 
   int _secondsRemaining = 30;
 
+  bool _hasSubmittedOnce = false;
+
   void _startTimer() {
     _timer?.cancel();
 
@@ -47,34 +49,41 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
   void initState() {
     super.initState();
 
-    _otpCtrl.addListener(_clearError);
+    _otpCtrl.addListener(_onOtpChanged);
 
     _startTimer();
   }
 
-  void _clearError() {
-    ref.read(authProvider.notifier).clearError();
+  void _onOtpChanged() {
+    // Clear error as user types, but only after they've tried once
+    if (_hasSubmittedOnce) {
+      ref.read(authProvider.notifier).clearError();
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
 
-    _otpCtrl.removeListener(_clearError);
+    _otpCtrl.removeListener(_onOtpChanged);
     _otpCtrl.dispose();
 
     super.dispose();
   }
 
   Future<void> _submit() async {
-    if (_otpCtrl.text.trim().length != 6) {
+    setState(() => _hasSubmittedOnce = true);
+
+    final otp = _otpCtrl.text.trim();
+
+    if (otp.length != 6) {
       ref
           .read(authProvider.notifier)
-          .setError('Please enter a valid 6 digit OTP.');
+          .setError('Please enter the full 6-digit OTP.');
       return;
     }
 
-    await ref.read(authProvider.notifier).verifyOtp(_otpCtrl.text.trim());
+    await ref.read(authProvider.notifier).verifyOtp(otp);
   }
 
   @override
@@ -85,6 +94,13 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     final authState = ref.watch(authProvider);
+
+    final isNoInternet =
+        authState.errorMessage?.toLowerCase().contains('internet') ?? false;
+
+    // Detect OTP-specific error types to show contextual hint
+    final isExpiredOtp =
+        authState.errorMessage?.toLowerCase().contains('expired') ?? false;
 
     ref.listen(authProvider, (previous, next) {
       switch (next.status) {
@@ -99,7 +115,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
         case AuthStatus.authenticated:
           context.go('/home');
           break;
-          
+
         case AuthStatus.blocked:
           context.go('/blocked');
           break;
@@ -119,6 +135,24 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: cs.outline.withValues(alpha: 0.25)),
+      ),
+    );
+
+    final errorPinTheme = defaultPinTheme.copyWith(
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFFFF6B6B).withOpacity(0.08)
+            : const Color(0xFFFFF4F4),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFDC2626).withOpacity(0.5)),
+      ),
+    );
+
+    final focusedPinTheme = defaultPinTheme.copyWith(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.primary, width: 2),
       ),
     );
 
@@ -176,7 +210,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
                           const SizedBox(height: 8),
 
                           Text(
-                            'Enter the code sent to',
+                            'Enter the 6-digit code sent to',
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: cs.onSurfaceVariant,
                             ),
@@ -194,7 +228,24 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
                           if (authState.errorMessage != null) ...[
                             const SizedBox(height: 20),
 
-                            ErrorBanner(message: authState.errorMessage!),
+                            if (isNoInternet)
+                              const NoInternetBanner()
+                            else
+                              ErrorBanner(message: authState.errorMessage!),
+
+                            // If OTP expired, give actionable hint to resend
+                            if (isExpiredOtp) ...[
+                              const SizedBox(height: 10),
+                              _ExpiredOtpHint(
+                                isDark: isDark,
+                                onResend: () async {
+                                  await ref
+                                      .read(authProvider.notifier)
+                                      .resendOtp();
+                                  _startTimer();
+                                },
+                              ),
+                            ],
 
                             const SizedBox(height: 20),
                           ],
@@ -206,6 +257,10 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
                               controller: _otpCtrl,
                               length: 6,
                               defaultPinTheme: defaultPinTheme,
+                              focusedPinTheme: focusedPinTheme,
+                              errorPinTheme: errorPinTheme,
+                              // Auto-submit when all 6 digits entered
+                              onCompleted: (_) => _submit(),
                             ),
                           ),
 
@@ -224,10 +279,22 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
 
                           Center(
                             child: _secondsRemaining > 0
-                                ? Text(
-                                    'Resend code in ${_secondsRemaining}s',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: cs.onSurfaceVariant,
+                                ? RichText(
+                                    text: TextSpan(
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                          ),
+                                      children: [
+                                        const TextSpan(text: 'Resend code in '),
+                                        TextSpan(
+                                          text: '$_secondsRemaining s',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: cs.primary,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   )
                                 : TextButton(
@@ -249,6 +316,53 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small hint shown when OTP has expired, with a quick resend tap target.
+class _ExpiredOtpHint extends StatelessWidget {
+  final bool isDark;
+  final VoidCallback onResend;
+
+  const _ExpiredOtpHint({required this.isDark, required this.onResend});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onResend,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark
+              ? const Color(0xFF6C8EFF).withOpacity(0.08)
+              : const Color(0xFFEEF2FF),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF6C8EFF).withOpacity(0.20)),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.refresh_rounded,
+              size: 16,
+              color: Color(0xFF6C8EFF),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Tap here to request a new OTP',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: isDark
+                      ? const Color(0xFF9BB3FF)
+                      : const Color(0xFF4B6BF5),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

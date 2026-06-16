@@ -1,6 +1,6 @@
 /// Shared reusable UI widgets used across the application.
 ///
-/// This file contains common branding, button, divider, and error widgets.
+/// This file contains common branding, button, divider, error, and dialog widgets.
 import 'package:flutter/material.dart';
 import '../../config/app_config.dart';
 
@@ -115,7 +115,7 @@ class OrDivider extends StatelessWidget {
   }
 }
 
-/// Inline error box shown beneath forms.
+/// Inline error box shown beneath forms (red — for hard errors).
 class ErrorBanner extends StatelessWidget {
   final String message;
 
@@ -123,23 +123,35 @@ class ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       width: double.infinity,
 
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
 
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF4F4),
-
+        color: isDark
+            ? const Color(0xFFFF6B6B).withOpacity(0.10)
+            : const Color(0xFFFFF4F4),
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark
+              ? const Color(0xFFFF6B6B).withOpacity(0.20)
+              : const Color(0xFFDC2626).withOpacity(0.12),
+        ),
       ),
 
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.info_outline_rounded,
-            size: 18,
-            color: Color(0xFFDC2626),
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(
+              Icons.error_outline_rounded,
+              size: 18,
+              color: Color(0xFFDC2626),
+            ),
           ),
 
           const SizedBox(width: 10),
@@ -147,10 +159,12 @@ class ErrorBanner extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                height: 1.3,
-                color: Color(0xFFB91C1C),
+                height: 1.4,
+                color: isDark
+                    ? const Color(0xFFFF9999)
+                    : const Color(0xFFB91C1C),
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -159,6 +173,246 @@ class ErrorBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Inline banner shown when there is no internet connection (amber/warning).
+class NoInternetBanner extends StatelessWidget {
+  const NoInternetBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      width: double.infinity,
+
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFFFFD166).withOpacity(0.10)
+            : const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark
+              ? const Color(0xFFFFD166).withOpacity(0.20)
+              : const Color(0xFFD97706).withOpacity(0.18),
+        ),
+      ),
+
+      child: Row(
+        children: [
+          Icon(
+            Icons.wifi_off_rounded,
+            size: 18,
+            color: isDark ? const Color(0xFFFFD166) : const Color(0xFFD97706),
+          ),
+
+          const SizedBox(width: 10),
+
+          Expanded(
+            child: Text(
+              'No internet connection. Please check your network and try again.',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: isDark
+                    ? const Color(0xFFFFD166)
+                    : const Color(0xFF92400E),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shows a stylish confirmation bottom-sheet modal.
+///
+/// Returns `true` if the user confirmed, `false` (or null) otherwise.
+Future<bool?> showConfirmationSheet(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String confirmLabel,
+  String cancelLabel = 'Cancel',
+  bool isDestructive = false,
+  IconData? icon,
+}) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final Color accentColor = isDestructive
+      ? const Color(0xFFFF6B6B)
+      : const Color(0xFFC8FF57);
+  final Color confirmTextColor = isDestructive
+      ? Colors.white
+      : const Color(0xFF0C0E14);
+
+  return showModalBottomSheet<bool>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withOpacity(0.5),
+    isScrollControlled: true,
+    builder: (ctx) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF161B26) : Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: isDark
+                    ? const Color(0xFFFFFFFF).withOpacity(0.07)
+                    : const Color(0xFF000000).withOpacity(0.06),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Drag handle
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFFFFFFFF).withOpacity(0.12)
+                          : const Color(0xFF000000).withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+                  child: Column(
+                    children: [
+                      // Icon badge
+                      if (icon != null) ...[
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: accentColor.withOpacity(0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(icon, size: 26, color: accentColor),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF0C0E14),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      Text(
+                        message,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: isDark
+                              ? const Color(0xFF7A8499)
+                              : const Color(0xFF6B7280),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Confirm button
+                      GestureDetector(
+                        onTap: () => Navigator.of(ctx).pop(true),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          decoration: BoxDecoration(
+                            color: isDestructive ? accentColor : null,
+                            gradient: isDestructive
+                                ? null
+                                : const LinearGradient(
+                                    colors: [
+                                      Color(0xFFC8FF57),
+                                      Color(0xFF8AE600),
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: accentColor.withOpacity(0.25),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Text(
+                              confirmLabel,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: confirmTextColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Cancel button
+                      GestureDetector(
+                        onTap: () => Navigator.of(ctx).pop(false),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFFFFFFFF).withOpacity(0.05)
+                                : const Color(0xFF000000).withOpacity(0.04),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Center(
+                            child: Text(
+                              cancelLabel,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? const Color(0xFF7A8499)
+                                    : const Color(0xFF6B7280),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 /// Step indicator for multi-step forms.
