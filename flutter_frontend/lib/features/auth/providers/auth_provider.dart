@@ -285,7 +285,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
             break;
 
           case 409:
-            message = 'This roll number is already registered.';
+            final body = e.response?.data;
+
+            message = (body is Map && body['error'] != null)
+                ? body['error'].toString()
+                : 'A record already exists.';
             break;
 
           case 500:
@@ -346,7 +350,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
             message = 'Please check the information you entered.';
             break;
           case 409:
-            message = 'This roll number is already in use.';
+            final body = e.response?.data;
+
+            message = (body is Map && body['error'] != null)
+                ? body['error'].toString()
+                : 'A record already exists.';
             break;
           case 500:
             message = 'Server error. Please try again later.';
