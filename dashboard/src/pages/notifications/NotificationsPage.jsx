@@ -12,6 +12,7 @@ import {
   Badge,
   Spinner,
   EmptyState,
+  DateTimePicker,
   toast,
 } from "../../components/ui/index.jsx";
 import APP_CONFIG from "../../config/app.config.js";
@@ -72,6 +73,9 @@ const STATUS_COLORS = {
   PENDING: T.warning,
   FAILED: T.danger,
 };
+
+// How many history rows to show per page before the "Load more" button.
+const PAGE_SIZE = 10;
 
 // ── Compose Modal ──────────────────────────────────────────────────────────
 
@@ -231,14 +235,10 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
               (leave blank to send immediately)
             </span>
           </label>
-          <input
-            type="datetime-local"
+          <DateTimePicker
             value={form.sendAt}
-            onChange={set("sendAt")}
-            style={{
-              ...inputBase,
-              colorScheme: "dark",
-            }}
+            onChange={(v) => setForm((p) => ({ ...p, sendAt: v }))}
+            placeholder="Send immediately"
           />
         </div>
 
@@ -414,6 +414,7 @@ export default function NotificationsPage() {
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const getToken = useCallback(async () => {
     if (!firebaseUser) throw new Error("Not authenticated");
@@ -425,6 +426,7 @@ export default function NotificationsPage() {
     try {
       const data = await notifRequest("GET", "/notifications", null, getToken);
       setHistory(Array.isArray(data) ? data : []);
+      setVisibleCount(PAGE_SIZE);
     } catch (e) {
       toast(e.message || "Failed to load notifications", "error");
     } finally {
@@ -552,7 +554,22 @@ export default function NotificationsPage() {
             description="Compose your first notification to send quiz reminders or announcements to students."
           />
         ) : (
-          history.map((n) => <HistoryRow key={n.id} notif={n} />)
+          <>
+            {history.slice(0, visibleCount).map((n) => (
+              <HistoryRow key={n.id} notif={n} />
+            ))}
+            {visibleCount < history.length && (
+              <div style={{ padding: "14px 16px", textAlign: "center" }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                >
+                  Load more ({history.length - visibleCount} remaining)
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </Card>
 
