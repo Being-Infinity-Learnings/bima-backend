@@ -37,26 +37,35 @@ function GroupFormModal({ open, onClose, group, onSaved }) {
 
   async function submit(e) {
     e.preventDefault();
+
     if (!name.trim()) {
       setError("Name is required.");
       return;
     }
+
+    if (!desc.trim()) {
+      setError("Description is required.");
+      return;
+    }
+
     setLoading(true);
     setError("");
+
     try {
       if (isEdit) {
         await groupsApi.update(group.id, {
           name: name.trim(),
-          description: desc.trim() || null,
+          description: desc.trim(),
         });
         toast("Group updated.", "success");
       } else {
         await groupsApi.create({
           name: name.trim(),
-          description: desc.trim() || null,
+          description: desc.trim(),
         });
         toast("Group created.", "success");
       }
+
       onSaved();
       onClose();
     } catch (err) {
@@ -88,10 +97,11 @@ function GroupFormModal({ open, onClose, group, onSaved }) {
           required
         />
         <Textarea
-          label="Description (optional)"
+          label="Description"
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
-          placeholder="Short description..."
+          placeholder="Enter group description..."
+          required
           style={{ minHeight: 72 }}
         />
         {error && (
