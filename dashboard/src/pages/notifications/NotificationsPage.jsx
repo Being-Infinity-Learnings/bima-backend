@@ -34,8 +34,13 @@ async function notifRequest(method, path, body, getToken) {
   const res = await fetch(`${BASE}${path}`, opts);
   const raw = await res.text();
   let parsed = null;
-  try { parsed = JSON.parse(raw); } catch { parsed = { message: raw }; }
-  if (!res.ok) throw { status: res.status, message: parsed?.message || "Request failed" };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = { message: raw };
+  }
+  if (!res.ok)
+    throw { status: res.status, message: parsed?.message || "Request failed" };
   return parsed?.data ?? parsed;
 }
 
@@ -49,9 +54,17 @@ const NOTIF_TYPES = [
 ];
 
 const TARGET_TYPES = [
-  { value: "ALL", label: "All Users", desc: "Every registered user on the platform" },
-  { value: "APPROVED_ONLY", label: "Approved Only", desc: "Only fully verified accounts" },
-  { value: "GROUP", label: "Specific Group", desc: "Target one student group/pool" },
+  {
+    value: "ALL",
+    label: "All Users",
+    desc: "Every registered user on the platform",
+  },
+  // { value: "APPROVED_ONLY", label: "Approved Only", desc: "Only fully verified accounts" },
+  {
+    value: "GROUP",
+    label: "Specific Group",
+    desc: "Target one student group/pool",
+  },
 ];
 
 const STATUS_COLORS = {
@@ -76,7 +89,14 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
 
   useEffect(() => {
     if (open) {
-      setForm({ title: "", body: "", type: "ANNOUNCEMENT", targetType: "ALL", groupId: "", sendAt: "" });
+      setForm({
+        title: "",
+        body: "",
+        type: "ANNOUNCEMENT",
+        targetType: "ALL",
+        groupId: "",
+        sendAt: "",
+      });
       setError("");
     }
   }, [open]);
@@ -86,7 +106,8 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
   async function handleSend() {
     if (!form.title.trim()) return setError("Title is required.");
     if (!form.body.trim()) return setError("Body is required.");
-    if (form.targetType === "GROUP" && !form.groupId) return setError("Please select a group.");
+    if (form.targetType === "GROUP" && !form.groupId)
+      return setError("Please select a group.");
 
     setLoading(true);
     setError("");
@@ -100,7 +121,10 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
         ...(form.sendAt && { sendAt: new Date(form.sendAt).toISOString() }),
       };
       await notifRequest("POST", "/notifications/send", payload, getToken);
-      toast(form.sendAt ? "Notification scheduled!" : "Notification sent!", "success");
+      toast(
+        form.sendAt ? "Notification scheduled!" : "Notification sent!",
+        "success",
+      );
       onSent();
       onClose();
     } catch (e) {
@@ -113,9 +137,13 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
   const isScheduled = !!form.sendAt;
 
   return (
-    <Modal open={open} onClose={onClose} title="Compose Notification" width={560}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Compose Notification"
+      width={560}
+    >
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-
         {/* Title */}
         <div>
           <label style={labelStyle}>Title *</label>
@@ -138,20 +166,34 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
         </div>
 
         {/* Type + Target in a row */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+        >
           <div>
             <label style={labelStyle}>Type</label>
-            <select style={selectStyle} value={form.type} onChange={set("type")}>
+            <select
+              style={selectStyle}
+              value={form.type}
+              onChange={set("type")}
+            >
               {NOTIF_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
               ))}
             </select>
           </div>
           <div>
             <label style={labelStyle}>Target Audience</label>
-            <select style={selectStyle} value={form.targetType} onChange={set("targetType")}>
+            <select
+              style={selectStyle}
+              value={form.targetType}
+              onChange={set("targetType")}
+            >
               {TARGET_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
               ))}
             </select>
           </div>
@@ -166,7 +208,11 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
         {form.targetType === "GROUP" && (
           <div>
             <label style={labelStyle}>Select Group *</label>
-            <select style={selectStyle} value={form.groupId} onChange={set("groupId")}>
+            <select
+              style={selectStyle}
+              value={form.groupId}
+              onChange={set("groupId")}
+            >
               <option value="">— choose a group —</option>
               {groups.map((g) => (
                 <option key={g.id} value={g.id}>
@@ -181,7 +227,9 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
         <div>
           <label style={labelStyle}>
             Schedule for later{" "}
-            <span style={{ color: T.textMuted, fontWeight: 400 }}>(leave blank to send immediately)</span>
+            <span style={{ color: T.textMuted, fontWeight: 400 }}>
+              (leave blank to send immediately)
+            </span>
           </label>
           <input
             type="datetime-local"
@@ -196,16 +244,33 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
 
         {/* Preview panel */}
         {(form.title || form.body) && (
-          <div style={{
-            background: T.pageBg,
-            border: `1px solid ${T.cardBorder}`,
-            borderRadius: 10,
-            padding: "12px 14px",
-          }}>
-            <p style={{ fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          <div
+            style={{
+              background: T.pageBg,
+              border: `1px solid ${T.cardBorder}`,
+              borderRadius: 10,
+              padding: "12px 14px",
+            }}
+          >
+            <p
+              style={{
+                fontSize: 11,
+                color: T.textMuted,
+                marginBottom: 6,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
               Preview
             </p>
-            <p style={{ fontSize: 13, fontWeight: 700, color: T.textPrimary, margin: "0 0 4px" }}>
+            <p
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: T.textPrimary,
+                margin: "0 0 4px",
+              }}
+            >
               {form.title || "Your title here"}
             </p>
             <p style={{ fontSize: 12, color: T.textSecondary, margin: 0 }}>
@@ -215,15 +280,39 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
         )}
 
         {error && (
-          <p style={{ fontSize: 13, color: T.danger.text, background: T.danger.bg, padding: "8px 12px", borderRadius: 8, margin: 0 }}>
+          <p
+            style={{
+              fontSize: 13,
+              color: T.danger.text,
+              background: T.danger.bg,
+              padding: "8px 12px",
+              borderRadius: 8,
+              margin: 0,
+            }}
+          >
             {error}
           </p>
         )}
 
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 4 }}>
-          <Button variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            paddingTop: 4,
+          }}
+        >
+          <Button variant="ghost" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
           <Button onClick={handleSend} disabled={loading}>
-            {loading ? <Spinner size={14} /> : isScheduled ? "⏰ Schedule" : "Send Now →"}
+            {loading ? (
+              <Spinner size={14} />
+            ) : isScheduled ? (
+              "⏰ Schedule"
+            ) : (
+              "Send Now →"
+            )}
           </Button>
         </div>
       </div>
@@ -234,39 +323,64 @@ function ComposeModal({ open, onClose, groups, onSent, getToken }) {
 // ── History row ────────────────────────────────────────────────────────────
 
 function HistoryRow({ notif }) {
-  const typeInfo = NOTIF_TYPES.find((t) => t.value === notif.type) ?? NOTIF_TYPES[0];
+  const typeInfo =
+    NOTIF_TYPES.find((t) => t.value === notif.type) ?? NOTIF_TYPES[0];
   const statusColors = STATUS_COLORS[notif.status] ?? T.neutral;
 
   const sentTime = notif.sentAt
     ? new Date(notif.sentAt).toLocaleString()
     : notif.sendAt
-    ? `Scheduled: ${new Date(notif.sendAt).toLocaleString()}`
-    : "—";
+      ? `Scheduled: ${new Date(notif.sendAt).toLocaleString()}`
+      : "—";
 
   return (
-    <div style={{
-      display: "flex",
-      alignItems: "flex-start",
-      gap: 14,
-      padding: "14px 16px",
-      borderBottom: `1px solid ${T.cardBorder}`,
-    }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 14,
+        padding: "14px 16px",
+        borderBottom: `1px solid ${T.cardBorder}`,
+      }}
+    >
       {/* Type dot */}
-      <div style={{
-        width: 8, height: 8, borderRadius: "50%",
-        background: typeInfo.color.dot,
-        marginTop: 6, flexShrink: 0,
-      }} />
+      <div
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: typeInfo.color.dot,
+          marginTop: 6,
+          flexShrink: 0,
+        }}
+      />
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 3,
+          }}
+        >
           <span style={{ fontSize: 14, fontWeight: 600, color: T.textPrimary }}>
             {notif.title}
           </span>
-          <Badge label={notif.type.replace("_", " ")} customColors={typeInfo.color} />
+          <Badge
+            label={notif.type.replace("_", " ")}
+            customColors={typeInfo.color}
+          />
         </div>
-        <p style={{ fontSize: 13, color: T.textSecondary, margin: "0 0 6px", lineHeight: 1.4 }}>
+        <p
+          style={{
+            fontSize: 13,
+            color: T.textSecondary,
+            margin: "0 0 6px",
+            lineHeight: 1.4,
+          }}
+        >
           {notif.body}
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -320,7 +434,10 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     loadHistory();
-    groupsApi.getAll().then(setGroups).catch(() => {});
+    groupsApi
+      .getAll()
+      .then(setGroups)
+      .catch(() => {});
   }, [loadHistory]);
 
   const pendingCount = history.filter((n) => n.status === "PENDING").length;
@@ -328,51 +445,97 @@ export default function NotificationsPage() {
 
   return (
     <div style={{ padding: "32px 40px", maxWidth: 900 }}>
-
       {/* Page header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 28 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          marginBottom: 28,
+        }}
+      >
         <div>
-          <div style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: T.textMuted,
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+            }}
+          >
             Admin · Notification System
           </div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: T.textPrimary, margin: "4px 0 0", letterSpacing: "-0.03em" }}>
+          <h1
+            style={{
+              fontSize: 24,
+              fontWeight: 800,
+              color: T.textPrimary,
+              margin: "4px 0 0",
+              letterSpacing: "-0.03em",
+            }}
+          >
             Notifications
           </h1>
         </div>
-        <Button onClick={() => setComposeOpen(true)}>
-          + Compose
-        </Button>
+        <Button onClick={() => setComposeOpen(true)}>+ Compose</Button>
       </div>
 
       {/* Stats row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 28 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 12,
+          marginBottom: 28,
+        }}
+      >
         {[
           { label: "Total Sent", value: sentCount, color: T.success },
           { label: "Scheduled", value: pendingCount, color: T.warning },
           { label: "Total", value: history.length, color: T.info },
         ].map((s) => (
           <Card key={s.label} style={{ padding: "16px 20px" }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: s.color.text, letterSpacing: "-0.04em" }}>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 800,
+                color: s.color.text,
+                letterSpacing: "-0.04em",
+              }}
+            >
               {s.value}
             </div>
-            <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{s.label}</div>
+            <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
+              {s.label}
+            </div>
           </Card>
         ))}
       </div>
 
       {/* History */}
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{
-          padding: "14px 16px",
-          borderBottom: `1px solid ${T.cardBorder}`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.textPrimary }}>Send History</span>
+        <div
+          style={{
+            padding: "14px 16px",
+            borderBottom: `1px solid ${T.cardBorder}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.textPrimary }}>
+            Send History
+          </span>
           <button
             onClick={loadHistory}
-            style={{ background: "none", border: "none", color: T.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+            style={{
+              background: "none",
+              border: "none",
+              color: T.textMuted,
+              fontSize: 12,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
           >
             ↻ Refresh
           </button>
