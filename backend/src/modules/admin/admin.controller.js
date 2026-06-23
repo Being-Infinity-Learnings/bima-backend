@@ -42,7 +42,16 @@ async function getAllUsers(req, res) {
 
 async function getUserById(req, res) {
   try {
-    const user = await adminService.getUserById(req.params.id);
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const user = await adminService.getUserById(id);
 
     if (!user) {
       return res.status(404).json({
@@ -66,7 +75,15 @@ async function getUserById(req, res) {
 // - Marks the target user as approved.
 async function approveUser(req, res) {
   try {
-    const user = await adminService.approveUser(req.params.id);
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+    const user = await adminService.approveUser(id);
 
     return res.status(200).json({
       success: true,
@@ -84,7 +101,16 @@ async function approveUser(req, res) {
 // - Marks the target user as blocked to prevent login/access.
 async function blockUser(req, res) {
   try {
-    const user = await adminService.blockUser(req.params.id);
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const user = await adminService.blockUser(id);
 
     return res.status(200).json({
       success: true,
@@ -102,7 +128,16 @@ async function blockUser(req, res) {
 // - Clears the blocked flag for a target user.
 async function unblockUser(req, res) {
   try {
-    const user = await adminService.unblockUser(req.params.id);
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const user = await adminService.unblockUser(id);
 
     return res.status(200).json({
       success: true,
@@ -120,7 +155,16 @@ async function unblockUser(req, res) {
 // - Validates and updates the role of a target user.
 async function updateUserRole(req, res) {
   try {
+    const { id } = req.params;
     const { role } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
     const allowedRoles = ["ADMIN", "AUTHOR", "STUDENT"];
 
     if (!role || !allowedRoles.includes(role)) {
@@ -130,7 +174,7 @@ async function updateUserRole(req, res) {
       });
     }
 
-    const user = await adminService.updateUserRole(req.params.id, role);
+    const user = await adminService.updateUserRole(id, role);
 
     return res.status(200).json({
       success: true,
@@ -148,7 +192,16 @@ async function updateUserRole(req, res) {
 // - Returns all groups the given user is a member of.
 async function getUserGroups(req, res) {
   try {
-    const groups = await adminService.getUserGroups(req.params.id);
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const groups = await adminService.getUserGroups(id);
     return res.status(200).json({
       success: true,
       data: groups,
