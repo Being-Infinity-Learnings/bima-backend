@@ -13,6 +13,8 @@ const svc = require("./notification.service");
 // FCM token management
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Handler: registerToken(req, res)
+// - Registers or updates the authenticated user's FCM token.
 async function registerToken(req, res) {
   try {
     const { token, platform } = req.body;
@@ -31,6 +33,8 @@ async function registerToken(req, res) {
   }
 }
 
+// Handler: unregisterToken(req, res)
+// - Removes the authenticated user's FCM token.
 async function unregisterToken(req, res) {
   try {
     const { token } = req.body;
@@ -45,6 +49,8 @@ async function unregisterToken(req, res) {
 // Admin: send notification
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Handler: sendNotification(req, res)
+// - Creates a notification and dispatches it immediately or schedules it.
 async function sendNotification(req, res) {
   try {
     const { title, body, type, targetType, groupId, sendAt } = req.body;
@@ -72,6 +78,8 @@ async function sendNotification(req, res) {
 // Admin / Author: full notification history
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Handler: listNotifications(req, res)
+// - Returns the full notification history for admins and authors.
 async function listNotifications(req, res) {
   try {
     const data = await svc.listNotifications();
@@ -98,6 +106,8 @@ async function listNotifications(req, res) {
 //   { success: true, data: { items: [...], nextCursor: string|null } }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Handler: getMyNotifications(req, res)
+// - Returns the authenticated user's notification feed with filtering and pagination.
 async function getMyNotifications(req, res) {
   try {
     const user = req.dbUser;

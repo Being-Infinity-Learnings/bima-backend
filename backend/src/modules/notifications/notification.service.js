@@ -25,6 +25,7 @@ const MAX_PAGE_SIZE = 100;
 // FCM Token management
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Register or update a user's FCM token record.
 async function registerFcmToken(userId, token, platform) {
   await prisma.fcmToken.upsert({
     where: { token },
@@ -33,6 +34,7 @@ async function registerFcmToken(userId, token, platform) {
   });
 }
 
+// Remove a user's FCM token so it no longer receives notifications.
 async function unregisterFcmToken(userId, token) {
   await prisma.fcmToken.deleteMany({ where: { userId, token } });
 }
@@ -41,6 +43,7 @@ async function unregisterFcmToken(userId, token) {
 // Send / dispatch
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Create a notification record and dispatch it now or schedule it for later.
 async function sendNotification({
   title,
   body,
@@ -70,6 +73,7 @@ async function sendNotification({
   return notification;
 }
 
+// Dispatch a stored notification to the correct FCM tokens based on targetType.
 async function dispatchNotification(notification) {
   console.log("[FCM] Dispatching notification:", notification.id);
   try {
@@ -198,6 +202,7 @@ async function dispatchNotification(notification) {
 // Scheduled dispatcher (called by a cron / interval in app.js)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Find pending scheduled notifications and dispatch any that are due.
 async function dispatchPendingScheduled() {
   const due = await prisma.notification.findMany({
     where: { status: "PENDING", sendAt: { lte: new Date() } },
@@ -211,6 +216,7 @@ async function dispatchPendingScheduled() {
 // Admin: list all notifications (history view)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Return the notification history for admin and author views.
 async function listNotifications() {
   return prisma.notification.findMany({
     orderBy: { createdAt: "desc" },
@@ -247,6 +253,7 @@ async function listNotifications() {
 // Returns: { items: Notification[], nextCursor: string|null }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Return the current user's notification feed, filtered by audience and pagination.
 async function getMyNotifications(
   userId,
   approved,
@@ -367,6 +374,7 @@ async function getMyNotifications(
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Split an array into chunks of a given maximum size.
 function chunkArray(arr, size) {
   const result = [];
   for (let i = 0; i < arr.length; i += size)
