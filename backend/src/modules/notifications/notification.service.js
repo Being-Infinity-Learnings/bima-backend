@@ -98,14 +98,6 @@ async function dispatchNotification(notification) {
       tokens = members
         .filter((m) => m.user.approved && !m.user.blocked)
         .flatMap((m) => m.user.fcmTokens.map((t) => t.token));
-    } else if (notification.targetType === "APPROVED_ONLY") {
-      // Same as ALL but explicit — approved & non-blocked users
-      const fcmRecords = await prisma.fcmToken.findMany({
-        include: { user: { select: { approved: true, blocked: true } } },
-      });
-      tokens = fcmRecords
-        .filter((r) => r.user.approved && !r.user.blocked)
-        .map((r) => r.token);
     }
 
     console.log(`[FCM] Dispatching to ${tokens.length} tokens`);
