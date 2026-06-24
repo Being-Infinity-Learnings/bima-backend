@@ -243,7 +243,10 @@ class _TopBar extends StatelessWidget {
           AnimatedBuilder(
             animation: countdownCtrl,
             builder: (_, __) {
-              final progress = (secondsLeft / totalSeconds).clamp(0.0, 1.0);
+              // Drive the ring straight from the controller's elapsed value
+              // (updates every frame) instead of the once-per-second
+              // secondsLeft, so the sweep is smooth rather than stepped.
+              final progress = (1.0 - countdownCtrl.value).clamp(0.0, 1.0);
               return Stack(
                 alignment: Alignment.center,
                 children: [

@@ -173,7 +173,12 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     if (_state.hasSubmitted || _state.timerExpired) return;
     HapticFeedback.selectionClick();
     setState(() {
-      _state = _state.copyWith(pendingAnswerId: id);
+      if (_state.pendingAnswerId == id) {
+        // Tapping the already-selected option again deselects it.
+        _state = _state.copyWith(clearPending: true);
+      } else {
+        _state = _state.copyWith(pendingAnswerId: id);
+      }
     });
   }
 
@@ -288,6 +293,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
               secondsLeft: _state.secondsLeft,
               totalSeconds: q.timerSeconds,
               isSubmitted: _state.hasSubmitted,
+              timerCtrl: _timerCtrl,
             ),
 
             // ── Question + answers (scrollable if image present) ──────
@@ -350,6 +356,7 @@ class _HeaderBar extends StatelessWidget {
   final int secondsLeft;
   final int totalSeconds;
   final bool isSubmitted;
+  final AnimationController timerCtrl;
 
   const _HeaderBar({
     required this.current,
@@ -357,11 +364,11 @@ class _HeaderBar extends StatelessWidget {
     required this.secondsLeft,
     required this.totalSeconds,
     required this.isSubmitted,
+    required this.timerCtrl,
   });
 
-  Color get _timerColor {
-    if (secondsLeft == 0) return const Color(0xFFFF6B6B);
-    final fraction = secondsLeft / totalSeconds;
+  Color _timerColorFor(double fraction) {
+    if (fraction <= 0) return const Color(0xFFFF6B6B);
     if (fraction > 0.5) return const Color(0xFFC8FF57);
     if (fraction > 0.25) return const Color(0xFFFFD166);
     return const Color(0xFFFF6B6B);
@@ -369,10 +376,7 @@ class _HeaderBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final timerColor = _timerColor;
-    final progress = totalSeconds > 0
-        ? (secondsLeft / totalSeconds).clamp(0.0, 1.0)
-        : 0.0;
+    final showPill = isSubmitted && secondsLeft > 0;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
@@ -411,72 +415,147 @@ class _HeaderBar extends StatelessWidget {
 
           const Spacer(),
 
-          // Submitted indicator (replaces timer ring after submit)
-          if (isSubmitted && secondsLeft > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF22C55E).withOpacity(0.12),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: const Color(0xFF22C55E).withOpacity(0.3),
+          // Fixed-size slot: identical footprint for both the timer ring and
+          // the "Submitted" pill, so swapping between them never reflows
+          // the rest of the page.
+          SizedBox(
+            height: 54,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(scale: animation, child: child),
                 ),
+                child: showPill
+                    ? _SubmittedPill(
+                        key: const ValueKey('pill'),
+                        secondsLeft: secondsLeft,
+                      )
+                    : _TimerRing(
+                        key: const ValueKey('ring'),
+                        secondsLeft: secondsLeft,
+                        totalSeconds: totalSeconds,
+                        timerCtrl: timerCtrl,
+                        colorFor: _timerColorFor,
+                      ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.check_rounded,
-                    size: 14,
-                    color: Color(0xFF22C55E),
-                  ),
-                  const SizedBox(width: 5),
-                  const Text(
-                    'Submitted',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF22C55E),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Still shows the countdown even after submit
-                  Text(
-                    '${secondsLeft}s',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF22C55E).withOpacity(0.6),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            // Timer circle
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 54,
-                  height: 54,
-                  child: CircularProgressIndicator(
-                    value: progress,
-                    strokeWidth: 4,
-                    backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.08),
-                    valueColor: AlwaysStoppedAnimation<Color>(timerColor),
-                  ),
-                ),
-                Text(
-                  '$secondsLeft',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: timerColor,
-                  ),
-                ),
-              ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Timer Ring — smooth, continuous progress driven directly by the
+// AnimationController's elapsed value rather than the once-per-second tick.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TimerRing extends StatelessWidget {
+  final int secondsLeft;
+  final int totalSeconds;
+  final AnimationController timerCtrl;
+  final Color Function(double fraction) colorFor;
+
+  const _TimerRing({
+    super.key,
+    required this.secondsLeft,
+    required this.totalSeconds,
+    required this.timerCtrl,
+    required this.colorFor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 54,
+      height: 54,
+      child: AnimatedBuilder(
+        animation: timerCtrl,
+        builder: (_, __) {
+          // timerCtrl runs 0 → 1 over totalSeconds, so remaining fraction
+          // is the complement — this updates every frame, not every second.
+          final fraction = totalSeconds > 0
+              ? (1.0 - timerCtrl.value).clamp(0.0, 1.0)
+              : 0.0;
+          final color = colorFor(fraction);
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 54,
+                height: 54,
+                child: CircularProgressIndicator(
+                  value: fraction,
+                  strokeWidth: 4,
+                  backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.08),
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+              ),
+              Text(
+                '$secondsLeft',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Submitted Pill — same 54px height as the timer ring so the header never
+// resizes when switching between the two states.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SubmittedPill extends StatelessWidget {
+  final int secondsLeft;
+
+  const _SubmittedPill({super.key, required this.secondsLeft});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF22C55E).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(27),
+        border: Border.all(color: const Color(0xFF22C55E).withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_rounded, size: 16, color: Color(0xFF22C55E)),
+          const SizedBox(width: 6),
+          const Text(
+            'Submitted',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF22C55E),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Still shows the countdown even after submit
+          Text(
+            '${secondsLeft}s',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF22C55E).withOpacity(0.6),
+            ),
+          ),
         ],
       ),
     );
@@ -682,11 +761,16 @@ class _AnswerTile extends StatefulWidget {
 }
 
 class _AnswerTileState extends State<_AnswerTile>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _revealCtrl;
   late Animation<double> _scaleAnim;
   late Animation<double> _glowAnim;
   bool _revealed = false;
+
+  // Drives the selected/unselected ("pending") glow smoothly — separate
+  // from AnimatedContainer's implicit decoration tween, which jumps when
+  // several properties (color, border, shadow) change in the same frame.
+  late AnimationController _pendingCtrl;
 
   @override
   void initState() {
@@ -715,6 +799,13 @@ class _AnswerTileState extends State<_AnswerTile>
     ]).animate(_revealCtrl);
 
     _glowAnim = CurvedAnimation(parent: _revealCtrl, curve: Curves.easeOut);
+
+    _pendingCtrl = AnimationController(
+      vsync: this,
+      value: widget.pendingId == widget.answer.id ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 90),
+      reverseDuration: const Duration(milliseconds: 70),
+    );
   }
 
   @override
@@ -728,11 +819,25 @@ class _AnswerTileState extends State<_AnswerTile>
         if (mounted) _revealCtrl.forward(from: 0);
       });
     }
+
+    // Smoothly glow in/out as this tile becomes (or stops being) the
+    // pending selection — handles both "tap to select" and "tap a
+    // different tile" cases with the same easing curve.
+    final wasPending = old.pendingId == widget.answer.id;
+    final isPending = widget.pendingId == widget.answer.id;
+    if (isPending != wasPending) {
+      if (isPending) {
+        _pendingCtrl.forward();
+      } else {
+        _pendingCtrl.reverse();
+      }
+    }
   }
 
   @override
   void dispose() {
     _revealCtrl.dispose();
+    _pendingCtrl.dispose();
     super.dispose();
   }
 
@@ -741,12 +846,11 @@ class _AnswerTileState extends State<_AnswerTile>
     final answer = widget.answer;
     final baseColor = widget.baseColor;
 
-    final isPending = widget.pendingId == answer.id;
     final isSubmitted = widget.submittedId == answer.id;
     final isCorrect = answer.isCorrect;
     final locked = widget.submittedId != null || widget.timerExpired;
 
-    // ── Derive visual properties ───────────────────────────────────────────
+    // ── Reveal-phase visual properties (unaffected by pending glow) ────────
     Color tileColor;
     Color textColor;
     Color bgColor;
@@ -756,20 +860,7 @@ class _AnswerTileState extends State<_AnswerTile>
     IconData? trailingIcon;
     Color? trailingIconColor;
 
-    if (!widget.timerExpired) {
-      // Pre-reveal: pending selection vs normal
-      tileColor = baseColor;
-      textColor = isPending ? const Color(0xFF0C0E14) : baseColor;
-      bgColor = isPending ? baseColor : baseColor.withOpacity(0.13);
-      borderColor = isPending ? baseColor : baseColor.withOpacity(0.25);
-      borderWidth = isPending ? 2.0 : 1.0;
-      tileOpacity = (isSubmitted && widget.submittedId != null && !isPending)
-          ? 0.55
-          : 1.0;
-      trailingIcon = null;
-      trailingIconColor = null;
-    } else {
-      // Reveal phase
+    if (widget.timerExpired) {
       if (isCorrect) {
         tileColor = const Color(0xFF22C55E);
         bgColor = const Color(0xFF22C55E).withOpacity(0.18);
@@ -799,16 +890,54 @@ class _AnswerTileState extends State<_AnswerTile>
         trailingIcon = null;
         trailingIconColor = null;
       }
+    } else {
+      // Pre-reveal base values at rest (pending glow handled separately
+      // below via _pendingCtrl so selecting/deselecting animates smoothly).
+      tileColor = baseColor;
+      textColor = baseColor;
+      bgColor = baseColor.withOpacity(0.13);
+      borderColor = baseColor.withOpacity(0.25);
+      borderWidth = 1.0;
+      tileOpacity =
+          (isSubmitted &&
+              widget.submittedId != null &&
+              widget.pendingId != answer.id)
+          ? 0.55
+          : 1.0;
+      trailingIcon = null;
+      trailingIconColor = null;
     }
 
     // ── Glow shadow only on correct tile during reveal ─────────────────────
     final showGlow = widget.timerExpired && isCorrect;
+    const darkText = Color(0xFF0C0E14);
 
     return AnimatedBuilder(
-      animation: _revealCtrl,
+      animation: Listenable.merge([_revealCtrl, _pendingCtrl]),
       builder: (_, child) {
         final scale = _revealed ? _scaleAnim.value : 1.0;
         final glowOpacity = showGlow ? (_glowAnim.value * 0.45) : 0.0;
+
+        // t = 0 → resting/unselected, t = 1 → fully selected (pending).
+        // Animates continuously in both directions, so selecting a new
+        // tile and the previous tile losing its glow look identical in
+        // smoothness — no abrupt jump.
+        final t = widget.timerExpired ? 0.0 : _pendingCtrl.value;
+
+        final effectiveBg = t == 0.0
+            ? bgColor
+            : Color.lerp(bgColor, baseColor, t)!;
+        final effectiveBorderColor = t == 0.0
+            ? borderColor
+            : Color.lerp(borderColor, baseColor, t)!;
+        final effectiveBorderWidth = borderWidth + (1.0 * t);
+        final effectiveTextColor = t == 0.0
+            ? textColor
+            : Color.lerp(textColor, darkText, t)!;
+        final effectiveTileColor = t == 0.0
+            ? tileColor
+            : Color.lerp(tileColor, darkText, t)!;
+        final pendingGlowOpacity = widget.timerExpired ? 0.0 : t * 0.22;
 
         return Transform.scale(
           scale: scale,
@@ -817,20 +946,21 @@ class _AnswerTileState extends State<_AnswerTile>
             opacity: tileOpacity,
             child: GestureDetector(
               onTap: locked ? null : () => widget.onTap(answer.id),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 320),
-                curve: Curves.easeOutCubic,
+              child: Container(
                 constraints: BoxConstraints(
                   minHeight: widget.answer.text.length > 30 ? 100 : 90,
                 ),
                 decoration: BoxDecoration(
-                  color: bgColor,
+                  color: effectiveBg,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: borderColor, width: borderWidth),
+                  border: Border.all(
+                    color: effectiveBorderColor,
+                    width: effectiveBorderWidth,
+                  ),
                   boxShadow: [
-                    if (isPending && !widget.timerExpired)
+                    if (pendingGlowOpacity > 0)
                       BoxShadow(
-                        color: baseColor.withOpacity(0.22),
+                        color: baseColor.withOpacity(pendingGlowOpacity),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -853,9 +983,7 @@ class _AnswerTileState extends State<_AnswerTile>
                         widget.shape,
                         style: TextStyle(
                           fontSize: 16,
-                          color: isPending && !widget.timerExpired
-                              ? const Color(0xFF0C0E14)
-                              : tileColor,
+                          color: effectiveTileColor,
                         ),
                       ),
                     ),
@@ -868,9 +996,7 @@ class _AnswerTileState extends State<_AnswerTile>
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: isPending && !widget.timerExpired
-                              ? const Color(0xFF0C0E14)
-                              : textColor,
+                          color: effectiveTextColor,
                         ),
                       ),
                     ),
