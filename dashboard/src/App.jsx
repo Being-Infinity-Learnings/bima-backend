@@ -12,8 +12,8 @@ import NoAccessPage from "./pages/auth/NoAccessPage.jsx";
 import DashboardPage from "./pages/dashboard/DashboardPage.jsx";
 import UsersPage from "./pages/users/UsersPage.jsx";
 import GroupsPage from "./pages/groups/GroupsPage.jsx";
+import QuizzesPage from "./pages/quizzes/QuizzesPage.jsx";
 import {
-  QuizzesPage,
   NotificationsPage,
   AnalyticsPage,
 } from "./pages/placeholder/PlaceholderPages.jsx";

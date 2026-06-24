@@ -64,17 +64,6 @@ function ComingSoon({ title, section, description }) {
   );
 }
 
-export function QuizzesPage() {
-  return (
-    <ComingSoon
-      title="Quizzes"
-      section="Quiz Management"
-      description="Create, schedule, and monitor auto-pilot MCQ quiz sessions. Authors and admins can author questions, set per-question timers, and configure visibility (public or group-restricted)."
-    />
-  );
-}
-
-
 export function AnalyticsPage() {
   return (
     <ComingSoon

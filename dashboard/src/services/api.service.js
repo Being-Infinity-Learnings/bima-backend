@@ -106,3 +106,42 @@ export const notificationsApi = {
   list: () => request("GET", "/notifications"),
   myNotifications: () => request("GET", "/notifications/my"),
 };
+
+// ── Quiz API ────────────────────────────────────────────────────────────────
+export const quizApi = {
+  getAll: () => request("GET", "/quiz"),
+  getById: (id) => request("GET", `/quiz/${id}`),
+  create: (body) => request("POST", "/quiz", body),
+  update: (id, body) => request("PATCH", `/quiz/${id}`, body),
+  delete: (id) => request("DELETE", `/quiz/${id}`),
+  publish: (id) => request("POST", `/quiz/${id}/publish`),
+  unpublish: (id) => request("POST", `/quiz/${id}/unpublish`),
+  getGroups: (quizId) => request("GET", `/quiz/${quizId}/groups`),
+  addGroups: (quizId, groupIds) =>
+    request("POST", `/quiz/${quizId}/groups`, { groupIds }),
+  removeGroup: (quizId, groupId) =>
+    request("DELETE", `/quiz/${quizId}/groups/${groupId}`),
+};
+
+// ── Question (Bank) API ─────────────────────────────────────────────────────
+export const questionApi = {
+  getAll: () => request("GET", "/question"),
+  getById: (id) => request("GET", `/question/${id}`),
+  create: (body) => request("POST", "/question", body),
+  update: (id, body) => request("PATCH", `/question/${id}`, body),
+  delete: (id) => request("DELETE", `/question/${id}`),
+};
+
+// ── Quiz Composition API ────────────────────────────────────────────────────
+export const quizCompositionApi = {
+  getQuestions: (quizId) =>
+    request("GET", `/quiz-composition/${quizId}/questions`),
+  addQuestions: (quizId, questionIds) =>
+    request("POST", `/quiz-composition/${quizId}/questions`, { questionIds }),
+  removeQuestion: (quizId, questionId) =>
+    request("DELETE", `/quiz-composition/${quizId}/questions/${questionId}`),
+  reorderQuestions: (quizId, questionIds) =>
+    request("PATCH", `/quiz-composition/${quizId}/questions/order`, {
+      questionIds,
+    }),
+};

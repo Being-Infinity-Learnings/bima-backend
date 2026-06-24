@@ -509,10 +509,10 @@ app.use("/groups", groupRoutes);
 
 app.use("/notifications", notificationRoutes);
 
-app.use("/questions", questionRoutes);
+app.use("/question", questionRoutes);
 
-app.use("/quizzes", quizRoutes);
+app.use("/quiz", quizRoutes);
 
-app.use("/quizzes", quizCompositionRoutes);
+app.use("/quiz-composition", quizCompositionRoutes);
 
 module.exports = app;
