@@ -7,10 +7,9 @@ import '../data/quiz_dummy_data.dart';
 import '../../../config/app_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Providers (swap with real API providers when backend is ready)
+// Providers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Simulates a live participant count that ticks up every few seconds.
 final _participantCountProvider = StateProvider<int>((_) => 74);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,16 +47,15 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
 
     _remaining = _parseScheduledAt(_quiz.scheduledAt);
 
-    // Pulse animation for the countdown circle
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.95, end: 1.05).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
+    _pulseAnim = Tween<double>(
+      begin: 0.95,
+      end: 1.05,
+    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
 
-    // Entrance animation
     _entranceCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
@@ -73,7 +71,6 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
   }
 
   Duration _parseScheduledAt(String raw) {
-    // Support "NOW+HH:MM:SS" for demo purposes
     if (raw.startsWith('NOW+')) {
       final parts = raw.substring(4).split(':');
       final h = int.parse(parts[0]);
@@ -95,10 +92,7 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
       if (!mounted) return;
       if (_remaining.inSeconds <= 1) {
         _countdownTimer?.cancel();
-        // Navigate to play screen
-        if (mounted) {
-          context.push('/quiz/${widget.quizId}/play');
-        }
+        if (mounted) context.push('/quiz/${widget.quizId}/play');
       } else {
         setState(() => _remaining -= const Duration(seconds: 1));
       }
@@ -111,8 +105,8 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
       final current = ref.read(_participantCountProvider);
       if (current < demoTotalParticipants) {
         final add = (current < 100) ? 3 : 1;
-        ref.read(_participantCountProvider.notifier).state =
-            (current + add).clamp(0, demoTotalParticipants);
+        ref.read(_participantCountProvider.notifier).state = (current + add)
+            .clamp(0, demoTotalParticipants);
       }
     });
   }
@@ -136,21 +130,26 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
 
   Color _tagColor(QuizTag tag) {
     switch (tag) {
-      case QuizTag.daily:     return const Color(0xFF6C8EFF);
-      case QuizTag.challenge: return const Color(0xFFFF6B6B);
-      case QuizTag.special:   return const Color(0xFFFFD166);
-      case QuizTag.aptitude:  return const Color(0xFFC8FF57);
+      case QuizTag.daily:
+        return AppConfig.quizAnswerColors[0];
+      case QuizTag.challenge:
+        return AppConfig.errorColor;
+      case QuizTag.special:
+        return AppConfig.warningColor;
+      case QuizTag.aptitude:
+        return AppConfig.primaryColor;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final participantCount = ref.watch(_participantCountProvider);
     final tag = _quiz.tag;
     final accent = _tagColor(tag);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
+      backgroundColor: AppConfig.scaffoldColor(isDark),
       body: FadeTransition(
         opacity: _entranceAnim,
         child: SlideTransition(
@@ -161,22 +160,22 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
           child: SafeArea(
             child: Column(
               children: [
-                // ── Top bar ──────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: Row(
                     children: [
-                      _BackButton(onTap: () => context.pop()),
+                      _BackButton(onTap: () => context.pop(), isDark: isDark),
                       const Spacer(),
-                      // Live badge
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFF6B6B).withOpacity(0.15),
+                          color: AppConfig.errorColor.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: const Color(0xFFFF6B6B).withOpacity(0.3),
+                            color: AppConfig.errorColor.withOpacity(0.3),
                           ),
                         ),
                         child: Row(
@@ -186,7 +185,7 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
                               width: 6,
                               height: 6,
                               decoration: const BoxDecoration(
-                                color: Color(0xFFFF6B6B),
+                                color: AppConfig.errorColor,
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -196,7 +195,7 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: Color(0xFFFF6B6B),
+                                color: AppConfig.errorColor,
                                 letterSpacing: 0.5,
                               ),
                             ),
@@ -207,22 +206,26 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
                   ),
                 ),
 
-                // ── Main scrollable content ──────────────────────────────
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 32),
+                      horizontal: 24,
+                      vertical: 32,
+                    ),
                     child: Column(
                       children: [
-                        // Tag pill
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 6),
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: accent.withOpacity(0.12),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                                color: accent.withOpacity(0.25), width: 1),
+                              color: accent.withOpacity(0.25),
+                              width: 1,
+                            ),
                           ),
                           child: Text(
                             tag.label.toUpperCase(),
@@ -237,15 +240,14 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
 
                         const SizedBox(height: 16),
 
-                        // Quiz title
                         Text(
                           _quiz.title,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.8,
-                            color: Colors.white,
+                            color: AppConfig.bodyTextColor(isDark),
                           ),
                         ),
 
@@ -254,54 +256,56 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
                         Text(
                           _quiz.description,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             height: 1.5,
-                            color: Color(0xFF7A8499),
+                            color: AppConfig.mutedTextColor(isDark),
                           ),
                         ),
 
                         const SizedBox(height: 40),
 
-                        // ── Countdown circle ─────────────────────────────
                         ScaleTransition(
                           scale: _pulseAnim,
                           child: _CountdownCircle(
                             timeString: _formatDuration(_remaining),
                             accent: accent,
                             isImminent: _remaining.inMinutes < 2,
+                            isDark: isDark,
                           ),
                         ),
 
                         const SizedBox(height: 36),
 
-                        // ── Info row ─────────────────────────────────────
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             _InfoChip(
                               icon: Icons.help_outline_rounded,
                               label: '${_quiz.questionCount} Questions',
-                              color: const Color(0xFF6C8EFF),
+                              color: AppConfig.quizAnswerColors[0],
+                              isDark: isDark,
                             ),
                             const SizedBox(width: 12),
                             _InfoChip(
                               icon: Icons.timer_outlined,
                               label: 'Speed scoring',
-                              color: const Color(0xFFFFD166),
+                              color: AppConfig.warningColor,
+                              isDark: isDark,
                             ),
                           ],
                         ),
 
                         const SizedBox(height: 36),
 
-                        // ── Participant count ─────────────────────────────
-                        _ParticipantCounter(count: participantCount),
+                        _ParticipantCounter(
+                          count: participantCount,
+                          isDark: isDark,
+                        ),
 
                         const SizedBox(height: 40),
 
-                        // ── Tip box ───────────────────────────────────────
-                        _TipBox(accent: accent),
+                        _TipBox(accent: accent, isDark: isDark),
 
                         const SizedBox(height: 24),
                       ],
@@ -309,7 +313,6 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
                   ),
                 ),
 
-                // ── Bottom: skip to demo button ──────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                   child: SizedBox(
@@ -321,7 +324,7 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: accent,
-                        foregroundColor: const Color(0xFF0C0E14),
+                        foregroundColor: AppConfig.bodyTextLight,
                         minimumSize: const Size.fromHeight(56),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(18),
@@ -347,24 +350,22 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Countdown Circle
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _CountdownCircle extends StatelessWidget {
   final String timeString;
   final Color accent;
   final bool isImminent;
+  final bool isDark;
 
   const _CountdownCircle({
     required this.timeString,
     required this.accent,
     required this.isImminent,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
-    final ringColor = isImminent ? const Color(0xFFFF6B6B) : accent;
+    final ringColor = isImminent ? AppConfig.errorColor : accent;
 
     return Container(
       width: 200,
@@ -406,10 +407,7 @@ class _CountdownCircle extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             isImminent ? '⚡ Almost time!' : 'hh:mm:ss',
-            style: TextStyle(
-              fontSize: 12,
-              color: ringColor.withOpacity(0.5),
-            ),
+            style: TextStyle(fontSize: 12, color: ringColor.withOpacity(0.5)),
           ),
         ],
       ),
@@ -417,19 +415,17 @@ class _CountdownCircle extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Info Chip
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
+  final bool isDark;
 
   const _InfoChip({
     required this.icon,
     required this.label,
     required this.color,
+    required this.isDark,
   });
 
   @override
@@ -437,9 +433,9 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withOpacity(isDark ? 0.08 : 0.12),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.2)),
+        border: Border.all(color: color.withOpacity(isDark ? 0.2 : 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -460,13 +456,11 @@ class _InfoChip extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Participant Counter
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _ParticipantCounter extends StatelessWidget {
   final int count;
-  const _ParticipantCounter({required this.count});
+  final bool isDark;
+
+  const _ParticipantCounter({required this.count, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
@@ -474,24 +468,23 @@ class _ParticipantCounter extends StatelessWidget {
       children: [
         Text(
           '$count',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 52,
             fontWeight: FontWeight.w900,
             letterSpacing: -2,
-            color: Colors.white,
+            color: AppConfig.bodyTextColor(isDark),
           ),
         ),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           'players in the lobby',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: Color(0xFF7A8499),
+            color: AppConfig.mutedTextColor(isDark),
           ),
         ),
         const SizedBox(height: 12),
-        // Mini avatar row
         SizedBox(
           height: 28,
           child: Stack(
@@ -504,24 +497,19 @@ class _ParticipantCounter extends StatelessWidget {
                   height: 28,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: [
-                      const Color(0xFFC8FF57),
-                      const Color(0xFF6C8EFF),
-                      const Color(0xFFFFD166),
-                      const Color(0xFFFF6B6B),
-                      const Color(0xFF22C55E),
-                      const Color(0xFF7A8499),
-                    ][i],
+                    color: AppConfig.quizConfettiColors[i],
                     border: Border.all(
-                        color: const Color(0xFF0D1117), width: 2),
+                      color: AppConfig.scaffoldColor(isDark),
+                      width: 2,
+                    ),
                   ),
                   child: Center(
                     child: Text(
                       ['R', 'A', 'S', 'D', 'P', '+'][i],
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF0D1117),
+                        color: AppConfig.bodyTextLight,
                       ),
                     ),
                   ),
@@ -535,38 +523,31 @@ class _ParticipantCounter extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tip Box
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _TipBox extends StatelessWidget {
   final Color accent;
-  const _TipBox({required this.accent});
+  final bool isDark;
+  const _TipBox({required this.accent, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF161B26),
+        color: AppConfig.cardColor(isDark),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: const Color(0xFFFFFFFF).withOpacity(0.06)),
+        border: Border.all(color: AppConfig.subtleOverlay(isDark)),
       ),
       child: Row(
         children: [
-          Text(
-            '💡',
-            style: TextStyle(fontSize: 22),
-          ),
+          const Text('💡', style: TextStyle(fontSize: 22)),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Text(
               'Answer faster to score more points. The first correct answer gets maximum speed bonus!',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.5,
-                color: Color(0xFF7A8499),
+                color: AppConfig.mutedTextColor(isDark),
               ),
             ),
           ),
@@ -576,13 +557,10 @@ class _TipBox extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Back Button
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _BackButton extends StatelessWidget {
   final VoidCallback onTap;
-  const _BackButton({required this.onTap});
+  final bool isDark;
+  const _BackButton({required this.onTap, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
@@ -592,15 +570,14 @@ class _BackButton extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: const Color(0xFFFFFFFF).withOpacity(0.06),
+          color: AppConfig.subtleOverlay(isDark),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: const Color(0xFFFFFFFF).withOpacity(0.08)),
+          border: Border.all(color: AppConfig.strongOverlay(isDark)),
         ),
-        child: const Icon(
+        child: Icon(
           Icons.arrow_back_ios_new_rounded,
           size: 18,
-          color: Color(0xFF7A8499),
+          color: AppConfig.mutedTextColor(isDark),
         ),
       ),
     );

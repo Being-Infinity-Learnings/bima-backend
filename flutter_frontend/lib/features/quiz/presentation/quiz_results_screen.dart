@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/quiz_dummy_data.dart';
+import '../../../config/app_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -20,21 +21,17 @@ class QuizResultsScreen extends StatefulWidget {
 
 class _QuizResultsScreenState extends State<QuizResultsScreen>
     with TickerProviderStateMixin {
-  // ── Controllers ───────────────────────────────────────────────────────────
-  late AnimationController _headerCtrl; // header fade-in
-  late AnimationController _thirdCtrl; // 3rd place rise
-  late AnimationController _secondCtrl; // 2nd place rise
-  late AnimationController _firstCtrl; // 1st place rise (dramatic)
-  late AnimationController _firstGlowCtrl; // continuous pulse on 1st
-  // Confetti runs on its own Ticker (not a bounded AnimationController) so
-  // it can play forever without ever resetting/looping visibly.
+  late AnimationController _headerCtrl;
+  late AnimationController _thirdCtrl;
+  late AnimationController _secondCtrl;
+  late AnimationController _firstCtrl;
+  late AnimationController _firstGlowCtrl;
   late final Ticker _confettiTicker;
   final ValueNotifier<double> _confettiProgress = ValueNotifier<double>(0);
   bool _confettiActive = false;
-  late AnimationController _bottomCtrl; // bottom section slide-up
-  late AnimationController _cardCtrl; // "Your Result" card pop
+  late AnimationController _bottomCtrl;
+  late AnimationController _cardCtrl;
 
-  // ── Animations ────────────────────────────────────────────────────────────
   late Animation<double> _headerFade;
   late Animation<Offset> _headerSlide;
 
@@ -55,12 +52,10 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
   void initState() {
     super.initState();
 
-    // Generate confetti particles
     for (int i = 0; i < 110; i++) {
       _particles.add(_Particle.random(i));
     }
 
-    // Header
     _headerCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
@@ -71,7 +66,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _headerCtrl, curve: Curves.easeOutCubic));
 
-    // Podium columns — rise up from below with elastic overshoot
     _thirdCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -102,20 +96,15 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
       ),
     );
 
-    // Continuous winner glow
     _firstGlowCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
 
-    // Confetti — a free-running ticker. It only ever increases, so each
-    // particle's (progress * speed + phase) % 1.0 cycle stays continuous
-    // forever — no jump/reset that a looping AnimationController would cause.
     _confettiTicker = createTicker((elapsed) {
       _confettiProgress.value = elapsed.inMilliseconds / 1000.0;
     });
 
-    // Bottom section
     _bottomCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -126,7 +115,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
     ).animate(CurvedAnimation(parent: _bottomCtrl, curve: Curves.easeOutCubic));
     _bottomFade = CurvedAnimation(parent: _bottomCtrl, curve: Curves.easeOut);
 
-    // Result card pop
     _cardCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
@@ -156,29 +144,24 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
   }
 
   Future<void> _runSequence() async {
-    // Header slides in immediately
     _headerCtrl.forward();
     await Future.delayed(const Duration(milliseconds: 400));
 
-    // 3rd pops up
     _thirdCtrl.forward();
     await Future.delayed(const Duration(milliseconds: 850));
 
-    // 2nd pops up
     _secondCtrl.forward();
     await Future.delayed(const Duration(milliseconds: 850));
 
-    // 1st — big reveal with haptic + confetti
     if (!mounted) return;
     _firstCtrl.forward();
     setState(() => _confettiActive = true);
-    _confettiTicker.start(); // keeps running indefinitely, never stops/loops
+    _confettiTicker.start();
     HapticFeedback.heavyImpact();
     await Future.delayed(const Duration(milliseconds: 700));
 
     if (!mounted) return;
 
-    // Bottom section slides up
     _bottomCtrl.forward();
     await Future.delayed(const Duration(milliseconds: 200));
 
@@ -208,13 +191,12 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
+      backgroundColor: AppConfig.scaffoldColor(isDark),
       body: Stack(
         children: [
-          // ── Full-screen confetti layer ──────────────────────────────────
-          // Only mounted after 1st place is revealed; the ticker driving it
-          // never resets, so confetti runs continuously with no visible loop.
           if (_confettiActive)
             ValueListenableBuilder<double>(
               valueListenable: _confettiProgress,
@@ -227,7 +209,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
               ),
             ),
 
-          // ── Winner spotlight glow ───────────────────────────────────────
           AnimatedBuilder(
             animation: Listenable.merge([_firstFade, _firstGlowCtrl]),
             builder: (_, __) {
@@ -244,9 +225,9 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                       center: Alignment.topCenter,
                       radius: 0.85,
                       colors: [
-                        const Color(
-                          0xFFFFD166,
-                        ).withOpacity((0.07 + pulse * 0.07) * base),
+                        AppConfig.rankGold.withOpacity(
+                          (0.07 + pulse * 0.07) * base,
+                        ),
                         Colors.transparent,
                       ],
                     ),
@@ -256,11 +237,9 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
             },
           ),
 
-          // ── Main content ────────────────────────────────────────────────
           SafeArea(
             child: Column(
               children: [
-                // Header
                 FadeTransition(
                   opacity: _headerFade,
                   child: SlideTransition(
@@ -269,21 +248,21 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                       padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
                       child: Column(
                         children: [
-                          const Text(
+                          Text(
                             '🏆  Quiz Complete!',
                             style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w900,
-                              color: Colors.white,
+                              color: AppConfig.bodyTextColor(isDark),
                               letterSpacing: -0.5,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             '$demoTotalParticipants players competed',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
-                              color: Color(0xFF7A8499),
+                              color: AppConfig.mutedTextColor(isDark),
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -295,7 +274,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
 
                 const SizedBox(height: 8),
 
-                // ── Podium ────────────────────────────────────────────────
                 Expanded(
                   flex: 5,
                   child: ClipRect(
@@ -312,7 +290,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                   ),
                 ),
 
-                // ── Bottom section ────────────────────────────────────────
                 Expanded(
                   flex: 6,
                   child: AnimatedBuilder(
@@ -329,7 +306,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                       child: Column(
                         children: [
-                          // Your result card with pop animation
                           AnimatedBuilder(
                             animation: _cardCtrl,
                             builder: (_, child) => Opacity(
@@ -339,10 +315,16 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                                 child: child,
                               ),
                             ),
-                            child: _YourResultCard(entry: _yourEntry),
+                            child: _YourResultCard(
+                              entry: _yourEntry,
+                              isDark: isDark,
+                            ),
                           ),
                           const SizedBox(height: 20),
-                          _FullLeaderboardSection(yourEntry: _yourEntry),
+                          _FullLeaderboardSection(
+                            yourEntry: _yourEntry,
+                            isDark: isDark,
+                          ),
                           const SizedBox(height: 24),
                         ],
                       ),
@@ -350,7 +332,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                   ),
                 ),
 
-                // ── Action button ──────────────────────────────────────────
                 AnimatedBuilder(
                   animation: _bottomFade,
                   builder: (_, child) =>
@@ -370,8 +351,8 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                           ),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFC8FF57),
-                          foregroundColor: const Color(0xFF0C0E14),
+                          backgroundColor: AppConfig.primaryColor,
+                          foregroundColor: AppConfig.bodyTextLight,
                           minimumSize: const Size.fromHeight(56),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(18),
@@ -390,12 +371,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Animated Podium
-// Columns rise from the bottom using a slide + scale from Alignment.bottomCenter.
-// Order: 3rd → 2nd → 1st (centre, tallest).
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _AnimatedPodium extends StatelessWidget {
   final DemoLeaderboardEntry top1, top2, top3;
@@ -422,7 +397,6 @@ class _AnimatedPodium extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // ── 2nd ──────────────────────────────────────────────────────────
         AnimatedBuilder(
           animation: secondRise,
           builder: (_, child) => FractionalTranslation(
@@ -437,7 +411,7 @@ class _AnimatedPodium extends StatelessWidget {
             podiumHeight: 90,
             avatarSize: 52,
             medal: '🥈',
-            color: const Color(0xFFBDBDBD),
+            color: AppConfig.rankSilver,
             rank: 2,
             isWinner: false,
             glowCtrl: null,
@@ -446,7 +420,6 @@ class _AnimatedPodium extends StatelessWidget {
 
         const SizedBox(width: 6),
 
-        // ── 1st ──────────────────────────────────────────────────────────
         AnimatedBuilder(
           animation: Listenable.merge([firstScale, firstFade]),
           builder: (_, child) => Transform.scale(
@@ -462,7 +435,7 @@ class _AnimatedPodium extends StatelessWidget {
             podiumHeight: 120,
             avatarSize: 66,
             medal: '👑',
-            color: const Color(0xFFFFD166),
+            color: AppConfig.rankGold,
             rank: 1,
             isWinner: true,
             glowCtrl: firstGlowCtrl,
@@ -471,7 +444,6 @@ class _AnimatedPodium extends StatelessWidget {
 
         const SizedBox(width: 6),
 
-        // ── 3rd ──────────────────────────────────────────────────────────
         AnimatedBuilder(
           animation: thirdRise,
           builder: (_, child) => FractionalTranslation(
@@ -486,7 +458,7 @@ class _AnimatedPodium extends StatelessWidget {
             podiumHeight: 70,
             avatarSize: 48,
             medal: '🥉',
-            color: const Color(0xFFCD7F32),
+            color: AppConfig.rankBronze,
             rank: 3,
             isWinner: false,
             glowCtrl: null,
@@ -496,10 +468,6 @@ class _AnimatedPodium extends StatelessWidget {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Podium Column
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _PodiumColumn extends StatelessWidget {
   final DemoLeaderboardEntry entry;
@@ -549,7 +517,6 @@ class _PodiumColumn extends StatelessWidget {
       ),
     );
 
-    // Pulse glow around winner avatar
     if (isWinner && glowCtrl != null) {
       avatar = AnimatedBuilder(
         animation: glowCtrl!,
@@ -600,7 +567,6 @@ class _PodiumColumn extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          // Podium base — grows from bottom so it doesn't clip during slide
           Container(
             width: colWidth,
             height: podiumHeight,
@@ -638,23 +604,20 @@ class _PodiumColumn extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Your Result Card
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _YourResultCard extends StatelessWidget {
   final DemoLeaderboardEntry entry;
-  const _YourResultCard({required this.entry});
+  final bool isDark;
+  const _YourResultCard({required this.entry, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
     final rankColor = entry.rank == 1
-        ? const Color(0xFFFFD166)
+        ? AppConfig.rankGold
         : entry.rank == 2
-        ? const Color(0xFFBDBDBD)
+        ? AppConfig.rankSilver
         : entry.rank == 3
-        ? const Color(0xFFCD7F32)
-        : const Color(0xFF6C8EFF);
+        ? AppConfig.rankBronze
+        : AppConfig.quizAnswerColors[0];
 
     final String tagline = entry.rank == 1
         ? '🎉 You won! Incredible!'
@@ -670,13 +633,16 @@ class _YourResultCard extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [rankColor.withOpacity(0.16), const Color(0xFF161B26)],
+          colors: [
+            rankColor.withOpacity(isDark ? 0.16 : 0.25),
+            AppConfig.cardColor(isDark),
+          ],
         ),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: rankColor.withOpacity(0.30)),
+        border: Border.all(color: rankColor.withOpacity(isDark ? 0.30 : 0.45)),
         boxShadow: [
           BoxShadow(
-            color: rankColor.withOpacity(0.08),
+            color: rankColor.withOpacity(isDark ? 0.08 : 0.15),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -692,7 +658,7 @@ class _YourResultCard extends StatelessWidget {
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
-                  color: rankColor.withOpacity(0.6),
+                  color: rankColor.withOpacity(0.8),
                 ),
               ),
               const Spacer(),
@@ -702,7 +668,7 @@ class _YourResultCard extends StatelessWidget {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: rankColor.withOpacity(0.12),
+                  color: rankColor.withOpacity(isDark ? 0.12 : 0.18),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -710,7 +676,7 @@ class _YourResultCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: rankColor,
+                    color: isDark ? rankColor : rankColor.withOpacity(0.9),
                   ),
                 ),
               ),
@@ -725,20 +691,23 @@ class _YourResultCard extends StatelessWidget {
                 label: 'Final Rank',
                 color: rankColor,
                 big: true,
+                isDark: isDark,
               ),
-              _divider(),
+              _divider(isDark),
               _ResultStat(
                 value: '${entry.score}',
                 label: 'Total Score',
-                color: const Color(0xFFC8FF57),
+                color: AppConfig.primaryColor,
                 big: false,
+                isDark: isDark,
               ),
-              _divider(),
+              _divider(isDark),
               _ResultStat(
                 value: '$demoTotalParticipants',
                 label: 'Players',
-                color: const Color(0xFF7A8499),
+                color: AppConfig.mutedTextColor(isDark),
                 big: false,
+                isDark: isDark,
               ),
             ],
           ),
@@ -747,11 +716,8 @@ class _YourResultCard extends StatelessWidget {
     );
   }
 
-  Widget _divider() => Container(
-    width: 1,
-    height: 48,
-    color: const Color(0xFFFFFFFF).withOpacity(0.07),
-  );
+  Widget _divider(bool isDark) =>
+      Container(width: 1, height: 48, color: AppConfig.subtleOverlay(isDark));
 }
 
 class _ResultStat extends StatelessWidget {
@@ -759,12 +725,14 @@ class _ResultStat extends StatelessWidget {
   final String label;
   final Color color;
   final bool big;
+  final bool isDark;
 
   const _ResultStat({
     required this.value,
     required this.label,
     required this.color,
     required this.big,
+    required this.isDark,
   });
 
   @override
@@ -783,20 +751,23 @@ class _ResultStat extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(fontSize: 11, color: Color(0xFF7A8499)),
+          style: TextStyle(
+            fontSize: 11,
+            color: AppConfig.mutedTextColor(isDark),
+          ),
         ),
       ],
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Full Leaderboard Section
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _FullLeaderboardSection extends StatefulWidget {
   final DemoLeaderboardEntry yourEntry;
-  const _FullLeaderboardSection({required this.yourEntry});
+  final bool isDark;
+  const _FullLeaderboardSection({
+    required this.yourEntry,
+    required this.isDark,
+  });
 
   @override
   State<_FullLeaderboardSection> createState() =>
@@ -821,13 +792,13 @@ class _FullLeaderboardSectionState extends State<_FullLeaderboardSection> {
       children: [
         Row(
           children: [
-            const Text(
+            Text(
               'LEADERBOARD',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.5,
-                color: Color(0xFF7A8499),
+                color: AppConfig.mutedTextColor(widget.isDark),
               ),
             ),
             const Spacer(),
@@ -840,7 +811,7 @@ class _FullLeaderboardSectionState extends State<_FullLeaderboardSection> {
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFFC8FF57),
+                      color: AppConfig.primaryColor,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -848,7 +819,7 @@ class _FullLeaderboardSectionState extends State<_FullLeaderboardSection> {
                     _expanded
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
-                    color: const Color(0xFFC8FF57),
+                    color: AppConfig.primaryColor,
                     size: 18,
                   ),
                 ],
@@ -862,12 +833,16 @@ class _FullLeaderboardSectionState extends State<_FullLeaderboardSection> {
           final isYou = entry.name == widget.yourEntry.name;
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: _LeaderRow(entry: entry, isYou: isYou),
+            child: _LeaderRow(
+              entry: entry,
+              isYou: isYou,
+              isDark: widget.isDark,
+            ),
           );
         }),
         if (!isYourEntryVisible) ...[
           const SizedBox(height: 4),
-          _YourRankDivider(entry: widget.yourEntry),
+          _YourRankDivider(entry: widget.yourEntry, isDark: widget.isDark),
         ],
         const SizedBox(height: 8),
       ],
@@ -878,8 +853,13 @@ class _FullLeaderboardSectionState extends State<_FullLeaderboardSection> {
 class _LeaderRow extends StatelessWidget {
   final DemoLeaderboardEntry entry;
   final bool isYou;
+  final bool isDark;
 
-  const _LeaderRow({required this.entry, required this.isYou});
+  const _LeaderRow({
+    required this.entry,
+    required this.isYou,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -892,30 +872,30 @@ class _LeaderRow extends StatelessWidget {
         : null;
 
     final rowColor = isYou
-        ? const Color(0xFFFFD166)
+        ? AppConfig.rankGold
         : entry.rank <= 3
         ? [
-            const Color(0xFFFFD166),
-            const Color(0xFFBDBDBD),
-            const Color(0xFFCD7F32),
+            AppConfig.rankGold,
+            AppConfig.rankSilver,
+            AppConfig.rankBronze,
           ][entry.rank - 1]
-        : const Color(0xFF7A8499);
+        : AppConfig.mutedTextColor(isDark);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
         color: isYou
-            ? const Color(0xFFFFD166).withOpacity(0.07)
+            ? AppConfig.rankGold.withOpacity(isDark ? 0.07 : 0.12)
             : entry.rank <= 3
-            ? rowColor.withOpacity(0.05)
-            : const Color(0xFF161B26),
+            ? rowColor.withOpacity(isDark ? 0.05 : 0.08)
+            : AppConfig.cardColor(isDark),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isYou
-              ? const Color(0xFFFFD166).withOpacity(0.25)
+              ? AppConfig.rankGold.withOpacity(0.25)
               : entry.rank <= 3
               ? rowColor.withOpacity(0.15)
-              : const Color(0xFFFFFFFF).withOpacity(0.04),
+              : AppConfig.subtleOverlay(isDark),
         ),
       ),
       child: Row(
@@ -935,8 +915,8 @@ class _LeaderRow extends StatelessWidget {
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: isYou
-                          ? const Color(0xFFFFD166)
-                          : const Color(0xFF4A5568),
+                          ? AppConfig.rankGold
+                          : AppConfig.mutedTextColor(isDark),
                     ),
                   ),
           ),
@@ -969,7 +949,9 @@ class _LeaderRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: isYou ? FontWeight.w800 : FontWeight.w500,
-                color: isYou ? const Color(0xFFFFD166) : Colors.white,
+                color: isYou
+                    ? AppConfig.rankGold
+                    : AppConfig.bodyTextColor(isDark),
               ),
             ),
           ),
@@ -981,12 +963,17 @@ class _LeaderRow extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w900,
-                  color: isYou ? const Color(0xFFFFD166) : Colors.white,
+                  color: isYou
+                      ? AppConfig.rankGold
+                      : AppConfig.bodyTextColor(isDark),
                 ),
               ),
-              const Text(
+              Text(
                 'pts',
-                style: TextStyle(fontSize: 10, color: Color(0xFF4A5568)),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: AppConfig.mutedTextColor(isDark),
+                ),
               ),
             ],
           ),
@@ -998,7 +985,8 @@ class _LeaderRow extends StatelessWidget {
 
 class _YourRankDivider extends StatelessWidget {
   final DemoLeaderboardEntry entry;
-  const _YourRankDivider({required this.entry});
+  final bool isDark;
+  const _YourRankDivider({required this.entry, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
@@ -1006,32 +994,27 @@ class _YourRankDivider extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Expanded(child: Divider(color: Color(0xFF2A2E3D))),
+            Expanded(child: Divider(color: AppConfig.subtleOverlay(isDark))),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Text(
                 '· · ·',
                 style: TextStyle(
                   fontSize: 14,
-                  color: const Color(0xFF7A8499).withOpacity(0.5),
+                  color: AppConfig.mutedTextColor(isDark).withOpacity(0.5),
                   letterSpacing: 4,
                 ),
               ),
             ),
-            const Expanded(child: Divider(color: Color(0xFF2A2E3D))),
+            Expanded(child: Divider(color: AppConfig.subtleOverlay(isDark))),
           ],
         ),
         const SizedBox(height: 8),
-        _LeaderRow(entry: entry, isYou: true),
+        _LeaderRow(entry: entry, isYou: true, isDark: isDark),
       ],
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Confetti
-// Particles fall from the top across the full screen height.
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _Particle {
   final double x;
@@ -1063,26 +1046,13 @@ class _Particle {
   });
 
   factory _Particle.random(int seed) {
-    final colors = [
-      const Color(0xFFC8FF57),
-      const Color(0xFFFFD166),
-      const Color(0xFF6C8EFF),
-      const Color(0xFFFF6B6B),
-      const Color(0xFF22C55E),
-      const Color(0xFFFF9F43),
-      const Color(0xFFFF6BFF),
-    ];
-    // Each particle gets its own well-mixed Random so values aren't
-    // correlated by index (no more striding/grid patterns from %-arithmetic).
+    final colors = AppConfig.quizConfettiColors;
     final rnd = math.Random(seed * 7919 + 104729);
     return _Particle(
       x: rnd.nextDouble(),
       speed: 0.035 + rnd.nextDouble() * 0.28,
       size: 3.5 + rnd.nextDouble() * 8.5,
       color: colors[rnd.nextInt(colors.length)],
-      // Horizontal motion is a sine wave (per-particle amplitude/frequency/
-      // phase) instead of a straight linear drift, so paths curve and
-      // weave independently rather than all sliding the same direction.
       swayAmount: 0.01 + rnd.nextDouble() * 0.06,
       swayFreq: 0.6 + rnd.nextDouble() * 3.2,
       swayPhase: rnd.nextDouble() * math.pi * 2,
@@ -1110,7 +1080,6 @@ class _ConfettiPainter extends CustomPainter {
               p.swayAmount *
                   math.sin(t * math.pi * 2 * p.swayFreq + p.swayPhase)) *
           size.width;
-      // Full-screen fall: start slightly above top, end at bottom
       final y = -20 + t * (size.height + 30);
       final opacity = t < 0.08
           ? t / 0.08

@@ -5,26 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/quiz_dummy_data.dart';
+import '../../../config/app_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Tracks everything for the current question.
 class _QuizPlayState {
-  /// Index into [DemoQuiz.questions].
   final int questionIndex;
-
-  /// The answer the user has tapped but NOT yet submitted.
   final String? pendingAnswerId;
-
-  /// The answer that was locked in by pressing Submit (or by timer expiry).
   final String? submittedAnswerId;
-
-  /// True once the timer has fully elapsed — triggers answer reveal.
   final bool timerExpired;
-
-  /// Current seconds remaining on the timer.
   final int secondsLeft;
 
   const _QuizPlayState({
@@ -35,7 +26,6 @@ class _QuizPlayState {
     required this.secondsLeft,
   });
 
-  /// Whether the user has already submitted (not just selected).
   bool get hasSubmitted => submittedAnswerId != null;
 
   _QuizPlayState copyWith({
@@ -127,8 +117,6 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     _startTimer();
   }
 
-  // ── Timer ──────────────────────────────────────────────────────────────────
-
   void _startTimer() {
     _timer?.cancel();
     _navigatingToLeaderboard = false;
@@ -141,13 +129,10 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
       final left = _state.secondsLeft - 1;
       if (left <= 0) {
         _timer?.cancel();
-        // Timer hit zero: lock with whatever is submitted (or nothing)
         setState(() {
           _state = _state.copyWith(
             timerExpired: true,
             secondsLeft: 0,
-            // If user never submitted, auto-submit their pending selection
-            // (or null if they never selected anything)
             submittedAnswerId:
                 _state.submittedAnswerId ?? _state.pendingAnswerId,
           );
@@ -162,19 +147,13 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     });
   }
 
-  // ── Question helpers ───────────────────────────────────────────────────────
-
   DemoQuestion get _currentQuestion => _quiz.questions[_state.questionIndex];
 
-  // ── User actions ───────────────────────────────────────────────────────────
-
-  /// Tapping an answer tile only sets a pending selection — does NOT lock.
   void _onAnswerTapped(String id) {
     if (_state.hasSubmitted || _state.timerExpired) return;
     HapticFeedback.selectionClick();
     setState(() {
       if (_state.pendingAnswerId == id) {
-        // Tapping the already-selected option again deselects it.
         _state = _state.copyWith(clearPending: true);
       } else {
         _state = _state.copyWith(pendingAnswerId: id);
@@ -182,8 +161,6 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     });
   }
 
-  /// Submit button confirms the pending selection and locks the answer.
-  /// Timer keeps running after this — answer reveal happens when timer ends.
   void _onSubmitPressed() {
     if (_state.pendingAnswerId == null) return;
     if (_state.hasSubmitted || _state.timerExpired) return;
@@ -191,11 +168,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     setState(() {
       _state = _state.copyWith(submittedAnswerId: _state.pendingAnswerId);
     });
-    // Timer continues running — we do NOT call _goToLeaderboard() yet.
-    // The timer's own callback will trigger navigation when it reaches 0.
   }
-
-  // ── Navigation ─────────────────────────────────────────────────────────────
 
   void _goToLeaderboard() {
     if (_navigatingToLeaderboard || !mounted) return;
@@ -204,7 +177,6 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
 
     final isLast = _state.questionIndex >= _quiz.questions.length - 1;
 
-    // Last question → skip the leaderboard, go straight to final results.
     if (isLast) {
       context.pushReplacement('/quiz/${widget.quizId}/results');
       return;
@@ -256,37 +228,23 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     super.dispose();
   }
 
-  // ── Answer colors & shapes ─────────────────────────────────────────────────
-
-  static const _answerColors = [
-    Color(0xFF6C8EFF), // A
-    Color(0xFFFF6B6B), // B
-    Color(0xFFC8FF57), // C
-    Color(0xFFFFD166), // D
-    Color(0xFFFF9F43), // E
-    Color(0xFF48CFAD), // F
-  ];
-
   static const _answerShapes = ['▲', '◆', '●', '■', '★', '♥'];
-
-  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final q = _currentQuestion;
     final totalQ = _quiz.questions.length;
     final idx = _state.questionIndex;
     final hasImage = q.imageUrl != null && q.imageUrl!.isNotEmpty;
 
-    // Whether the submit button should be active
     final submitActive = _state.pendingAnswerId != null && !_state.hasSubmitted;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
+      backgroundColor: AppConfig.scaffoldColor(isDark),
       body: SafeArea(
         child: Column(
           children: [
-            // ── Header ────────────────────────────────────────────────
             _HeaderBar(
               current: idx + 1,
               total: totalQ,
@@ -294,9 +252,9 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
               totalSeconds: q.timerSeconds,
               isSubmitted: _state.hasSubmitted,
               timerCtrl: _timerCtrl,
+              isDark: isDark,
             ),
 
-            // ── Question + answers (scrollable if image present) ──────
             Expanded(
               child: FadeTransition(
                 opacity: _questionFade,
@@ -306,23 +264,25 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
                     physics: const ClampingScrollPhysics(),
                     child: Column(
                       children: [
-                        // Question card (with optional image)
-                        _QuestionCard(question: q, hasImage: hasImage),
+                        _QuestionCard(
+                          question: q,
+                          hasImage: hasImage,
+                          isDark: isDark,
+                        ),
 
                         const SizedBox(height: 12),
 
-                        // Answer tiles
                         _AnswerGrid(
                           answers: q.answers,
                           pendingId: _state.pendingAnswerId,
                           submittedId: _state.submittedAnswerId,
                           timerExpired: _state.timerExpired,
                           onTap: _onAnswerTapped,
-                          colors: _answerColors,
+                          colors: AppConfig.quizAnswerColors,
                           shapes: _answerShapes,
+                          isDark: isDark,
                         ),
 
-                        // Space for the fixed submit button
                         const SizedBox(height: 80),
                       ],
                     ),
@@ -331,13 +291,13 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
               ),
             ),
 
-            // ── Submit button (fixed at bottom) ───────────────────────
             _SubmitBar(
               isActive: submitActive,
               isSubmitted: _state.hasSubmitted,
               timerExpired: _state.timerExpired,
               pulseAnim: _submitPulse,
               onSubmit: _onSubmitPressed,
+              isDark: isDark,
             ),
           ],
         ),
@@ -346,10 +306,6 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Header Bar
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _HeaderBar extends StatelessWidget {
   final int current;
   final int total;
@@ -357,6 +313,7 @@ class _HeaderBar extends StatelessWidget {
   final int totalSeconds;
   final bool isSubmitted;
   final AnimationController timerCtrl;
+  final bool isDark;
 
   const _HeaderBar({
     required this.current,
@@ -365,13 +322,14 @@ class _HeaderBar extends StatelessWidget {
     required this.totalSeconds,
     required this.isSubmitted,
     required this.timerCtrl,
+    required this.isDark,
   });
 
   Color _timerColorFor(double fraction) {
-    if (fraction <= 0) return const Color(0xFFFF6B6B);
-    if (fraction > 0.5) return const Color(0xFFC8FF57);
-    if (fraction > 0.25) return const Color(0xFFFFD166);
-    return const Color(0xFFFF6B6B);
+    if (fraction <= 0) return AppConfig.errorColor;
+    if (fraction > 0.5) return AppConfig.primaryColor;
+    if (fraction > 0.25) return AppConfig.warningColor;
+    return AppConfig.errorColor;
   }
 
   @override
@@ -382,17 +340,16 @@ class _HeaderBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       child: Row(
         children: [
-          // Question counter + progress bar
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'QUESTION $current OF $total',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.2,
-                  color: Color(0xFF7A8499),
+                  color: AppConfig.mutedTextColor(isDark),
                 ),
               ),
               const SizedBox(height: 6),
@@ -403,9 +360,9 @@ class _HeaderBar extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: current / total,
                     minHeight: 5,
-                    backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.08),
+                    backgroundColor: AppConfig.subtleOverlay(isDark),
                     valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFFC8FF57),
+                      AppConfig.primaryColor,
                     ),
                   ),
                 ),
@@ -415,9 +372,6 @@ class _HeaderBar extends StatelessWidget {
 
           const Spacer(),
 
-          // Fixed-size slot: identical footprint for both the timer ring and
-          // the "Submitted" pill, so swapping between them never reflows
-          // the rest of the page.
           SizedBox(
             height: 54,
             child: Align(
@@ -434,6 +388,7 @@ class _HeaderBar extends StatelessWidget {
                     ? _SubmittedPill(
                         key: const ValueKey('pill'),
                         secondsLeft: secondsLeft,
+                        isDark: isDark,
                       )
                     : _TimerRing(
                         key: const ValueKey('ring'),
@@ -441,6 +396,7 @@ class _HeaderBar extends StatelessWidget {
                         totalSeconds: totalSeconds,
                         timerCtrl: timerCtrl,
                         colorFor: _timerColorFor,
+                        isDark: isDark,
                       ),
               ),
             ),
@@ -451,16 +407,12 @@ class _HeaderBar extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Timer Ring — smooth, continuous progress driven directly by the
-// AnimationController's elapsed value rather than the once-per-second tick.
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _TimerRing extends StatelessWidget {
   final int secondsLeft;
   final int totalSeconds;
   final AnimationController timerCtrl;
   final Color Function(double fraction) colorFor;
+  final bool isDark;
 
   const _TimerRing({
     super.key,
@@ -468,6 +420,7 @@ class _TimerRing extends StatelessWidget {
     required this.totalSeconds,
     required this.timerCtrl,
     required this.colorFor,
+    required this.isDark,
   });
 
   @override
@@ -478,8 +431,6 @@ class _TimerRing extends StatelessWidget {
       child: AnimatedBuilder(
         animation: timerCtrl,
         builder: (_, __) {
-          // timerCtrl runs 0 → 1 over totalSeconds, so remaining fraction
-          // is the complement — this updates every frame, not every second.
           final fraction = totalSeconds > 0
               ? (1.0 - timerCtrl.value).clamp(0.0, 1.0)
               : 0.0;
@@ -493,7 +444,7 @@ class _TimerRing extends StatelessWidget {
                 child: CircularProgressIndicator(
                   value: fraction,
                   strokeWidth: 4,
-                  backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.08),
+                  backgroundColor: AppConfig.subtleOverlay(isDark),
                   valueColor: AlwaysStoppedAnimation<Color>(color),
                 ),
               ),
@@ -513,15 +464,15 @@ class _TimerRing extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Submitted Pill — same 54px height as the timer ring so the header never
-// resizes when switching between the two states.
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _SubmittedPill extends StatelessWidget {
   final int secondsLeft;
+  final bool isDark;
 
-  const _SubmittedPill({super.key, required this.secondsLeft});
+  const _SubmittedPill({
+    super.key,
+    required this.secondsLeft,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -529,31 +480,36 @@ class _SubmittedPill extends StatelessWidget {
       height: 54,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF22C55E).withOpacity(0.12),
+        color: AppConfig.successColor.withOpacity(isDark ? 0.12 : 0.18),
         borderRadius: BorderRadius.circular(27),
-        border: Border.all(color: const Color(0xFF22C55E).withOpacity(0.3)),
+        border: Border.all(
+          color: AppConfig.successColor.withOpacity(isDark ? 0.3 : 0.5),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.check_rounded, size: 16, color: Color(0xFF22C55E)),
+          const Icon(
+            Icons.check_rounded,
+            size: 16,
+            color: AppConfig.successColor,
+          ),
           const SizedBox(width: 6),
           const Text(
             'Submitted',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF22C55E),
+              color: AppConfig.successColor,
             ),
           ),
           const SizedBox(width: 8),
-          // Still shows the countdown even after submit
           Text(
             '${secondsLeft}s',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFF22C55E).withOpacity(0.6),
+              color: AppConfig.successColor.withOpacity(0.8),
             ),
           ),
         ],
@@ -562,50 +518,48 @@ class _SubmittedPill extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Question Card  (with optional image)
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _QuestionCard extends StatelessWidget {
   final DemoQuestion question;
   final bool hasImage;
+  final bool isDark;
 
-  const _QuestionCard({required this.question, required this.hasImage});
+  const _QuestionCard({
+    required this.question,
+    required this.hasImage,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       decoration: BoxDecoration(
-        color: const Color(0xFF161B26),
+        color: AppConfig.cardColor(isDark),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFFFFFFF).withOpacity(0.07)),
+        border: Border.all(color: AppConfig.subtleOverlay(isDark)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
         ],
       ),
-      // Clip so the image fills the rounded corners cleanly
       clipBehavior: Clip.antiAlias,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Image (only when imageUrl is set) ───────────────────────
           if (hasImage)
             AspectRatio(
               aspectRatio: 16 / 9,
               child: Image.network(
                 question.imageUrl!,
                 fit: BoxFit.cover,
-                // Loading placeholder
                 loadingBuilder: (_, child, loadingProgress) {
                   if (loadingProgress == null) return child;
                   return Container(
-                    color: const Color(0xFF0D1117),
+                    color: AppConfig.cardColor(isDark),
                     child: Center(
                       child: CircularProgressIndicator(
                         value: loadingProgress.expectedTotalBytes != null
@@ -613,19 +567,18 @@ class _QuestionCard extends StatelessWidget {
                                   loadingProgress.expectedTotalBytes!
                             : null,
                         strokeWidth: 2,
-                        color: const Color(0xFFC8FF57),
+                        color: AppConfig.primaryColor,
                       ),
                     ),
                   );
                 },
-                // Error fallback — shows nothing so question still works
                 errorBuilder: (_, __, ___) => Container(
-                  color: const Color(0xFF0D1117),
+                  color: AppConfig.cardColor(isDark),
                   height: 160,
-                  child: const Center(
+                  child: Center(
                     child: Icon(
                       Icons.image_not_supported_outlined,
-                      color: Color(0xFF7A8499),
+                      color: AppConfig.mutedTextColor(isDark),
                       size: 32,
                     ),
                   ),
@@ -633,7 +586,6 @@ class _QuestionCard extends StatelessWidget {
               ),
             ),
 
-          // ── Question text ────────────────────────────────────────────
           Padding(
             padding: EdgeInsets.fromLTRB(24, hasImage ? 32 : 32, 24, 32),
             child: Text(
@@ -642,7 +594,7 @@ class _QuestionCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: hasImage ? 17 : 20,
                 fontWeight: FontWeight.w700,
-                color: Colors.white,
+                color: AppConfig.bodyTextColor(isDark),
                 height: 1.45,
                 letterSpacing: -0.3,
               ),
@@ -654,10 +606,6 @@ class _QuestionCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Answer Grid
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _AnswerGrid extends StatelessWidget {
   final List<DemoAnswer> answers;
   final String? pendingId;
@@ -666,6 +614,7 @@ class _AnswerGrid extends StatelessWidget {
   final void Function(String id) onTap;
   final List<Color> colors;
   final List<String> shapes;
+  final bool isDark;
 
   const _AnswerGrid({
     required this.answers,
@@ -675,12 +624,12 @@ class _AnswerGrid extends StatelessWidget {
     required this.onTap,
     required this.colors,
     required this.shapes,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
     final crossAxisCount = answers.length <= 2 ? 1 : 2;
-    // Build rows manually so we can stagger per-tile reveal animations
     final rows = <Widget>[];
     for (var i = 0; i < answers.length; i += crossAxisCount) {
       final rowWidgets = <Widget>[];
@@ -695,12 +644,8 @@ class _AnswerGrid extends StatelessWidget {
               submittedId: submittedId,
               timerExpired: timerExpired,
               onTap: onTap,
-              // Stagger index: correct answer tile always animates last
-              // so wrong tiles dim first, then correct lights up.
-              revealStaggerIndex: answers[j].isCorrect
-                  ? answers
-                        .length // correct always last
-                  : j,
+              revealStaggerIndex: answers[j].isCorrect ? answers.length : j,
+              isDark: isDark,
             ),
           ),
         );
@@ -728,10 +673,6 @@ class _AnswerGrid extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Answer Tile  (handles its own reveal animation)
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _AnswerTile extends StatefulWidget {
   final DemoAnswer answer;
   final Color baseColor;
@@ -740,10 +681,8 @@ class _AnswerTile extends StatefulWidget {
   final String? submittedId;
   final bool timerExpired;
   final void Function(String id) onTap;
-
-  /// Lower index = animates sooner. Correct tile uses a higher index
-  /// so it "lights up" after wrong tiles have already dimmed.
   final int revealStaggerIndex;
+  final bool isDark;
 
   const _AnswerTile({
     required this.answer,
@@ -754,6 +693,7 @@ class _AnswerTile extends StatefulWidget {
     required this.timerExpired,
     required this.onTap,
     required this.revealStaggerIndex,
+    required this.isDark,
   });
 
   @override
@@ -766,10 +706,6 @@ class _AnswerTileState extends State<_AnswerTile>
   late Animation<double> _scaleAnim;
   late Animation<double> _glowAnim;
   bool _revealed = false;
-
-  // Drives the selected/unselected ("pending") glow smoothly — separate
-  // from AnimatedContainer's implicit decoration tween, which jumps when
-  // several properties (color, border, shadow) change in the same frame.
   late AnimationController _pendingCtrl;
 
   @override
@@ -779,8 +715,6 @@ class _AnswerTileState extends State<_AnswerTile>
       vsync: this,
       duration: const Duration(milliseconds: 420),
     );
-    // Correct tile: bouncy scale-up punch
-    // Wrong/dim tiles: quick scale-down settle
     _scaleAnim = TweenSequence<double>([
       TweenSequenceItem(
         tween: Tween(
@@ -811,7 +745,6 @@ class _AnswerTileState extends State<_AnswerTile>
   @override
   void didUpdateWidget(_AnswerTile old) {
     super.didUpdateWidget(old);
-    // Trigger reveal animation when timerExpired flips to true
     if (widget.timerExpired && !old.timerExpired && !_revealed) {
       _revealed = true;
       final delay = Duration(milliseconds: widget.revealStaggerIndex * 80);
@@ -820,9 +753,6 @@ class _AnswerTileState extends State<_AnswerTile>
       });
     }
 
-    // Smoothly glow in/out as this tile becomes (or stops being) the
-    // pending selection — handles both "tap to select" and "tap a
-    // different tile" cases with the same easing curve.
     final wasPending = old.pendingId == widget.answer.id;
     final isPending = widget.pendingId == widget.answer.id;
     if (isPending != wasPending) {
@@ -845,12 +775,12 @@ class _AnswerTileState extends State<_AnswerTile>
   Widget build(BuildContext context) {
     final answer = widget.answer;
     final baseColor = widget.baseColor;
+    final isDark = widget.isDark;
 
     final isSubmitted = widget.submittedId == answer.id;
     final isCorrect = answer.isCorrect;
     final locked = widget.submittedId != null || widget.timerExpired;
 
-    // ── Reveal-phase visual properties (unaffected by pending glow) ────────
     Color tileColor;
     Color textColor;
     Color bgColor;
@@ -862,41 +792,38 @@ class _AnswerTileState extends State<_AnswerTile>
 
     if (widget.timerExpired) {
       if (isCorrect) {
-        tileColor = const Color(0xFF22C55E);
-        bgColor = const Color(0xFF22C55E).withOpacity(0.18);
-        textColor = const Color(0xFF22C55E);
-        borderColor = const Color(0xFF22C55E);
+        tileColor = AppConfig.successColor;
+        bgColor = AppConfig.successColor.withOpacity(isDark ? 0.18 : 0.25);
+        textColor = AppConfig.successColor;
+        borderColor = AppConfig.successColor;
         borderWidth = 2.0;
         tileOpacity = 1.0;
         trailingIcon = Icons.check_circle_rounded;
-        trailingIconColor = const Color(0xFF22C55E);
+        trailingIconColor = AppConfig.successColor;
       } else if (isSubmitted && !isCorrect) {
-        tileColor = const Color(0xFFFF6B6B);
-        bgColor = const Color(0xFFFF6B6B).withOpacity(0.12);
-        textColor = const Color(0xFFFF6B6B);
-        borderColor = const Color(0xFFFF6B6B);
+        tileColor = AppConfig.errorColor;
+        bgColor = AppConfig.errorColor.withOpacity(isDark ? 0.12 : 0.2);
+        textColor = AppConfig.errorColor;
+        borderColor = AppConfig.errorColor;
         borderWidth = 2.0;
         tileOpacity = 1.0;
         trailingIcon = Icons.cancel_rounded;
-        trailingIconColor = const Color(0xFFFF6B6B);
+        trailingIconColor = AppConfig.errorColor;
       } else {
-        // Incorrect, not selected — dim
         tileColor = baseColor;
-        bgColor = baseColor.withOpacity(0.06);
-        textColor = baseColor.withOpacity(0.4);
-        borderColor = baseColor.withOpacity(0.12);
+        bgColor = baseColor.withOpacity(isDark ? 0.06 : 0.1);
+        textColor = baseColor.withOpacity(0.6);
+        borderColor = baseColor.withOpacity(isDark ? 0.12 : 0.2);
         borderWidth = 1.0;
         tileOpacity = 1.0;
         trailingIcon = null;
         trailingIconColor = null;
       }
     } else {
-      // Pre-reveal base values at rest (pending glow handled separately
-      // below via _pendingCtrl so selecting/deselecting animates smoothly).
       tileColor = baseColor;
-      textColor = baseColor;
-      bgColor = baseColor.withOpacity(0.13);
-      borderColor = baseColor.withOpacity(0.25);
+      textColor = isDark ? baseColor : baseColor.withOpacity(0.9);
+      bgColor = baseColor.withOpacity(isDark ? 0.13 : 0.18);
+      borderColor = baseColor.withOpacity(isDark ? 0.25 : 0.4);
       borderWidth = 1.0;
       tileOpacity =
           (isSubmitted &&
@@ -908,20 +835,14 @@ class _AnswerTileState extends State<_AnswerTile>
       trailingIconColor = null;
     }
 
-    // ── Glow shadow only on correct tile during reveal ─────────────────────
     final showGlow = widget.timerExpired && isCorrect;
-    const darkText = Color(0xFF0C0E14);
+    final contrastText = isDark ? const Color(0xFF0C0E14) : Colors.white;
 
     return AnimatedBuilder(
       animation: Listenable.merge([_revealCtrl, _pendingCtrl]),
       builder: (_, child) {
         final scale = _revealed ? _scaleAnim.value : 1.0;
         final glowOpacity = showGlow ? (_glowAnim.value * 0.45) : 0.0;
-
-        // t = 0 → resting/unselected, t = 1 → fully selected (pending).
-        // Animates continuously in both directions, so selecting a new
-        // tile and the previous tile losing its glow look identical in
-        // smoothness — no abrupt jump.
         final t = widget.timerExpired ? 0.0 : _pendingCtrl.value;
 
         final effectiveBg = t == 0.0
@@ -933,10 +854,10 @@ class _AnswerTileState extends State<_AnswerTile>
         final effectiveBorderWidth = borderWidth + (1.0 * t);
         final effectiveTextColor = t == 0.0
             ? textColor
-            : Color.lerp(textColor, darkText, t)!;
+            : Color.lerp(textColor, contrastText, t)!;
         final effectiveTileColor = t == 0.0
             ? tileColor
-            : Color.lerp(tileColor, darkText, t)!;
+            : Color.lerp(tileColor, contrastText, t)!;
         final pendingGlowOpacity = widget.timerExpired ? 0.0 : t * 0.22;
 
         return Transform.scale(
@@ -966,7 +887,7 @@ class _AnswerTileState extends State<_AnswerTile>
                       ),
                     if (showGlow)
                       BoxShadow(
-                        color: const Color(0xFF22C55E).withOpacity(glowOpacity),
+                        color: AppConfig.successColor.withOpacity(glowOpacity),
                         blurRadius: 22,
                         spreadRadius: 2,
                         offset: const Offset(0, 4),
@@ -975,7 +896,6 @@ class _AnswerTileState extends State<_AnswerTile>
                 ),
                 child: Row(
                   children: [
-                    // Shape
                     Container(
                       width: 46,
                       alignment: Alignment.center,
@@ -987,7 +907,6 @@ class _AnswerTileState extends State<_AnswerTile>
                         ),
                       ),
                     ),
-                    // Text
                     Expanded(
                       child: Text(
                         answer.text,
@@ -1000,7 +919,6 @@ class _AnswerTileState extends State<_AnswerTile>
                         ),
                       ),
                     ),
-                    // Trailing icon (reveal phase only)
                     if (trailingIcon != null)
                       Padding(
                         padding: const EdgeInsets.only(right: 12),
@@ -1028,16 +946,13 @@ class _AnswerTileState extends State<_AnswerTile>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Submit Bar
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _SubmitBar extends StatelessWidget {
   final bool isActive;
   final bool isSubmitted;
   final bool timerExpired;
   final Animation<double> pulseAnim;
   final VoidCallback onSubmit;
+  final bool isDark;
 
   const _SubmitBar({
     required this.isActive,
@@ -1045,11 +960,11 @@ class _SubmitBar extends StatelessWidget {
     required this.timerExpired,
     required this.pulseAnim,
     required this.onSubmit,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Determine button state and label
     String label;
     Color bgColor;
     Color fgColor = const Color(0xFF0C0E14);
@@ -1057,20 +972,20 @@ class _SubmitBar extends StatelessWidget {
 
     if (timerExpired) {
       label = 'Time\'s up!';
-      bgColor = const Color(0xFF2A2E3D);
-      fgColor = const Color(0xFF7A8499);
+      bgColor = AppConfig.emptyButtonColor(isDark);
+      fgColor = AppConfig.mutedTextColor(isDark);
     } else if (isSubmitted) {
       label = '✓ Answer Submitted — Waiting for timer...';
-      bgColor = const Color(0xFF22C55E).withOpacity(0.15);
-      fgColor = const Color(0xFF22C55E);
+      bgColor = AppConfig.successColor.withOpacity(isDark ? 0.15 : 0.2);
+      fgColor = AppConfig.successColor;
     } else if (isActive) {
       label = 'Submit Answer';
-      bgColor = const Color(0xFFC8FF57);
+      bgColor = AppConfig.primaryColor;
       tappable = true;
     } else {
       label = 'Select an answer first';
-      bgColor = const Color(0xFF2A2E3D);
-      fgColor = const Color(0xFF7A8499);
+      bgColor = AppConfig.emptyButtonColor(isDark);
+      fgColor = AppConfig.mutedTextColor(isDark);
     }
 
     final button = GestureDetector(
@@ -1085,7 +1000,7 @@ class _SubmitBar extends StatelessWidget {
           boxShadow: tappable
               ? [
                   BoxShadow(
-                    color: const Color(0xFFC8FF57).withOpacity(0.3),
+                    color: AppConfig.primaryColor.withOpacity(0.3),
                     blurRadius: 20,
                     offset: const Offset(0, 6),
                   ),
@@ -1108,10 +1023,8 @@ class _SubmitBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
-        border: Border(
-          top: BorderSide(color: const Color(0xFFFFFFFF).withOpacity(0.05)),
-        ),
+        color: AppConfig.scaffoldColor(isDark),
+        border: Border(top: BorderSide(color: AppConfig.subtleOverlay(isDark))),
       ),
       child: tappable
           ? ScaleTransition(scale: pulseAnim, child: button)

@@ -67,15 +67,39 @@ class AppConfig {
   // Notification feed settings
   // ─────────────────────────────────────────────────────────────────────────
 
-  /// How many notifications are fetched per page on the Notifications screen.
-  /// Must match (or be ≤) the backend DEFAULT_PAGE_SIZE.
   static const notificationPageSize = 20;
 
-  /// Accent colors for each notification type badge.
   static const notifColorQuiz = Color(0xFFC8FF57);
   static const notifColorResult = Color(0xFFFFD166);
   static const notifColorContest = Color(0xFFFF6B6B);
   static const notifColorAnnouncement = Color(0xFF6C8EFF);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Gamification & Quiz Settings
+  // ─────────────────────────────────────────────────────────────────────────
+
+  static const rankGold = Color(0xFFFFD166);
+  static const rankSilver = Color(0xFFBDBDBD);
+  static const rankBronze = Color(0xFFCD7F32);
+
+  static const quizAnswerColors = [
+    Color(0xFF6C8EFF), // A
+    Color(0xFFFF6B6B), // B
+    Color(0xFFC8FF57), // C
+    Color(0xFFFFD166), // D
+    Color(0xFFFF9F43), // E
+    Color(0xFF48CFAD), // F
+  ];
+
+  static const quizConfettiColors = [
+    Color(0xFFC8FF57),
+    Color(0xFFFFD166),
+    Color(0xFF6C8EFF),
+    Color(0xFFFF6B6B),
+    Color(0xFF22C55E),
+    Color(0xFFFF9F43),
+    Color(0xFFFF6BFF),
+  ];
 
   // ─────────────────────────────────────────────────────────────────────────
   // Helpers
@@ -100,6 +124,21 @@ class AppConfig {
 
   static Color mutedTextColor(bool isDark) =>
       isDark ? mutedTextDark : mutedTextLight;
+
+  static Color subtleOverlay(bool isDark) =>
+      isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.05);
+
+  static Color strongOverlay(bool isDark) =>
+      isDark ? Colors.white.withOpacity(0.12) : Colors.black.withOpacity(0.1);
+
+  static Color emptyButtonColor(bool isDark) =>
+      isDark ? const Color(0xFF2A2E3D) : const Color(0xFFE5E7EB);
+
+  static Color highlightRankCardStart(bool isDark) =>
+      isDark ? const Color(0xFF1C2440) : const Color(0xFFEEF2FF);
+
+  static Color highlightRankCardEnd(bool isDark) =>
+      isDark ? const Color(0xFF141A30) : const Color(0xFFE0E7FF);
 
   static String get copyrightText => "$appName © ${DateTime.now().year}";
 }
