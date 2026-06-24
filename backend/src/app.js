@@ -484,6 +484,12 @@ const groupRoutes = require("./modules/groups/group.routes");
 
 const notificationRoutes = require("./modules/notifications/notification.routes");
 
+const questionRoutes = require("./modules/question/question.routes");
+
+const quizRoutes = require("./modules/quiz/quiz.routes");
+
+const quizCompositionRoutes = require("./modules/quiz-composition/quiz-composition.routes");
+
 const app = express();
 
 app.use(cors());
@@ -502,5 +508,11 @@ app.use("/admin", adminRoutes);
 app.use("/groups", groupRoutes);
 
 app.use("/notifications", notificationRoutes);
+
+app.use("/questions", questionRoutes);
+
+app.use("/quizzes", quizRoutes);
+
+app.use("/quizzes", quizCompositionRoutes);
 
 module.exports = app;
