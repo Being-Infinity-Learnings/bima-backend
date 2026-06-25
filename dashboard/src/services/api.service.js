@@ -108,13 +108,20 @@ export const notificationsApi = {
 };
 
 // ── Quiz API ────────────────────────────────────────────────────────────────
+// Quiz status lifecycle: DRAFT → SCHEDULED → LIVE → COMPLETED
+// publish()   moves DRAFT      → SCHEDULED  (validates: future time, ≥1 question, groups if restricted)
+// unpublish() moves SCHEDULED  → DRAFT
+// LIVE and COMPLETED are set by the backend scheduler — not editable from dashboard.
 export const quizApi = {
   getAll: () => request("GET", "/quiz"),
   getById: (id) => request("GET", `/quiz/${id}`),
+  // Required fields: title, defaultTimer (seconds), scheduledStartTime (ISO string)
   create: (body) => request("POST", "/quiz", body),
   update: (id, body) => request("PATCH", `/quiz/${id}`, body),
   delete: (id) => request("DELETE", `/quiz/${id}`),
+  // publish: DRAFT → SCHEDULED (server validates scheduledStartTime is future, ≥1 question, etc.)
   publish: (id) => request("POST", `/quiz/${id}/publish`),
+  // unpublish: SCHEDULED → DRAFT
   unpublish: (id) => request("POST", `/quiz/${id}/unpublish`),
   getGroups: (quizId) => request("GET", `/quiz/${quizId}/groups`),
   addGroups: (quizId, groupIds) =>
@@ -123,10 +130,12 @@ export const quizApi = {
     request("DELETE", `/quiz/${quizId}/groups/${groupId}`),
 };
 
-// ── Question (Bank) API ─────────────────────────────────────────────────────
+// ── Question Bank API ───────────────────────────────────────────────────────
+// customTimer is optional (null = use quiz defaultTimer during playback)
 export const questionApi = {
   getAll: () => request("GET", "/question"),
   getById: (id) => request("GET", `/question/${id}`),
+  // body: { questionText, questionType, options[], customTimer? }
   create: (body) => request("POST", "/question", body),
   update: (id, body) => request("PATCH", `/question/${id}`, body),
   delete: (id) => request("DELETE", `/question/${id}`),

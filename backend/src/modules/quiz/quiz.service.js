@@ -3,13 +3,30 @@ const validationService = require("./quiz-validation.service");
 
 /** Create a new quiz */
 async function createQuiz(data, userId) {
+  if (!data.scheduledStartTime) {
+    throw new Error("Scheduled start time is required");
+  }
+
+  if (data.defaultTimer === undefined) {
+    throw new Error("Default timer is required");
+  }
+
   return prisma.quiz.create({
     data: {
       title: data.title,
+
       description: data.description ?? null,
+
       coverImageUrl: data.coverImageUrl ?? null,
+
       visibility: data.visibility ?? "PUBLIC",
-      defaultTimer: data.defaultTimer ?? 30,
+
+      defaultTimer: data.defaultTimer,
+
+      scheduledStartTime: new Date(data.scheduledStartTime),
+
+      status: "DRAFT",
+
       createdById: userId,
     },
   });
@@ -80,10 +97,13 @@ async function updateQuiz(id, data) {
 
   if (data.visibility !== undefined) updateData.visibility = data.visibility;
 
-  if (data.defaultTimer !== undefined)
+  if (data.defaultTimer !== undefined) {
     updateData.defaultTimer = data.defaultTimer;
+  }
 
-  if (data.isPublished !== undefined) updateData.isPublished = data.isPublished;
+  if (data.scheduledStartTime !== undefined) {
+    updateData.scheduledStartTime = new Date(data.scheduledStartTime);
+  }
 
   return prisma.quiz.update({
     where: { id },
@@ -101,29 +121,57 @@ async function deleteQuiz(id) {
 }
 
 /** Publish a quiz */
-async function publishQuiz(quizId) {
-  await validationService.validateQuizForPublishing(quizId);
+async function publishQuiz(id) {
+  await validationService.validateQuiz(id);
+
+  const quiz = await prisma.quiz.findUnique({
+    where: {
+      id,
+    },
+  });
+
+  if (!quiz) {
+    throw new Error("Quiz not found");
+  }
+
+  if (quiz.status !== "DRAFT") {
+    throw new Error("Only draft quizzes can be published");
+  }
 
   return prisma.quiz.update({
     where: {
-      id: quizId,
+      id,
     },
 
     data: {
-      isPublished: true,
+      status: "SCHEDULED",
     },
   });
 }
 
 /** Unpublish a quiz */
-async function unpublishQuiz(quizId) {
+async function unpublishQuiz(id) {
+  const quiz = await prisma.quiz.findUnique({
+    where: {
+      id,
+    },
+  });
+
+  if (!quiz) {
+    throw new Error("Quiz not found");
+  }
+
+  if (quiz.status !== "SCHEDULED") {
+    throw new Error("Only scheduled quizzes can be unpublished");
+  }
+
   return prisma.quiz.update({
     where: {
-      id: quizId,
+      id,
     },
 
     data: {
-      isPublished: false,
+      status: "DRAFT",
     },
   });
 }

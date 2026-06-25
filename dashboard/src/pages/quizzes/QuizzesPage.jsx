@@ -1,10 +1,10 @@
 // Quiz management page for admins and authors.
 //
-// Three-panel workflow: Quiz list → Quiz detail (questions in quiz) → Question bank.
-// Supports full CRUD on quizzes and questions, adding/removing questions from quizzes,
-// publish/unpublish control, and group assignment for restricted quizzes.
+// Status lifecycle: DRAFT → SCHEDULED → LIVE → COMPLETED
+// Features: quiz CRUD with scheduling, inline question creation during quiz setup,
+// question bank CRUD, clickable questions to view/edit, group assignment.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   quizApi,
   questionApi,
@@ -22,13 +22,16 @@ import {
   EmptyState,
   Spinner,
   Badge,
+  DateTimePicker,
   toast,
 } from "../../components/ui/index.jsx";
 import APP_CONFIG from "../../config/app.config.js";
 
 const T = APP_CONFIG.theme;
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants & pure helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
 const QUESTION_TYPES = [
   { value: "SINGLE_CORRECT", label: "Single correct" },
@@ -42,25 +45,75 @@ const VISIBILITY_OPTIONS = [
   { value: "RESTRICTED", label: "Restricted — assigned groups only" },
 ];
 
+// Quiz status metadata: color, label, and what actions are available.
+const STATUS_META = {
+  DRAFT: {
+    colors: T.neutral,
+    label: "Draft",
+    canPublish: true,
+    canUnpublish: false,
+    canEdit: true,
+    canDelete: true,
+  },
+  SCHEDULED: {
+    colors: T.info,
+    label: "Scheduled",
+    canPublish: false,
+    canUnpublish: true,
+    canEdit: true,
+    canDelete: false,
+  },
+  LIVE: {
+    colors: T.warning,
+    label: "Live",
+    canPublish: false,
+    canUnpublish: false,
+    canEdit: false,
+    canDelete: false,
+  },
+  COMPLETED: {
+    colors: { bg: "#052e16", text: "#bbf7d0", dot: "#22c55e" },
+    label: "Completed",
+    canPublish: false,
+    canUnpublish: false,
+    canEdit: false,
+    canDelete: false,
+  },
+};
+
 function typeLabel(t) {
   return QUESTION_TYPES.find((x) => x.value === t)?.label ?? t;
 }
 
+function formatSchedule(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function quizStatus(quiz) {
+  return quiz?.status ?? "DRAFT";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Small reusable display pieces
+// ─────────────────────────────────────────────────────────────────────────────
+
 function QuizStatusBadge({ quiz }) {
-  if (quiz.isPublished)
-    return <Badge label="published" customColors={T.success} />;
-  return <Badge label="draft" customColors={T.neutral} />;
+  const status = quizStatus(quiz);
+  const meta = STATUS_META[status] ?? STATUS_META.DRAFT;
+  return <Badge label={meta.label} customColors={meta.colors} />;
 }
 
 function VisibilityBadge({ visibility }) {
   if (visibility === "RESTRICTED")
-    return <Badge label="restricted" customColors={T.warning} />;
-  return <Badge label="public" customColors={T.info} />;
+    return <Badge label="Restricted" customColors={T.warning} />;
+  return <Badge label="Public" customColors={T.info} />;
 }
 
-// ── Section header ─────────────────────────────────────────────────────────
-
-function SectionHeader({ title, subtitle, action }) {
+function SectionHeader({ eyebrow, title, action }) {
   return (
     <div
       style={{
@@ -82,7 +135,7 @@ function SectionHeader({ title, subtitle, action }) {
             marginBottom: 2,
           }}
         >
-          {subtitle}
+          {eyebrow}
         </div>
         <h2
           style={{
@@ -101,121 +154,31 @@ function SectionHeader({ title, subtitle, action }) {
   );
 }
 
-// ── Quiz Form Modal ────────────────────────────────────────────────────────
-
-function QuizFormModal({ open, onClose, quiz, onSaved }) {
-  const isEdit = !!quiz;
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState("PUBLIC");
-  const [defaultTimer, setDefaultTimer] = useState("30");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (open) {
-      setTitle(quiz?.title ?? "");
-      setDescription(quiz?.description ?? "");
-      setVisibility(quiz?.visibility ?? "PUBLIC");
-      setDefaultTimer(String(quiz?.defaultTimer ?? 30));
-      setError("");
-    }
-  }, [open, quiz]);
-
-  async function submit() {
-    if (!title.trim()) {
-      setError("Title is required.");
-      return;
-    }
-    const timer = parseInt(defaultTimer, 10);
-    if (!timer || timer < 5) {
-      setError("Default timer must be at least 5 seconds.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const body = {
-        title: title.trim(),
-        description: description.trim() || null,
-        visibility,
-        defaultTimer: timer,
-      };
-      if (isEdit) {
-        await quizApi.update(quiz.id, body);
-        toast("Quiz updated.", "success");
-      } else {
-        await quizApi.create(body);
-        toast("Quiz created.", "success");
-      }
-      onSaved();
-      onClose();
-    } catch (err) {
-      setError(err.message || "Failed to save quiz.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
+// Inline field row used inside detail panels.
+function InfoRow({ label, children }) {
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={isEdit ? "Edit quiz" : "New quiz"}
-      width={520}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <Input
-          label="Title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Biology Chapter 3"
-        />
-        <Textarea
-          label="Description (optional)"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Brief description of this quiz…"
-          rows={3}
-        />
-        <Select
-          label="Visibility"
-          value={visibility}
-          onChange={(e) => setVisibility(e.target.value)}
-          options={VISIBILITY_OPTIONS}
-        />
-        <Input
-          label="Default timer per question (seconds)"
-          type="number"
-          min={5}
-          value={defaultTimer}
-          onChange={(e) => setDefaultTimer(e.target.value)}
-        />
-        {error && (
-          <p style={{ color: T.danger.text, fontSize: 13, margin: 0 }}>
-            {error}
-          </p>
-        )}
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <Button variant="ghost" onClick={onClose} disabled={loading}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={loading}>
-            {loading ? (
-              <Spinner size={16} color="#fff" />
-            ) : isEdit ? (
-              "Save changes"
-            ) : (
-              "Create quiz"
-            )}
-          </Button>
-        </div>
-      </div>
-    </Modal>
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: T.textMuted,
+          textTransform: "uppercase",
+          letterSpacing: "0.07em",
+          minWidth: 110,
+          paddingTop: 1,
+        }}
+      >
+        {label}
+      </span>
+      <span style={{ fontSize: 13, color: T.textSecondary }}>{children}</span>
+    </div>
   );
 }
 
-// ── Question Form Modal ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Question Form — used both in bank and as inline step during quiz creation
+// ─────────────────────────────────────────────────────────────────────────────
 
 function defaultOptions() {
   return [
@@ -226,64 +189,63 @@ function defaultOptions() {
   ];
 }
 
-function QuestionFormModal({ open, onClose, question, onSaved }) {
-  const isEdit = !!question;
-  const [questionText, setQuestionText] = useState("");
-  const [questionType, setQuestionType] = useState("SINGLE_CORRECT");
-  const [timerSeconds, setTimerSeconds] = useState("30");
-  const [options, setOptions] = useState(defaultOptions());
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+const MAX_OPTIONS = 6;
 
-  useEffect(() => {
-    if (open) {
-      setQuestionText(question?.questionText ?? "");
-      setQuestionType(question?.questionType ?? "SINGLE_CORRECT");
-      setTimerSeconds(String(question?.timerSeconds ?? 30));
-      setOptions(
-        question?.options?.length
-          ? question.options.map((o) => ({
-              optionText: o.optionText,
-              isCorrect: o.isCorrect,
-            }))
-          : defaultOptions(),
-      );
-      setError("");
-    }
-  }, [open, question]);
+// QuestionForm is a pure controlled component so it can be embedded anywhere.
+function QuestionForm({
+  initial,
+  onSave,
+  onCancel,
+  saveLabel = "Save question",
+  compact = false,
+}) {
+  const [questionText, setQuestionText] = useState(initial?.questionText ?? "");
+  const [questionType, setQuestionType] = useState(
+    initial?.questionType ?? "SINGLE_CORRECT",
+  );
+  const [customTimer, setCustomTimer] = useState(
+    initial?.customTimer != null ? String(initial.customTimer) : "",
+  );
+  const [options, setOptions] = useState(
+    initial?.options?.length
+      ? initial.options.map((o) => ({
+          optionText: o.optionText,
+          isCorrect: o.isCorrect,
+        }))
+      : defaultOptions(),
+  );
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const isTextBased = questionType === "TEXT" || questionType === "NUMERIC";
 
   function setOption(idx, field, value) {
     setOptions((prev) => {
-      const next = [...prev];
+      const next = prev.map((o, i) => ({ ...o }));
       if (field === "isCorrect" && questionType === "SINGLE_CORRECT") {
         next.forEach((o, i) => {
-          next[i] = { ...o, isCorrect: i === idx };
+          next[i].isCorrect = i === idx;
         });
       } else {
-        next[idx] = { ...next[idx], [field]: value };
+        next[idx][field] = value;
       }
       return next;
     });
   }
 
   function addOption() {
+    if (options.length >= MAX_OPTIONS) return;
     setOptions((prev) => [...prev, { optionText: "", isCorrect: false }]);
   }
 
   function removeOption(idx) {
+    if (options.length <= 2) return;
     setOptions((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  async function submit() {
+  async function handleSave() {
     if (!questionText.trim()) {
       setError("Question text is required.");
-      return;
-    }
-    const timer = parseInt(timerSeconds, 10);
-    if (!timer || timer < 5) {
-      setError("Timer must be at least 5 seconds.");
       return;
     }
     if (!isTextBased) {
@@ -300,198 +262,810 @@ function QuestionFormModal({ open, onClose, question, onSaved }) {
         return;
       }
     }
-    setLoading(true);
+    const timer = customTimer.trim() ? parseInt(customTimer, 10) : null;
+    if (timer !== null && (isNaN(timer) || timer <= 0)) {
+      setError("Custom timer must be a positive number of seconds.");
+      return;
+    }
+    setSaving(true);
     setError("");
     try {
-      const body = {
+      await onSave({
         questionText: questionText.trim(),
         questionType,
-        timerSeconds: timer,
+        customTimer: timer,
         options: isTextBased
           ? []
           : options.map((o) => ({
               optionText: o.optionText.trim(),
               isCorrect: o.isCorrect,
             })),
-      };
-      if (isEdit) {
-        await questionApi.update(question.id, body);
-        toast("Question updated.", "success");
-      } else {
-        await questionApi.create(body);
-        toast("Question created.", "success");
-      }
-      onSaved();
-      onClose();
+      });
     } catch (err) {
       setError(err.message || "Failed to save question.");
-    } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
+
+  const gap = compact ? 10 : 14;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap }}>
+      <Textarea
+        label="Question text"
+        value={questionText}
+        onChange={(e) => setQuestionText(e.target.value)}
+        placeholder="Type the question here…"
+        rows={compact ? 2 : 3}
+      />
+
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <Select
+            label="Type"
+            value={questionType}
+            onChange={(e) => setQuestionType(e.target.value)}
+            options={QUESTION_TYPES}
+          />
+        </div>
+        <div style={{ width: 170 }}>
+          <Input
+            label="Custom timer (sec, optional)"
+            type="number"
+            min={1}
+            value={customTimer}
+            onChange={(e) => setCustomTimer(e.target.value)}
+            placeholder="Uses quiz default"
+          />
+        </div>
+      </div>
+
+      {!isTextBased && (
+        <div>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: T.textSecondary,
+              marginBottom: 8,
+            }}
+          >
+            Answer options —{" "}
+            <span style={{ fontWeight: 400, color: T.textMuted }}>
+              tick correct{" "}
+              {questionType === "MULTI_CORRECT" ? "answers" : "answer"}
+            </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {options.map((opt, idx) => (
+              <div
+                key={idx}
+                style={{ display: "flex", alignItems: "center", gap: 8 }}
+              >
+                <input
+                  type={questionType === "MULTI_CORRECT" ? "checkbox" : "radio"}
+                  checked={opt.isCorrect}
+                  onChange={(e) =>
+                    setOption(idx, "isCorrect", e.target.checked)
+                  }
+                  style={{
+                    accentColor: T.primary,
+                    width: 15,
+                    height: 15,
+                    flexShrink: 0,
+                    cursor: "pointer",
+                  }}
+                />
+                <input
+                  value={opt.optionText}
+                  onChange={(e) => setOption(idx, "optionText", e.target.value)}
+                  placeholder={`Option ${idx + 1}`}
+                  style={{
+                    flex: 1,
+                    background: T.pageBg,
+                    border: `1px solid ${T.cardBorder}`,
+                    borderRadius: 8,
+                    padding: "7px 11px",
+                    color: T.textPrimary,
+                    fontSize: 13,
+                    outline: "none",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <button
+                  onClick={() => removeOption(idx)}
+                  disabled={options.length <= 2}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: options.length > 2 ? T.danger.dot : T.cardBorder,
+                    cursor: options.length > 2 ? "pointer" : "default",
+                    fontSize: 18,
+                    padding: "0 3px",
+                    lineHeight: 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={addOption}
+            disabled={options.length >= MAX_OPTIONS}
+            style={{
+              marginTop: 8,
+              background: "transparent",
+              border: `1px dashed ${options.length >= MAX_OPTIONS ? T.cardBorder : T.cardBorder}`,
+              borderRadius: 8,
+              color: options.length >= MAX_OPTIONS ? T.cardBorder : T.textMuted,
+              fontSize: 12,
+              padding: "6px 14px",
+              cursor: options.length >= MAX_OPTIONS ? "not-allowed" : "pointer",
+              width: "100%",
+              fontFamily: "inherit",
+              opacity: options.length >= MAX_OPTIONS ? 0.4 : 1,
+            }}
+          >
+            {options.length >= MAX_OPTIONS
+              ? `Max ${MAX_OPTIONS} options`
+              : "+ Add option"}
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <p style={{ color: T.danger.text, fontSize: 12, margin: 0 }}>{error}</p>
+      )}
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        {onCancel && (
+          <Button
+            variant="ghost"
+            onClick={onCancel}
+            disabled={saving}
+            size="sm"
+          >
+            Cancel
+          </Button>
+        )}
+        <Button onClick={handleSave} disabled={saving} size="sm">
+          {saving ? <Spinner size={14} color="#fff" /> : saveLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Question Detail / Edit Modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (open) setEditing(false);
+  }, [open, question?.id]);
+
+  if (!question) return null;
+
+  async function handleSave(data) {
+    await questionApi.update(question.id, data);
+    toast("Question updated.", "success");
+    onSaved?.();
+    onClose();
+  }
+
+  const isTextBased =
+    question.questionType === "TEXT" || question.questionType === "NUMERIC";
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={isEdit ? "Edit question" : "New question"}
-      width={600}
+      title={editing ? "Edit question" : "Question detail"}
+      width={560}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <Textarea
-          label="Question text"
-          value={questionText}
-          onChange={(e) => setQuestionText(e.target.value)}
-          placeholder="Enter the question…"
-          rows={3}
+      {editing ? (
+        <QuestionForm
+          initial={question}
+          onSave={handleSave}
+          onCancel={() => setEditing(false)}
+          saveLabel="Save changes"
         />
-        <div style={{ display: "flex", gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <Select
-              label="Question type"
-              value={questionType}
-              onChange={(e) => setQuestionType(e.target.value)}
-              options={QUESTION_TYPES}
-            />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Question text */}
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              color: T.textPrimary,
+              lineHeight: 1.6,
+              padding: "12px 14px",
+              background: T.pageBg,
+              borderRadius: 10,
+              border: `1px solid ${T.cardBorder}`,
+            }}
+          >
+            {question.questionText}
           </div>
-          <div style={{ width: 160 }}>
-            <Input
-              label="Timer (seconds)"
-              type="number"
-              min={5}
-              value={timerSeconds}
-              onChange={(e) => setTimerSeconds(e.target.value)}
-            />
-          </div>
-        </div>
 
-        {!isTextBased && (
-          <div>
+          {/* Meta */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <InfoRow label="Type">
+              <Badge
+                label={typeLabel(question.questionType)}
+                customColors={T.neutral}
+              />
+            </InfoRow>
+            <InfoRow label="Timer">
+              {question.customTimer != null
+                ? `${question.customTimer}s (custom)`
+                : "Uses quiz default"}
+            </InfoRow>
+            {question.createdBy && (
+              <InfoRow label="Created by">
+                {question.createdBy.fullName}
+              </InfoRow>
+            )}
+          </div>
+
+          {/* Options */}
+          {!isTextBased && question.options?.length > 0 && (
+            <div>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: T.textMuted,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.07em",
+                  marginBottom: 8,
+                }}
+              >
+                Options
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {question.options.map((opt) => (
+                  <div
+                    key={opt.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      background: opt.isCorrect
+                        ? `${T.success.dot}15`
+                        : T.pageBg,
+                      border: `1px solid ${opt.isCorrect ? T.success.dot + "40" : T.cardBorder}`,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "50%",
+                        background: opt.isCorrect
+                          ? T.success.dot
+                          : T.cardBorder,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 13,
+                        color: opt.isCorrect ? T.success.text : T.textSecondary,
+                        flex: 1,
+                      }}
+                    >
+                      {opt.optionText}
+                    </span>
+                    {opt.isCorrect && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: T.success.dot,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        Correct
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!readOnly && (
             <div
               style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: T.textSecondary,
-                marginBottom: 8,
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+                paddingTop: 4,
               }}
             >
-              Answer options{" "}
-              <span style={{ color: T.textMuted, fontWeight: 400 }}>
-                — tick the correct one
-                {questionType === "MULTI_CORRECT" ? "s" : ""}
-              </span>
+              <Button variant="ghost" onClick={onClose} size="sm">
+                Close
+              </Button>
+              <Button onClick={() => setEditing(true)} size="sm">
+                Edit question
+              </Button>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {options.map((opt, idx) => (
-                <div
-                  key={idx}
-                  style={{ display: "flex", alignItems: "center", gap: 8 }}
-                >
-                  <input
-                    type={
-                      questionType === "MULTI_CORRECT" ? "checkbox" : "radio"
-                    }
-                    checked={opt.isCorrect}
-                    onChange={(e) =>
-                      setOption(idx, "isCorrect", e.target.checked)
-                    }
-                    style={{
-                      accentColor: T.primary,
-                      width: 16,
-                      height: 16,
-                      flexShrink: 0,
-                      cursor: "pointer",
-                    }}
-                  />
-                  <input
-                    value={opt.optionText}
-                    onChange={(e) =>
-                      setOption(idx, "optionText", e.target.value)
-                    }
-                    placeholder={`Option ${idx + 1}`}
-                    style={{
-                      flex: 1,
-                      background: T.pageBg,
-                      border: `1px solid ${T.cardBorder}`,
-                      borderRadius: 8,
-                      padding: "8px 12px",
-                      color: T.textPrimary,
-                      fontSize: 13,
-                      outline: "none",
-                      fontFamily: "inherit",
-                    }}
-                  />
-                  {options.length > 2 && (
-                    <button
-                      onClick={() => removeOption(idx)}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: T.danger.dot,
-                        cursor: "pointer",
-                        fontSize: 16,
-                        padding: "0 4px",
-                        lineHeight: 1,
-                      }}
-                      title="Remove option"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              ))}
+          )}
+          {readOnly && (
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Button variant="ghost" onClick={onClose} size="sm">
+                Close
+              </Button>
             </div>
-            <button
-              onClick={addOption}
-              style={{
-                marginTop: 10,
-                background: "transparent",
-                border: `1px dashed ${T.cardBorder}`,
-                borderRadius: 8,
-                color: T.textMuted,
-                fontSize: 12,
-                padding: "6px 14px",
-                cursor: "pointer",
-                width: "100%",
-                fontFamily: "inherit",
-              }}
-            >
-              + Add option
-            </button>
-          </div>
-        )}
-
-        {error && (
-          <p style={{ color: T.danger.text, fontSize: 13, margin: 0 }}>
-            {error}
-          </p>
-        )}
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <Button variant="ghost" onClick={onClose} disabled={loading}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={loading}>
-            {loading ? (
-              <Spinner size={16} color="#fff" />
-            ) : isEdit ? (
-              "Save changes"
-            ) : (
-              "Create question"
-            )}
-          </Button>
+          )}
         </div>
-      </div>
+      )}
     </Modal>
   );
 }
 
-// ── Group Assignment Modal ─────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Quiz Form — create and edit, with inline question creation step
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Step 1: basic quiz details. Step 2: add questions (only on create).
+function QuizFormModal({ open, onClose, quiz, onSaved }) {
+  const isEdit = !!quiz;
+  const [step, setStep] = useState(1); // 1 = details, 2 = questions (create only)
+  const [createdQuizId, setCreatedQuizId] = useState(null);
+
+  // Fields
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [visibility, setVisibility] = useState("PUBLIC");
+  const [defaultTimer, setDefaultTimer] = useState("30");
+  const [scheduledStartTime, setScheduledStartTime] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  // Step 2 — question bank picker + inline creator state
+  const [bankQuestions, setBankQuestions] = useState([]);
+  const [loadingBank, setLoadingBank] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bankSearch, setBankSearch] = useState("");
+  const [showInlineCreate, setShowInlineCreate] = useState(false);
+  const [addingToQuiz, setAddingToQuiz] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setStep(1);
+      setCreatedQuizId(null);
+      setError("");
+      setTitle(quiz?.title ?? "");
+      setDescription(quiz?.description ?? "");
+      setVisibility(quiz?.visibility ?? "PUBLIC");
+      setDefaultTimer(String(quiz?.defaultTimer ?? 30));
+      setScheduledStartTime(quiz?.scheduledStartTime ?? null);
+      setSelectedIds(new Set());
+      setShowInlineCreate(false);
+    }
+  }, [open, quiz?.id]);
+
+  async function loadBank() {
+    setLoadingBank(true);
+    try {
+      const data = await questionApi.getAll();
+      setBankQuestions(data ?? []);
+    } catch {
+      // silently ignore — user can still create new questions inline
+    } finally {
+      setLoadingBank(false);
+    }
+  }
+
+  async function submitStep1() {
+    if (!title.trim()) {
+      setError("Title is required.");
+      return;
+    }
+    const timer = parseInt(defaultTimer, 10);
+    if (!timer || timer <= 0) {
+      setError("Default timer must be a positive number.");
+      return;
+    }
+    if (!scheduledStartTime) {
+      setError("Scheduled start time is required.");
+      return;
+    }
+    if (new Date(scheduledStartTime) <= new Date()) {
+      setError("Scheduled start time must be in the future.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    try {
+      const body = {
+        title: title.trim(),
+        description: description.trim() || null,
+        visibility,
+        defaultTimer: timer,
+        scheduledStartTime: scheduledStartTime,
+      };
+
+      if (isEdit) {
+        await quizApi.update(quiz.id, body);
+        toast("Quiz updated.", "success");
+        onSaved();
+        onClose();
+      } else {
+        const created = await quizApi.create(body);
+        setCreatedQuizId(created.id);
+        await loadBank();
+        setStep(2);
+        toast("Quiz created! Now add questions.", "success");
+      }
+    } catch (err) {
+      setError(err.message || "Failed to save quiz.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleInlineQuestionCreate(data) {
+    const q = await questionApi.create(data);
+    toast("Question created.", "success");
+    // Add to bank list and auto-select it
+    setBankQuestions((prev) => [q, ...prev]);
+    setSelectedIds((prev) => new Set([...prev, q.id]));
+    setShowInlineCreate(false);
+  }
+
+  async function finishStep2() {
+    if (selectedIds.size > 0) {
+      setAddingToQuiz(true);
+      try {
+        await quizCompositionApi.addQuestions(createdQuizId, [...selectedIds]);
+        toast(
+          `${selectedIds.size} question${selectedIds.size > 1 ? "s" : ""} added.`,
+          "success",
+        );
+      } catch (err) {
+        toast(err.message || "Couldn't add some questions.", "error");
+      } finally {
+        setAddingToQuiz(false);
+      }
+    }
+    onSaved();
+    onClose();
+  }
+
+  const filteredBank = bankQuestions.filter((q) =>
+    q.questionText.toLowerCase().includes(bankSearch.toLowerCase()),
+  );
+
+  function toggleSelect(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  const modalTitle = isEdit
+    ? "Edit quiz"
+    : step === 1
+      ? "New quiz — Details"
+      : "New quiz — Add questions";
+
+  return (
+    <Modal open={open} onClose={onClose} title={modalTitle} width={560}>
+      {step === 1 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <Input
+            label="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Biology Chapter 3"
+          />
+          <Textarea
+            label="Description (optional)"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Short description of this quiz…"
+            rows={2}
+          />
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Select
+                label="Visibility"
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value)}
+                options={VISIBILITY_OPTIONS}
+              />
+            </div>
+            <div style={{ width: 170 }}>
+              <Input
+                label="Default timer (Sec)"
+                type="number"
+                min={1}
+                value={defaultTimer}
+                onChange={(e) => setDefaultTimer(e.target.value)}
+              />
+            </div>
+          </div>
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: 12,
+                fontWeight: 600,
+                color: T.textSecondary,
+                marginBottom: 6,
+              }}
+            >
+              Scheduled start time
+            </label>
+            <DateTimePicker
+              value={scheduledStartTime}
+              onChange={setScheduledStartTime}
+              placeholder="Pick a date & time…"
+            />
+          </div>
+
+          {error && (
+            <p style={{ color: T.danger.text, fontSize: 12, margin: 0 }}>
+              {error}
+            </p>
+          )}
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Button
+              variant="ghost"
+              onClick={onClose}
+              disabled={saving}
+              size="sm"
+            >
+              Cancel
+            </Button>
+            <Button onClick={submitStep1} disabled={saving} size="sm">
+              {saving ? (
+                <Spinner size={14} color="#fff" />
+              ) : isEdit ? (
+                "Save changes"
+              ) : (
+                "Next — Add questions →"
+              )}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        // Step 2: add questions
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              color: T.textMuted,
+              lineHeight: 1.5,
+            }}
+          >
+            Pick questions from your bank, or create new ones. You can always
+            add more later from the quiz detail panel.
+          </p>
+
+          {/* Inline question creator */}
+          {showInlineCreate ? (
+            <div
+              style={{
+                background: T.pageBg,
+                border: `1px solid ${T.primary}40`,
+                borderRadius: 10,
+                padding: 14,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: T.primary,
+                  marginBottom: 10,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.07em",
+                }}
+              >
+                Create new question
+              </div>
+              <QuestionForm
+                onSave={handleInlineQuestionCreate}
+                onCancel={() => setShowInlineCreate(false)}
+                saveLabel="Create & add to quiz"
+                compact
+              />
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowInlineCreate(true)}
+              style={{
+                background: `${T.primary}10`,
+                border: `1px dashed ${T.primary}50`,
+                borderRadius: 10,
+                color: T.primary,
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "9px 14px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                textAlign: "left",
+              }}
+            >
+              + Create a new question
+            </button>
+          )}
+
+          {/* Bank picker */}
+          <Input
+            placeholder="Search question bank…"
+            value={bankSearch}
+            onChange={(e) => setBankSearch(e.target.value)}
+          />
+
+          {loadingBank ? (
+            <div style={{ textAlign: "center", padding: 20 }}>
+              <Spinner />
+            </div>
+          ) : (
+            <div
+              style={{
+                maxHeight: 280,
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: 5,
+              }}
+            >
+              {filteredBank.length === 0 && (
+                <p
+                  style={{
+                    color: T.textMuted,
+                    fontSize: 13,
+                    textAlign: "center",
+                    padding: 16,
+                  }}
+                >
+                  {bankQuestions.length === 0
+                    ? "No questions in bank yet."
+                    : "No matches."}
+                </p>
+              )}
+              {filteredBank.map((q) => {
+                const sel = selectedIds.has(q.id);
+                return (
+                  <div
+                    key={q.id}
+                    onClick={() => toggleSelect(q.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 10,
+                      padding: "9px 11px",
+                      borderRadius: 8,
+                      background: sel ? `${T.primary}15` : T.pageBg,
+                      border: `1px solid ${sel ? T.primary + "50" : T.cardBorder}`,
+                      cursor: "pointer",
+                      transition: "all 0.12s",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 17,
+                        height: 17,
+                        borderRadius: 4,
+                        border: `2px solid ${sel ? T.primary : T.cardBorder}`,
+                        background: sel ? T.primary : "transparent",
+                        flexShrink: 0,
+                        marginTop: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#000",
+                        fontSize: 10,
+                        fontWeight: 900,
+                        transition: "all 0.12s",
+                      }}
+                    >
+                      {sel && "✓"}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: T.textPrimary,
+                          lineHeight: 1.4,
+                          marginBottom: 3,
+                        }}
+                      >
+                        {q.questionText}
+                      </div>
+                      <div
+                        style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+                      >
+                        <Badge
+                          label={typeLabel(q.questionType)}
+                          customColors={T.neutral}
+                        />
+                        {q.customTimer != null && (
+                          <span style={{ fontSize: 11, color: T.textMuted }}>
+                            ⏱ {q.customTimer}s
+                          </span>
+                        )}
+                        {q.options?.length > 0 && (
+                          <span style={{ fontSize: 11, color: T.textMuted }}>
+                            {q.options.length} opts
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingTop: 4,
+            }}
+          >
+            <span style={{ fontSize: 12, color: T.textMuted }}>
+              {selectedIds.size > 0
+                ? `${selectedIds.size} selected`
+                : "None selected"}
+            </span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                variant="ghost"
+                onClick={finishStep2}
+                disabled={addingToQuiz}
+                size="sm"
+              >
+                Skip, finish later
+              </Button>
+              <Button
+                onClick={finishStep2}
+                disabled={addingToQuiz || selectedIds.size === 0}
+                size="sm"
+              >
+                {addingToQuiz ? (
+                  <Spinner size={14} color="#fff" />
+                ) : (
+                  `Add ${selectedIds.size || ""} & finish`
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Group Assignment Modal
+// ─────────────────────────────────────────────────────────────────────────────
 
 function GroupAssignModal({ open, onClose, quiz, onSaved }) {
   const [allGroups, setAllGroups] = useState([]);
   const [assignedIds, setAssignedIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [acting, setActing] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -507,48 +1081,48 @@ function GroupAssignModal({ open, onClose, quiz, onSaved }) {
       })
       .catch((err) => setError(err.message || "Failed to load groups."))
       .finally(() => setLoading(false));
-  }, [open, quiz]);
+  }, [open, quiz?.id]);
 
   async function toggle(groupId) {
     const isAssigned = assignedIds.has(groupId);
-    setSaving(true);
+    setActing(true);
     setError("");
     try {
       if (isAssigned) {
         await quizApi.removeGroup(quiz.id, groupId);
         setAssignedIds((prev) => {
-          const next = new Set(prev);
-          next.delete(groupId);
-          return next;
+          const n = new Set(prev);
+          n.delete(groupId);
+          return n;
         });
         toast("Group removed.", "success");
       } else {
         await quizApi.addGroups(quiz.id, [groupId]);
         setAssignedIds((prev) => new Set([...prev, groupId]));
-        toast("Group assigned.", "success");
+        toast("Group added.", "success");
       }
       onSaved?.();
     } catch (err) {
       setError(err.message || "Action failed.");
     } finally {
-      setSaving(false);
+      setActing(false);
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Assign groups" width={480}>
+    <Modal open={open} onClose={onClose} title="Assign groups" width={460}>
       {loading ? (
         <div style={{ textAlign: "center", padding: 32 }}>
           <Spinner />
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 8px" }}>
-            Toggle groups that can access this quiz. Changes save immediately.
+          <p style={{ fontSize: 13, color: T.textMuted, margin: "0 0 4px" }}>
+            Changes save immediately.
           </p>
           {allGroups.length === 0 && (
             <p style={{ color: T.textMuted, fontSize: 13 }}>
-              No groups exist yet. Create groups first.
+              No groups exist yet.
             </p>
           )}
           {allGroups.map((g) => {
@@ -560,11 +1134,11 @@ function GroupAssignModal({ open, onClose, quiz, onSaved }) {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  padding: "10px 14px",
+                  padding: "10px 13px",
                   borderRadius: 8,
                   background: assigned ? `${T.primary}15` : T.pageBg,
                   border: `1px solid ${assigned ? T.primary + "40" : T.cardBorder}`,
-                  transition: "all 0.15s",
+                  transition: "all 0.12s",
                 }}
               >
                 <div>
@@ -587,7 +1161,7 @@ function GroupAssignModal({ open, onClose, quiz, onSaved }) {
                   size="sm"
                   variant={assigned ? "danger" : "secondary"}
                   onClick={() => toggle(g.id)}
-                  disabled={saving}
+                  disabled={acting}
                 >
                   {assigned ? "Remove" : "Add"}
                 </Button>
@@ -595,7 +1169,7 @@ function GroupAssignModal({ open, onClose, quiz, onSaved }) {
             );
           })}
           {error && (
-            <p style={{ color: T.danger.text, fontSize: 13, margin: 0 }}>
+            <p style={{ color: T.danger.text, fontSize: 12, margin: 0 }}>
               {error}
             </p>
           )}
@@ -603,10 +1177,10 @@ function GroupAssignModal({ open, onClose, quiz, onSaved }) {
             style={{
               display: "flex",
               justifyContent: "flex-end",
-              marginTop: 8,
+              marginTop: 4,
             }}
           >
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="ghost" onClick={onClose} size="sm">
               Done
             </Button>
           </div>
@@ -616,7 +1190,9 @@ function GroupAssignModal({ open, onClose, quiz, onSaved }) {
   );
 }
 
-// ── Add Questions Modal (pick from bank) ───────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Add Questions to Quiz Modal (from bank, for existing quizzes)
+// ─────────────────────────────────────────────────────────────────────────────
 
 function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
   const [questions, setQuestions] = useState([]);
@@ -625,6 +1201,7 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -632,6 +1209,7 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
     setSelected(new Set());
     setSearch("");
     setError("");
+    setShowCreate(false);
     questionApi
       .getAll()
       .then((q) => setQuestions(q ?? []))
@@ -640,7 +1218,7 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
   }, [open]);
 
   const alreadyIds = new Set(
-    (alreadyInQuiz ?? []).map((q) => q.questionId ?? q.question?.id),
+    (alreadyInQuiz ?? []).map((m) => m.questionId ?? m.question?.id),
   );
 
   const filtered = questions.filter(
@@ -652,10 +1230,17 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
   function toggleSelect(id) {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }
+
+  async function handleInlineCreate(data) {
+    const q = await questionApi.create(data);
+    toast("Question created.", "success");
+    setQuestions((prev) => [q, ...prev]);
+    setSelected((prev) => new Set([...prev, q.id]));
+    setShowCreate(false);
   }
 
   async function addSelected() {
@@ -678,18 +1263,62 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
   }
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Add questions from bank"
-      width={620}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <Modal open={open} onClose={onClose} title="Add questions" width={600}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+        {showCreate ? (
+          <div
+            style={{
+              background: T.pageBg,
+              border: `1px solid ${T.primary}40`,
+              borderRadius: 10,
+              padding: 14,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: T.primary,
+                marginBottom: 10,
+                textTransform: "uppercase",
+                letterSpacing: "0.07em",
+              }}
+            >
+              Create new question
+            </div>
+            <QuestionForm
+              onSave={handleInlineCreate}
+              onCancel={() => setShowCreate(false)}
+              saveLabel="Create & select"
+              compact
+            />
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowCreate(true)}
+            style={{
+              background: `${T.primary}10`,
+              border: `1px dashed ${T.primary}50`,
+              borderRadius: 10,
+              color: T.primary,
+              fontSize: 13,
+              fontWeight: 600,
+              padding: "8px 14px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              textAlign: "left",
+            }}
+          >
+            + Create a new question
+          </button>
+        )}
+
         <Input
-          placeholder="Search questions…"
+          placeholder="Search bank…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+
         {loading ? (
           <div style={{ textAlign: "center", padding: 24 }}>
             <Spinner />
@@ -697,11 +1326,11 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
         ) : (
           <div
             style={{
-              maxHeight: 380,
+              maxHeight: 340,
               overflowY: "auto",
               display: "flex",
               flexDirection: "column",
-              gap: 6,
+              gap: 5,
             }}
           >
             {filtered.length === 0 && (
@@ -710,12 +1339,12 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
                   color: T.textMuted,
                   fontSize: 13,
                   textAlign: "center",
-                  padding: 24,
+                  padding: 20,
                 }}
               >
                 {questions.length === 0
-                  ? "No questions in bank yet."
-                  : "All questions already added, or no matches."}
+                  ? "No questions in bank."
+                  : "All added or no matches."}
               </p>
             )}
             {filtered.map((q) => {
@@ -728,19 +1357,19 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
                     display: "flex",
                     alignItems: "flex-start",
                     gap: 10,
-                    padding: "10px 12px",
+                    padding: "9px 11px",
                     borderRadius: 8,
                     background: sel ? `${T.primary}15` : T.pageBg,
                     border: `1px solid ${sel ? T.primary + "50" : T.cardBorder}`,
                     cursor: "pointer",
-                    transition: "all 0.15s",
+                    transition: "all 0.12s",
                   }}
                 >
                   <div
                     style={{
-                      width: 18,
-                      height: 18,
-                      borderRadius: 5,
+                      width: 17,
+                      height: 17,
+                      borderRadius: 4,
                       border: `2px solid ${sel ? T.primary : T.cardBorder}`,
                       background: sel ? T.primary : "transparent",
                       flexShrink: 0,
@@ -749,9 +1378,8 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
                       alignItems: "center",
                       justifyContent: "center",
                       color: "#000",
-                      fontSize: 11,
-                      fontWeight: 800,
-                      transition: "all 0.15s",
+                      fontSize: 10,
+                      fontWeight: 900,
                     }}
                   >
                     {sel && "✓"}
@@ -761,23 +1389,20 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
                       style={{
                         fontSize: 13,
                         color: T.textPrimary,
-                        lineHeight: 1.5,
-                        marginBottom: 4,
+                        lineHeight: 1.4,
+                        marginBottom: 3,
                       }}
                     >
                       {q.questionText}
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 6 }}>
                       <Badge
                         label={typeLabel(q.questionType)}
                         customColors={T.neutral}
                       />
-                      <span style={{ fontSize: 11, color: T.textMuted }}>
-                        ⏱ {q.timerSeconds}s
-                      </span>
-                      {q.options?.length > 0 && (
+                      {q.customTimer != null && (
                         <span style={{ fontSize: 11, color: T.textMuted }}>
-                          {q.options.length} options
+                          ⏱ {q.customTimer}s
                         </span>
                       )}
                     </div>
@@ -787,15 +1412,16 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
             })}
           </div>
         )}
+
         {error && (
-          <p style={{ color: T.danger.text, fontSize: 13, margin: 0 }}>
+          <p style={{ color: T.danger.text, fontSize: 12, margin: 0 }}>
             {error}
           </p>
         )}
+
         <div
           style={{
             display: "flex",
-            gap: 10,
             justifyContent: "space-between",
             alignItems: "center",
           }}
@@ -803,20 +1429,26 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
           <span style={{ fontSize: 12, color: T.textMuted }}>
             {selected.size > 0
               ? `${selected.size} selected`
-              : "Select questions to add"}
+              : "Select questions"}
           </span>
-          <div style={{ display: "flex", gap: 10 }}>
-            <Button variant="ghost" onClick={onClose} disabled={saving}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button
+              variant="ghost"
+              onClick={onClose}
+              disabled={saving}
+              size="sm"
+            >
               Cancel
             </Button>
             <Button
               onClick={addSelected}
               disabled={saving || selected.size === 0}
+              size="sm"
             >
               {saving ? (
-                <Spinner size={16} color="#fff" />
+                <Spinner size={14} color="#fff" />
               ) : (
-                `Add ${selected.size || ""} question${selected.size !== 1 ? "s" : ""}`
+                `Add ${selected.size || ""}`
               )}
             </Button>
           </div>
@@ -826,26 +1458,32 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
   );
 }
 
-// ── Quiz Detail Panel ──────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Quiz Detail Panel
+// ─────────────────────────────────────────────────────────────────────────────
 
 function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
   const [quizQuestions, setQuizQuestions] = useState([]);
-  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [loadingQs, setLoadingQs] = useState(false);
   const [showAddQs, setShowAddQs] = useState(false);
   const [showGroups, setShowGroups] = useState(false);
-  const [showEditQuiz, setShowEditQuiz] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [viewQuestion, setViewQuestion] = useState(null); // question to show in modal
+
+  const status = quizStatus(quiz);
+  const meta = STATUS_META[status] ?? STATUS_META.DRAFT;
+  const canEditContent = status === "DRAFT" || status === "SCHEDULED";
 
   const fetchQuizQuestions = useCallback(async () => {
-    setLoadingQuestions(true);
+    setLoadingQs(true);
     try {
       const data = await quizCompositionApi.getQuestions(quiz.id);
       setQuizQuestions(data ?? []);
-    } catch (err) {
-      setError(err.message || "Failed to load questions.");
+    } catch {
+      // non-fatal
     } finally {
-      setLoadingQuestions(false);
+      setLoadingQs(false);
     }
   }, [quiz.id]);
 
@@ -859,19 +1497,19 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
       toast("Question removed.", "success");
       fetchQuizQuestions();
     } catch (err) {
-      toast(err.message || "Failed to remove question.", "error");
+      toast(err.message || "Failed to remove.", "error");
     }
   }
 
-  async function togglePublish() {
+  async function handlePublishToggle() {
     setPublishLoading(true);
     try {
-      if (quiz.isPublished) {
-        await quizApi.unpublish(quiz.id);
-        toast("Quiz unpublished.", "success");
-      } else {
+      if (meta.canPublish) {
         await quizApi.publish(quiz.id);
-        toast("Quiz published!", "success");
+        toast("Quiz scheduled!", "success");
+      } else if (meta.canUnpublish) {
+        await quizApi.unpublish(quiz.id);
+        toast("Quiz moved back to draft.", "success");
       }
       onQuizUpdated();
     } catch (err) {
@@ -881,17 +1519,22 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
     }
   }
 
-  const questionCount = quizQuestions.length;
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {/* Header */}
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        gap: 0,
+      }}
+    >
+      {/* Back + title */}
       <div
         style={{
           display: "flex",
           alignItems: "flex-start",
-          gap: 12,
-          marginBottom: 20,
+          gap: 10,
+          marginBottom: 16,
         }}
       >
         <button
@@ -902,11 +1545,11 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
             borderRadius: 8,
             color: T.textMuted,
             cursor: "pointer",
-            padding: "6px 10px",
-            fontSize: 16,
+            padding: "5px 9px",
+            fontSize: 15,
             lineHeight: 1,
             flexShrink: 0,
-            marginTop: 2,
+            marginTop: 3,
           }}
         >
           ←
@@ -927,7 +1570,7 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
           <h2
             style={{
               margin: "0 0 6px",
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: 800,
               color: T.textPrimary,
               letterSpacing: "-0.02em",
@@ -938,14 +1581,21 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
           >
             {quiz.title}
           </h2>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
             <QuizStatusBadge quiz={quiz} />
             <VisibilityBadge visibility={quiz.visibility} />
             <span style={{ fontSize: 11, color: T.textMuted }}>
               ⏱ {quiz.defaultTimer}s default
             </span>
             <span style={{ fontSize: 11, color: T.textMuted }}>
-              {questionCount} question{questionCount !== 1 ? "s" : ""}
+              📅 {formatSchedule(quiz.scheduledStartTime)}
             </span>
           </div>
         </div>
@@ -958,8 +1608,8 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
             fontSize: 13,
             color: T.textSecondary,
             lineHeight: 1.6,
-            margin: "0 0 16px",
-            padding: "10px 14px",
+            margin: "0 0 14px",
+            padding: "9px 13px",
             background: T.pageBg,
             borderRadius: 8,
             border: `1px solid ${T.cardBorder}`,
@@ -971,21 +1621,18 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
 
       {/* Action bar */}
       <div
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          marginBottom: 20,
-        }}
+        style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 18 }}
       >
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => setShowEditQuiz(true)}
-        >
-          ✏️ Edit
-        </Button>
-        {quiz.visibility === "RESTRICTED" && (
+        {meta.canEdit && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setShowEdit(true)}
+          >
+            ✏️ Edit
+          </Button>
+        )}
+        {quiz.visibility === "RESTRICTED" && canEditContent && (
           <Button
             size="sm"
             variant="secondary"
@@ -994,29 +1641,49 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
             👥 Groups
           </Button>
         )}
-        <Button
-          size="sm"
-          variant={quiz.isPublished ? "warning" : "success"}
-          onClick={togglePublish}
-          disabled={publishLoading}
-        >
-          {publishLoading ? (
-            <Spinner size={14} />
-          ) : quiz.isPublished ? (
-            "Unpublish"
-          ) : (
-            "Publish"
-          )}
-        </Button>
+        {meta.canPublish && (
+          <Button
+            size="sm"
+            variant="success"
+            onClick={handlePublishToggle}
+            disabled={publishLoading}
+          >
+            {publishLoading ? <Spinner size={13} /> : "Schedule quiz →"}
+          </Button>
+        )}
+        {meta.canUnpublish && (
+          <Button
+            size="sm"
+            variant="warning"
+            onClick={handlePublishToggle}
+            disabled={publishLoading}
+          >
+            {publishLoading ? <Spinner size={13} /> : "Move to draft"}
+          </Button>
+        )}
+        {(status === "LIVE" || status === "COMPLETED") && (
+          <div
+            style={{
+              fontSize: 12,
+              color: T.textMuted,
+              alignSelf: "center",
+              padding: "0 4px",
+            }}
+          >
+            {status === "LIVE"
+              ? "🔴 Quiz is live — no changes allowed"
+              : "✅ Completed"}
+          </div>
+        )}
       </div>
 
-      {/* Questions in quiz */}
+      {/* Questions header */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: 12,
+          marginBottom: 10,
         }}
       >
         <div
@@ -1028,28 +1695,29 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
             letterSpacing: "0.08em",
           }}
         >
-          Questions in this quiz
+          Questions ({quizQuestions.length})
         </div>
-        <Button size="sm" onClick={() => setShowAddQs(true)}>
-          + Add questions
-        </Button>
+        {canEditContent && (
+          <Button size="sm" onClick={() => setShowAddQs(true)}>
+            + Add questions
+          </Button>
+        )}
       </div>
 
-      {error && (
-        <p style={{ color: T.danger.text, fontSize: 13, marginBottom: 12 }}>
-          {error}
-        </p>
-      )}
-
-      {loadingQuestions ? (
-        <div style={{ textAlign: "center", padding: 32 }}>
+      {/* Question list */}
+      {loadingQs ? (
+        <div style={{ textAlign: "center", padding: 28 }}>
           <Spinner />
         </div>
       ) : quizQuestions.length === 0 ? (
         <EmptyState
           icon="❓"
           title="No questions yet"
-          subtitle='Click "Add questions" to pick from your question bank.'
+          subtitle={
+            canEditContent
+              ? 'Use "Add questions" to pick from your bank.'
+              : "No questions were added."
+          }
         />
       ) : (
         <div
@@ -1058,32 +1726,42 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
             overflowY: "auto",
             display: "flex",
             flexDirection: "column",
-            gap: 8,
+            gap: 6,
           }}
         >
           {quizQuestions.map((mapping, idx) => {
             const q = mapping.question;
+            const timer = q?.customTimer ?? quiz.defaultTimer;
             return (
               <div
                 key={mapping.questionId ?? q?.id}
+                onClick={() => setViewQuestion(q)}
                 style={{
                   display: "flex",
                   gap: 10,
-                  padding: "12px 14px",
+                  padding: "10px 13px",
                   background: T.pageBg,
                   border: `1px solid ${T.cardBorder}`,
                   borderRadius: 10,
                   alignItems: "flex-start",
+                  cursor: "pointer",
+                  transition: "border-color 0.12s",
                 }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.borderColor = T.primary + "60")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.borderColor = T.cardBorder)
+                }
               >
                 <div
                   style={{
-                    width: 24,
-                    height: 24,
+                    width: 22,
+                    height: 22,
                     borderRadius: 6,
                     background: T.cardBorder,
                     color: T.textMuted,
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: 700,
                     display: "flex",
                     alignItems: "center",
@@ -1099,43 +1777,49 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
                     style={{
                       fontSize: 13,
                       color: T.textPrimary,
-                      lineHeight: 1.5,
-                      marginBottom: 6,
+                      lineHeight: 1.45,
+                      marginBottom: 5,
                     }}
                   >
                     {q?.questionText}
                   </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
                     <Badge
                       label={typeLabel(q?.questionType)}
                       customColors={T.neutral}
                     />
                     <span style={{ fontSize: 11, color: T.textMuted }}>
-                      ⏱ {q?.timerSeconds}s
+                      ⏱ {timer}s{q?.customTimer != null ? " (custom)" : ""}
                     </span>
-                    {q?.options?.filter((o) => o.isCorrect).length > 0 && (
+                    {q?.options?.length > 0 && (
                       <span style={{ fontSize: 11, color: T.success.text }}>
-                        {q.options.filter((o) => o.isCorrect).length} correct
+                        {q.options.filter((o) => o.isCorrect).length} correct /{" "}
+                        {q.options.length}
                       </span>
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={() => removeQuestion(q?.id)}
-                  title="Remove from quiz"
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: T.danger.dot,
-                    cursor: "pointer",
-                    fontSize: 16,
-                    padding: "2px 4px",
-                    lineHeight: 1,
-                    flexShrink: 0,
-                  }}
-                >
-                  ×
-                </button>
+                {canEditContent && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeQuestion(q?.id);
+                    }}
+                    title="Remove from quiz"
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: T.danger.dot,
+                      cursor: "pointer",
+                      fontSize: 16,
+                      padding: "1px 3px",
+                      lineHeight: 1,
+                      flexShrink: 0,
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             );
           })}
@@ -1143,6 +1827,16 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
       )}
 
       {/* Modals */}
+      <QuestionModal
+        open={!!viewQuestion}
+        onClose={() => setViewQuestion(null)}
+        question={viewQuestion}
+        onSaved={() => {
+          fetchQuizQuestions();
+          setViewQuestion(null);
+        }}
+        readOnly={!canEditContent}
+      />
       <AddQuestionsModal
         open={showAddQs}
         onClose={() => setShowAddQs(false)}
@@ -1157,8 +1851,8 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
         onSaved={onQuizUpdated}
       />
       <QuizFormModal
-        open={showEditQuiz}
-        onClose={() => setShowEditQuiz(false)}
+        open={showEdit}
+        onClose={() => setShowEdit(false)}
         quiz={quiz}
         onSaved={onQuizUpdated}
       />
@@ -1166,17 +1860,26 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
   );
 }
 
-// ── Quiz List Panel ────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Quiz List Panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STATUS_FILTERS = ["ALL", "DRAFT", "SCHEDULED", "LIVE", "COMPLETED"];
 
 function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [deletingId, setDeletingId] = useState(null);
 
-  const filtered = quizzes.filter((q) =>
-    q.title.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = quizzes.filter((q) => {
+    const matchSearch = q.title.toLowerCase().includes(search.toLowerCase());
+    const matchStatus =
+      statusFilter === "ALL" || quizStatus(q) === statusFilter;
+    return matchSearch && matchStatus;
+  });
 
-  async function deleteQuiz(quiz) {
+  async function deleteQuiz(quiz, e) {
+    e.stopPropagation();
     if (!window.confirm(`Delete "${quiz.title}"? This cannot be undone.`))
       return;
     setDeletingId(quiz.id);
@@ -1185,7 +1888,7 @@ function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
       toast("Quiz deleted.", "success");
       onDeleted(quiz.id);
     } catch (err) {
-      toast(err.message || "Failed to delete quiz.", "error");
+      toast(err.message || "Failed to delete.", "error");
     } finally {
       setDeletingId(null);
     }
@@ -1194,20 +1897,55 @@ function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <SectionHeader
+        eyebrow="Quiz management"
         title="Quizzes"
-        subtitle="Quiz management"
         action={
           <Button onClick={onNew} size="sm">
             + New quiz
           </Button>
         }
       />
+
       <Input
         placeholder="Search quizzes…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        style={{ marginBottom: 14 }}
+        style={{ marginBottom: 10 }}
       />
+
+      {/* Status filter pills */}
+      <div
+        style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}
+      >
+        {STATUS_FILTERS.map((s) => {
+          const active = statusFilter === s;
+          const meta = s === "ALL" ? null : STATUS_META[s];
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              style={{
+                background: active
+                  ? (meta?.colors.bg ?? T.primary + "20")
+                  : "transparent",
+                border: `1px solid ${active ? (meta?.colors.dot ?? T.primary) + "60" : T.cardBorder}`,
+                borderRadius: 999,
+                color: active ? (meta?.colors.text ?? T.primary) : T.textMuted,
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "3px 11px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                transition: "all 0.12s",
+              }}
+            >
+              {s === "ALL" ? "All" : (meta?.label ?? s)}
+            </button>
+          );
+        })}
+      </div>
 
       {loading ? (
         <div style={{ textAlign: "center", padding: 40 }}>
@@ -1218,8 +1956,8 @@ function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
           icon="📋"
           title="No quizzes"
           subtitle={
-            search
-              ? "No quizzes match your search."
+            search || statusFilter !== "ALL"
+              ? "No matches."
               : 'Click "New quiz" to get started.'
           }
         />
@@ -1230,121 +1968,133 @@ function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
             overflowY: "auto",
             display: "flex",
             flexDirection: "column",
-            gap: 8,
+            gap: 7,
           }}
         >
-          {filtered.map((quiz) => (
-            <div
-              key={quiz.id}
-              onClick={() => onSelect(quiz)}
-              style={{
-                padding: "14px 16px",
-                background: T.cardBg,
-                border: `1px solid ${T.cardBorder}`,
-                borderRadius: 12,
-                cursor: "pointer",
-                transition: "border-color 0.15s",
-                position: "relative",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.borderColor = T.primary + "60")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.borderColor = T.cardBorder)
-              }
-            >
+          {filtered.map((quiz) => {
+            const status = quizStatus(quiz);
+            const meta = STATUS_META[status] ?? STATUS_META.DRAFT;
+            return (
               <div
+                key={quiz.id}
+                onClick={() => onSelect(quiz)}
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  gap: 8,
+                  padding: "12px 14px",
+                  background: T.cardBg,
+                  border: `1px solid ${T.cardBorder}`,
+                  borderRadius: 12,
+                  cursor: "pointer",
+                  transition: "border-color 0.12s",
                 }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.borderColor = T.primary + "60")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.borderColor = T.cardBorder)
+                }
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: T.textPrimary,
-                      marginBottom: 6,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {quiz.title}
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <QuizStatusBadge quiz={quiz} />
-                    <VisibilityBadge visibility={quiz.visibility} />
-                    <span style={{ fontSize: 11, color: T.textMuted }}>
-                      {quiz._count?.quizQuestions ?? 0} questions
-                    </span>
-                  </div>
-                </div>
-                {role === "ADMIN" && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteQuiz(quiz);
-                    }}
-                    disabled={deletingId === quiz.id}
-                    title="Delete quiz"
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: T.danger.dot,
-                      cursor: "pointer",
-                      fontSize: 15,
-                      padding: "2px 4px",
-                      lineHeight: 1,
-                      opacity: deletingId === quiz.id ? 0.5 : 1,
-                      flexShrink: 0,
-                    }}
-                  >
-                    🗑
-                  </button>
-                )}
-              </div>
-              {quiz.createdBy && (
                 <div
                   style={{
-                    fontSize: 11,
-                    color: T.textMuted,
-                    marginTop: 6,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 8,
                   }}
                 >
-                  by {quiz.createdBy.fullName}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: T.textPrimary,
+                        marginBottom: 6,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {quiz.title}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Badge label={meta.label} customColors={meta.colors} />
+                      <VisibilityBadge visibility={quiz.visibility} />
+                      <span style={{ fontSize: 11, color: T.textMuted }}>
+                        {quiz._count?.quizQuestions ?? 0} Qs
+                      </span>
+                      {quiz.scheduledStartTime && (
+                        <span style={{ fontSize: 11, color: T.textMuted }}>
+                          📅 {formatSchedule(quiz.scheduledStartTime)}
+                        </span>
+                      )}
+                    </div>
+                    {quiz.createdBy && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: T.textMuted,
+                          marginTop: 5,
+                        }}
+                      >
+                        by {quiz.createdBy.fullName}
+                      </div>
+                    )}
+                  </div>
+                  {meta.canDelete && role === "ADMIN" && (
+                    <button
+                      onClick={(e) => deleteQuiz(quiz, e)}
+                      disabled={deletingId === quiz.id}
+                      title="Delete"
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: T.danger.dot,
+                        cursor: "pointer",
+                        fontSize: 14,
+                        padding: "2px 4px",
+                        lineHeight: 1,
+                        opacity: deletingId === quiz.id ? 0.5 : 0.7,
+                        flexShrink: 0,
+                      }}
+                    >
+                      🗑
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-// ── Question Bank Panel ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Question Bank Panel
+// ─────────────────────────────────────────────────────────────────────────────
 
-function QuestionBankPanel({ role }) {
+function QuestionBankPanel() {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
+  const [viewQuestion, setViewQuestion] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-  const [error, setError] = useState("");
 
   const fetchQuestions = useCallback(async () => {
     setLoading(true);
-    setError("");
     try {
       const data = await questionApi.getAll();
       setQuestions(data ?? []);
-    } catch (err) {
-      setError(err.message || "Failed to load questions.");
+    } catch {
+      // non-fatal
     } finally {
       setLoading(false);
     }
@@ -1354,8 +2104,18 @@ function QuestionBankPanel({ role }) {
     fetchQuestions();
   }, [fetchQuestions]);
 
-  async function deleteQuestion(q) {
-    if (!window.confirm(`Delete this question? It cannot be in any quiz.`))
+  async function handleCreate(data) {
+    const q = await questionApi.create(data);
+    toast("Question created.", "success");
+    setQuestions((prev) => [q, ...prev]);
+    setShowNew(false);
+  }
+
+  async function deleteQuestion(q, e) {
+    e.stopPropagation();
+    if (
+      !window.confirm("Delete this question? It must not be used in any quiz.")
+    )
       return;
     setDeletingId(q.id);
     try {
@@ -1376,60 +2136,96 @@ function QuestionBankPanel({ role }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <SectionHeader
+        eyebrow="Reusable questions"
         title="Question Bank"
-        subtitle="Reusable questions"
         action={
-          <Button onClick={() => setShowNew(true)} size="sm">
-            + New question
-          </Button>
+          showNew ? null : (
+            <Button onClick={() => setShowNew(true)} size="sm">
+              + New question
+            </Button>
+          )
         }
       />
+
       <Input
         placeholder="Search questions…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        style={{ marginBottom: 14 }}
+        style={{ marginBottom: 12 }}
       />
 
-      {error && (
-        <p style={{ color: T.danger.text, fontSize: 13, marginBottom: 12 }}>
-          {error}
-        </p>
-      )}
+      {/* Everything below here scrolls together */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 7,
+        }}
+      >
+        {/* Inline creator — inside the scroll area so long forms don't overflow */}
+        {showNew && (
+          <div
+            style={{
+              background: T.pageBg,
+              border: `1px solid ${T.primary}40`,
+              borderRadius: 10,
+              padding: 16,
+              flexShrink: 0,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: T.primary,
+                marginBottom: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.07em",
+              }}
+            >
+              New question
+            </div>
+            <QuestionForm
+              onSave={handleCreate}
+              onCancel={() => setShowNew(false)}
+              saveLabel="Create question"
+            />
+          </div>
+        )}
 
-      {loading ? (
-        <div style={{ textAlign: "center", padding: 40 }}>
-          <Spinner />
-        </div>
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon="💡"
-          title="No questions"
-          subtitle={
-            search
-              ? "No questions match your search."
-              : 'Click "New question" to create one.'
-          }
-        />
-      ) : (
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
-          {filtered.map((q) => (
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 40 }}>
+            <Spinner />
+          </div>
+        ) : filtered.length === 0 && !showNew ? (
+          <EmptyState
+            icon="💡"
+            title="No questions"
+            subtitle={
+              search ? "No matches." : 'Click "New question" to create one.'
+            }
+          />
+        ) : (
+          filtered.map((q) => (
             <div
               key={q.id}
+              onClick={() => setViewQuestion(q)}
               style={{
-                padding: "12px 14px",
+                padding: "11px 13px",
                 background: T.cardBg,
                 border: `1px solid ${T.cardBorder}`,
                 borderRadius: 10,
+                cursor: "pointer",
+                transition: "border-color 0.12s",
               }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.borderColor = T.primary + "60")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.borderColor = T.cardBorder)
+              }
             >
               <div
                 style={{
@@ -1444,126 +2240,104 @@ function QuestionBankPanel({ role }) {
                     style={{
                       fontSize: 13,
                       color: T.textPrimary,
-                      lineHeight: 1.5,
+                      lineHeight: 1.45,
                       marginBottom: 6,
                     }}
                   >
                     {q.questionText}
                   </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
                     <Badge
                       label={typeLabel(q.questionType)}
                       customColors={T.neutral}
                     />
-                    <span style={{ fontSize: 11, color: T.textMuted }}>
-                      ⏱ {q.timerSeconds}s
-                    </span>
+                    {q.customTimer != null ? (
+                      <span style={{ fontSize: 11, color: T.textMuted }}>
+                        ⏱ {q.customTimer}s
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: T.textMuted }}>
+                        ⏱ quiz default
+                      </span>
+                    )}
                     {q.options?.length > 0 && (
                       <span style={{ fontSize: 11, color: T.textMuted }}>
-                        {q.options.length} options ·{" "}
-                        <span style={{ color: T.success.text }}>
-                          {q.options.filter((o) => o.isCorrect).length} correct
-                        </span>
+                        {q.options.filter((o) => o.isCorrect).length}/
+                        {q.options.length} correct
                       </span>
                     )}
                   </div>
-                  {/* Options preview */}
-                  {q.options?.length > 0 && (
-                    <div
+                </div>
+                <button
+                  onClick={(e) => deleteQuestion(q, e)}
+                  disabled={deletingId === q.id}
+                  title="Delete"
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: T.danger.dot,
+                    cursor: "pointer",
+                    fontSize: 14,
+                    padding: "1px 3px",
+                    lineHeight: 1,
+                    opacity: deletingId === q.id ? 0.5 : 0.7,
+                    flexShrink: 0,
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
+              {/* Options preview (collapsed) */}
+              {q.options?.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 5,
+                    marginTop: 7,
+                  }}
+                >
+                  {q.options.map((opt) => (
+                    <span
+                      key={opt.id}
                       style={{
-                        marginTop: 8,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 3,
+                        fontSize: 11,
+                        padding: "2px 8px",
+                        borderRadius: 6,
+                        background: opt.isCorrect
+                          ? `${T.success.dot}20`
+                          : T.pageBg,
+                        color: opt.isCorrect ? T.success.text : T.textMuted,
+                        border: `1px solid ${opt.isCorrect ? T.success.dot + "40" : T.cardBorder}`,
                       }}
                     >
-                      {q.options.map((opt) => (
-                        <div
-                          key={opt.id}
-                          style={{
-                            fontSize: 11,
-                            color: opt.isCorrect ? T.success.text : T.textMuted,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 5,
-                          }}
-                        >
-                          <span
-                            style={{
-                              display: "inline-block",
-                              width: 8,
-                              height: 8,
-                              borderRadius: "50%",
-                              background: opt.isCorrect
-                                ? T.success.dot
-                                : T.cardBorder,
-                              flexShrink: 0,
-                            }}
-                          />
-                          {opt.optionText}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                      {opt.optionText}
+                    </span>
+                  ))}
                 </div>
-                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                  <button
-                    onClick={() => setEditTarget(q)}
-                    title="Edit question"
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: T.textMuted,
-                      cursor: "pointer",
-                      fontSize: 14,
-                      padding: "2px 4px",
-                    }}
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => deleteQuestion(q)}
-                    disabled={deletingId === q.id}
-                    title="Delete question"
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: T.danger.dot,
-                      cursor: "pointer",
-                      fontSize: 14,
-                      padding: "2px 4px",
-                      opacity: deletingId === q.id ? 0.5 : 1,
-                    }}
-                  >
-                    🗑
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
 
-      <QuestionFormModal
-        open={showNew}
-        onClose={() => setShowNew(false)}
-        question={null}
-        onSaved={fetchQuestions}
-      />
-      <QuestionFormModal
-        open={!!editTarget}
-        onClose={() => setEditTarget(null)}
-        question={editTarget}
+      {/* Click-to-view/edit modal */}
+      <QuestionModal
+        open={!!viewQuestion}
+        onClose={() => setViewQuestion(null)}
+        question={viewQuestion}
         onSaved={() => {
           fetchQuestions();
-          setEditTarget(null);
+          setViewQuestion(null);
         }}
       />
     </div>
   );
 }
 
-// ── Root Page ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Root page
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function QuizzesPage() {
   const { role } = useAuth();
@@ -1572,14 +2346,14 @@ export default function QuizzesPage() {
   const [loading, setLoading] = useState(false);
   const [selectedQuiz, setSelectedQuiz] = useState(null);
   const [showNewQuiz, setShowNewQuiz] = useState(false);
-  const [activeTab, setActiveTab] = useState("quizzes"); // "quizzes" | "bank"
+  const [activeTab, setActiveTab] = useState("quizzes");
 
   const fetchQuizzes = useCallback(async () => {
     setLoading(true);
     try {
       const data = await quizApi.getAll();
       setQuizzes(data ?? []);
-      // Refresh selectedQuiz if open
+      // Keep selectedQuiz in sync
       if (selectedQuiz) {
         const updated = (data ?? []).find((q) => q.id === selectedQuiz.id);
         setSelectedQuiz(updated ?? null);
@@ -1593,26 +2367,26 @@ export default function QuizzesPage() {
 
   useEffect(() => {
     fetchQuizzes();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function handleQuizDeleted(deletedId) {
-    setQuizzes((prev) => prev.filter((q) => q.id !== deletedId));
-    if (selectedQuiz?.id === deletedId) setSelectedQuiz(null);
+  function handleQuizDeleted(id) {
+    setQuizzes((prev) => prev.filter((q) => q.id !== id));
+    if (selectedQuiz?.id === id) setSelectedQuiz(null);
   }
+
+  const panelHeight = "calc(100vh - 228px)";
 
   return (
     <div
       style={{
         padding: "32px 40px",
-        height: "100%",
         display: "flex",
         flexDirection: "column",
         boxSizing: "border-box",
       }}
     >
       {/* Page header */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 22 }}>
         <div
           style={{
             fontSize: 11,
@@ -1638,13 +2412,12 @@ export default function QuizzesPage() {
         </h1>
       </div>
 
-      {/* Tab bar */}
+      {/* Tabs */}
       <div
         style={{
           display: "flex",
-          gap: 0,
-          marginBottom: 20,
           borderBottom: `1px solid ${T.cardBorder}`,
+          marginBottom: 18,
         }}
       >
         {[
@@ -1666,8 +2439,8 @@ export default function QuizzesPage() {
               fontFamily: "inherit",
               fontSize: 13,
               fontWeight: 700,
-              padding: "10px 20px",
-              transition: "all 0.15s",
+              padding: "9px 20px",
+              transition: "all 0.12s",
               marginBottom: -1,
             }}
           >
@@ -1676,75 +2449,69 @@ export default function QuizzesPage() {
         ))}
       </div>
 
-      {/* Content area */}
-      <div style={{ flex: 1, minHeight: 0 }}>
-        {activeTab === "quizzes" && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: selectedQuiz ? "1fr 1.4fr" : "1fr",
-              gap: 20,
-              height: "100%",
-            }}
-          >
-            {/* Quiz list */}
-            <Card
-              style={{
-                padding: 20,
-                display: "flex",
-                flexDirection: "column",
-                height: "calc(100vh - 240px)",
-                overflow: "hidden",
-              }}
-            >
-              <QuizListPanel
-                quizzes={quizzes}
-                loading={loading}
-                onSelect={(quiz) => setSelectedQuiz(quiz)}
-                onNew={() => setShowNewQuiz(true)}
-                onDeleted={handleQuizDeleted}
-                role={role}
-              />
-            </Card>
-
-            {/* Quiz detail */}
-            {selectedQuiz && (
-              <Card
-                style={{
-                  padding: 20,
-                  display: "flex",
-                  flexDirection: "column",
-                  height: "calc(100vh - 240px)",
-                  overflow: "hidden",
-                }}
-              >
-                <QuizDetailPanel
-                  quiz={selectedQuiz}
-                  onBack={() => setSelectedQuiz(null)}
-                  onQuizUpdated={fetchQuizzes}
-                  role={role}
-                />
-              </Card>
-            )}
-          </div>
-        )}
-
-        {activeTab === "bank" && (
+      {/* Content */}
+      {activeTab === "quizzes" && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: selectedQuiz ? "380px 1fr" : "1fr",
+            gap: 18,
+          }}
+        >
           <Card
             style={{
-              padding: 20,
-              height: "calc(100vh - 240px)",
+              padding: 18,
+              height: panelHeight,
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
             }}
           >
-            <QuestionBankPanel role={role} />
+            <QuizListPanel
+              quizzes={quizzes}
+              loading={loading}
+              onSelect={setSelectedQuiz}
+              onNew={() => setShowNewQuiz(true)}
+              onDeleted={handleQuizDeleted}
+              role={role}
+            />
           </Card>
-        )}
-      </div>
 
-      {/* New quiz modal */}
+          {selectedQuiz && (
+            <Card
+              style={{
+                padding: 18,
+                height: panelHeight,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              <QuizDetailPanel
+                quiz={selectedQuiz}
+                onBack={() => setSelectedQuiz(null)}
+                onQuizUpdated={fetchQuizzes}
+                role={role}
+              />
+            </Card>
+          )}
+        </div>
+      )}
+
+      {activeTab === "bank" && (
+        <Card
+          style={{
+            padding: 18,
+            height: panelHeight,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <QuestionBankPanel />
+        </Card>
+      )}
+
       <QuizFormModal
         open={showNewQuiz}
         onClose={() => setShowNewQuiz(false)}

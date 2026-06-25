@@ -5,9 +5,13 @@ async function createQuestion(data, userId) {
     const question = await tx.question.create({
       data: {
         questionText: data.questionText,
+
         questionType: data.questionType ?? "SINGLE_CORRECT",
+
         mediaUrl: data.mediaUrl ?? null,
-        timerSeconds: data.timerSeconds,
+
+        customTimer: data.customTimer !== undefined ? data.customTimer : null,
+
         createdById: userId,
       },
     });
@@ -61,34 +65,42 @@ async function getQuestionById(id) {
     },
   });
 }
-
 async function updateQuestion(id, data) {
   return prisma.$transaction(async (tx) => {
+    const updateData = {};
+
+    if (data.questionText !== undefined)
+      updateData.questionText = data.questionText;
+
+    if (data.questionType !== undefined)
+      updateData.questionType = data.questionType;
+
+    if (data.mediaUrl !== undefined) updateData.mediaUrl = data.mediaUrl;
+
+    if (data.customTimer !== undefined)
+      updateData.customTimer = data.customTimer;
+
     await tx.question.update({
       where: { id },
-
-      data: {
-        questionText: data.questionText,
-        questionType: data.questionType,
-        mediaUrl: data.mediaUrl,
-        timerSeconds: data.timerSeconds,
-      },
+      data: updateData,
     });
 
-    await tx.questionOption.deleteMany({
-      where: {
-        questionId: id,
-      },
-    });
+    if (data.options !== undefined) {
+      await tx.questionOption.deleteMany({
+        where: {
+          questionId: id,
+        },
+      });
 
-    await tx.questionOption.createMany({
-      data: data.options.map((option, index) => ({
-        questionId: id,
-        optionText: option.optionText,
-        isCorrect: option.isCorrect,
-        orderIndex: index + 1,
-      })),
-    });
+      await tx.questionOption.createMany({
+        data: data.options.map((option, index) => ({
+          questionId: id,
+          optionText: option.optionText,
+          isCorrect: option.isCorrect,
+          orderIndex: index + 1,
+        })),
+      });
+    }
 
     return getQuestionById(id);
   });

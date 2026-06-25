@@ -2,6 +2,13 @@ const questionService = require("./question.service");
 
 async function createQuestion(req, res) {
   try {
+    if (req.body.customTimer != null && req.body.customTimer <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Custom timer must be greater than zero",
+      });
+    }
+
     const question = await questionService.createQuestion(
       req.body,
       req.dbUser.id,
@@ -81,6 +88,13 @@ async function updateQuestion(req, res) {
       return res.status(400).json({
         success: false,
         message: "Question ID is required",
+      });
+    }
+
+    if (req.body.customTimer != null && req.body.customTimer <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Custom timer must be greater than zero",
       });
     }
 

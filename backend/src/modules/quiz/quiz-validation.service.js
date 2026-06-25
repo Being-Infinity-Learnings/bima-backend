@@ -1,7 +1,7 @@
 const prisma = require("../../config/prisma");
 
 /** Validate a quiz before publishing */
-async function validateQuizForPublishing(quizId) {
+async function validateQuiz(quizId) {
   const quiz = await prisma.quiz.findUnique({
     where: {
       id: quizId,
@@ -30,6 +30,22 @@ async function validateQuizForPublishing(quizId) {
     throw new Error("Quiz title is required");
   }
 
+  if (quiz.defaultTimer == null) {
+    throw new Error("Quiz default timer is required");
+  }
+
+  if (quiz.defaultTimer <= 0) {
+    throw new Error("Quiz default timer must be greater than zero");
+  }
+
+  if (!quiz.scheduledStartTime) {
+    throw new Error("Scheduled start time is required");
+  }
+
+  if (quiz.scheduledStartTime <= new Date()) {
+    throw new Error("Scheduled start time must be in the future");
+  }
+
   if (quiz.quizQuestions.length === 0) {
     throw new Error("Quiz must contain at least one question");
   }
@@ -40,6 +56,12 @@ async function validateQuizForPublishing(quizId) {
 
   for (const mapping of quiz.quizQuestions) {
     const question = mapping.question;
+
+    if (question.customTimer != null && question.customTimer <= 0) {
+      throw new Error(
+        `Question "${question.questionText}" has an invalid custom timer`,
+      );
+    }
 
     if (!question) {
       throw new Error("Quiz contains an invalid question reference");
@@ -79,5 +101,5 @@ async function validateQuizForPublishing(quizId) {
 }
 
 module.exports = {
-  validateQuizForPublishing,
+  validateQuiz,
 };

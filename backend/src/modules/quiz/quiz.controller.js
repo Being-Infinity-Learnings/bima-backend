@@ -3,6 +3,29 @@ const quizService = require("./quiz.service");
 /** Create a new quiz */
 async function createQuiz(req, res) {
   try {
+    const { title, defaultTimer, scheduledStartTime } = req.body;
+
+    if (!title?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Title is required",
+      });
+    }
+
+    if (defaultTimer == null) {
+      return res.status(400).json({
+        success: false,
+        message: "Default timer is required",
+      });
+    }
+
+    if (!scheduledStartTime) {
+      return res.status(400).json({
+        success: false,
+        message: "Scheduled start time is required",
+      });
+    }
+
     const quiz = await quizService.createQuiz(req.body, req.dbUser.id);
 
     return res.status(201).json({
@@ -82,6 +105,13 @@ async function updateQuiz(req, res) {
       return res.status(400).json({
         success: false,
         message: "Quiz ID is required",
+      });
+    }
+
+    if (req.body.defaultTimer != null && req.body.defaultTimer <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Default timer must be greater than zero",
       });
     }
 

@@ -122,9 +122,15 @@ model Quiz {
 
   visibility QuizVisibility @default(PUBLIC)
 
-  defaultTimer Int?
+  defaultTimer Int
 
-  isPublished Boolean @default(false)
+  status QuizStatus @default(DRAFT)
+
+  scheduledStartTime DateTime
+
+  actualStartTime DateTime?
+
+  completedAt DateTime?
 
   createdById String
 
@@ -147,7 +153,7 @@ model Question {
 
   mediaUrl String?
 
-  timerSeconds Int
+  customTimer Int?
 
   createdById String?
 
@@ -230,4 +236,12 @@ enum QuestionType {
   MULTI_CORRECT
   TEXT
   NUMERIC
+}
+
+enum QuizStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  COMPLETED
+  CANCELLED
 }
