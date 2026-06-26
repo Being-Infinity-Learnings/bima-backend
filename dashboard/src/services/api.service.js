@@ -107,7 +107,7 @@ export const notificationsApi = {
   myNotifications: () => request("GET", "/notifications/my"),
 };
 
-// ── Quiz API ────────────────────────────────────────────────────────────────
+// ── Quiz Composition API ────────────────────────────────────────────────────
 // Quiz status lifecycle: DRAFT → SCHEDULED → LIVE → COMPLETED
 // publish()   moves DRAFT      → SCHEDULED  (validates: future time, ≥1 question, groups if restricted)
 // unpublish() moves SCHEDULED  → DRAFT
@@ -139,6 +139,40 @@ export const questionApi = {
   create: (body) => request("POST", "/question", body),
   update: (id, body) => request("PATCH", `/question/${id}`, body),
   delete: (id) => request("DELETE", `/question/${id}`),
+};
+
+// ── Upload API ──────────────────────────────────────────────────────────────
+// Valid folders: quiz-covers | question-images | profile-images | notification-images
+// Sends the file as multipart/form-data; server handles the S3 upload directly.
+export const uploadApi = {
+  // Upload a File object and return the permanent CDN URL.
+  async uploadFile(file, folder) {
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) throw new Error("Not authenticated");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", folder);
+
+    const res = await fetch(`${BASE}/uploads/image`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      // Do NOT set Content-Type — the browser sets it with the correct boundary.
+      body: formData,
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw {
+        status: res.status,
+        message: payload?.message || "Upload failed.",
+      };
+    }
+
+    const fileUrl = payload?.data?.fileUrl;
+    if (!fileUrl) throw new Error("Server did not return a file URL.");
+    return fileUrl;
+  },
 };
 
 // ── Quiz Composition API ────────────────────────────────────────────────────

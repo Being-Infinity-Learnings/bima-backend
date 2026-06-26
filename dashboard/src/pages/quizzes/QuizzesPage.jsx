@@ -10,6 +10,7 @@ import {
   questionApi,
   quizCompositionApi,
   groupsApi,
+  uploadApi,
 } from "../../services/api.service.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import {
@@ -189,6 +190,232 @@ function defaultOptions() {
   ];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ImageUploader — drag-and-drop / click-to-browse image picker with preview
+// folder: one of the backend's ALLOWED_FOLDERS
+// value:  current image URL (string | null)
+// onChange: called with the uploaded CDN URL, or null when cleared
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ALLOWED_MIME = ["image/png", "image/jpeg", "image/webp"];
+const ALLOWED_EXT_LABEL = "PNG, JPG or WebP";
+
+function ImageUploader({ label, folder, value, onChange, hint }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef(null);
+
+  async function processFile(file) {
+    if (!file) return;
+    if (!ALLOWED_MIME.includes(file.type)) {
+      setError(`Only ${ALLOWED_EXT_LABEL} files are allowed.`);
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("File must be under 5 MB.");
+      return;
+    }
+    setError("");
+    setUploading(true);
+    try {
+      const url = await uploadApi.uploadFile(file, folder);
+      onChange(url);
+    } catch (err) {
+      setError(err.message || "Upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleInputChange(e) {
+    processFile(e.target.files?.[0]);
+    // Reset so same file can be re-selected after clear
+    e.target.value = "";
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    processFile(e.dataTransfer.files?.[0]);
+  }
+
+  return (
+    <div>
+      {label && (
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: T.textSecondary,
+            marginBottom: 6,
+          }}
+        >
+          {label}
+          {hint && (
+            <span
+              style={{ fontWeight: 400, color: T.textMuted, marginLeft: 6 }}
+            >
+              {hint}
+            </span>
+          )}
+        </div>
+      )}
+
+      {value ? (
+        // ── Preview state ──────────────────────────────────────────────
+        <div
+          style={{
+            position: "relative",
+            borderRadius: 10,
+            overflow: "hidden",
+            border: `1px solid ${T.cardBorder}`,
+            background: T.pageBg,
+          }}
+        >
+          <img
+            src={value}
+            alt="Uploaded preview"
+            style={{
+              width: "100%",
+              height: 140,
+              objectFit: "contain",
+              display: "block",
+              background: T.pageBg,
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+          {/* Overlay on hover */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,0.55)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              opacity: 0,
+              transition: "opacity 0.15s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = 1)}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = 0)}
+          >
+            <button
+              onClick={() => inputRef.current?.click()}
+              style={{
+                background: "rgba(255,255,255,0.15)",
+                border: "1px solid rgba(255,255,255,0.3)",
+                borderRadius: 7,
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 600,
+                padding: "6px 14px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                backdropFilter: "blur(4px)",
+              }}
+            >
+              Replace
+            </button>
+            <button
+              onClick={() => onChange(null)}
+              style={{
+                background: "rgba(220,38,38,0.2)",
+                border: "1px solid rgba(220,38,38,0.5)",
+                borderRadius: 7,
+                color: "#fca5a5",
+                fontSize: 12,
+                fontWeight: 600,
+                padding: "6px 14px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                backdropFilter: "blur(4px)",
+              }}
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      ) : (
+        // ── Drop zone ──────────────────────────────────────────────────
+        <div
+          onClick={() => !uploading && inputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          style={{
+            border: `1.5px dashed ${dragOver ? T.primary : uploading ? T.primary + "60" : T.cardBorder}`,
+            borderRadius: 10,
+            padding: "22px 16px",
+            textAlign: "center",
+            cursor: uploading ? "default" : "pointer",
+            background: dragOver ? `${T.primary}0d` : "transparent",
+            transition: "border-color 0.15s, background 0.15s",
+            userSelect: "none",
+          }}
+        >
+          {uploading ? (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <Spinner size={22} />
+              <span style={{ fontSize: 12, color: T.textMuted }}>
+                Uploading…
+              </span>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 26, marginBottom: 6, lineHeight: 1 }}>
+                🖼️
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: T.textSecondary,
+                  marginBottom: 3,
+                }}
+              >
+                Drop image here or{" "}
+                <span style={{ color: T.primary, textDecoration: "underline" }}>
+                  browse
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: T.textMuted }}>
+                {ALLOWED_EXT_LABEL} · max 5 MB
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <p style={{ fontSize: 11, color: T.danger.text, margin: "5px 0 0" }}>
+          {error}
+        </p>
+      )}
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ALLOWED_MIME.join(",")}
+        onChange={handleInputChange}
+        style={{ display: "none" }}
+      />
+    </div>
+  );
+}
+
 const MAX_OPTIONS = 6;
 
 // QuestionForm is a pure controlled component so it can be embedded anywhere.
@@ -214,6 +441,7 @@ function QuestionForm({
         }))
       : defaultOptions(),
   );
+  const [imageUrl, setImageUrl] = useState(initial?.mediaUrl ?? null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -274,6 +502,7 @@ function QuestionForm({
         questionText: questionText.trim(),
         questionType,
         customTimer: timer,
+        mediaUrl: imageUrl ?? null,
         options: isTextBased
           ? []
           : options.map((o) => ({
@@ -297,6 +526,14 @@ function QuestionForm({
         onChange={(e) => setQuestionText(e.target.value)}
         placeholder="Type the question here…"
         rows={compact ? 2 : 3}
+      />
+
+      <ImageUploader
+        label="Question image"
+        hint="(optional)"
+        folder="question-images"
+        value={imageUrl}
+        onChange={setImageUrl}
       />
 
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
@@ -466,7 +703,7 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
       open={open}
       onClose={onClose}
       title={editing ? "Edit question" : "Question detail"}
-      width={560}
+      width={700}
     >
       {editing ? (
         <QuestionForm
@@ -492,6 +729,31 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
           >
             {question.questionText}
           </div>
+
+          {/* Question image (if present) */}
+          {question.mediaUrl && (
+            <div
+              style={{
+                borderRadius: 10,
+                overflow: "hidden",
+                border: `1px solid ${T.cardBorder}`,
+                maxWidth: 400,
+                alignSelf: "flex-start",
+              }}
+            >
+              <img
+                src={question.mediaUrl}
+                alt="Question illustration"
+                style={{
+                  width: "100%",
+                  maxHeight: 180,
+                  objectFit: "contain",
+                  display: "block",
+                  background: T.pageBg,
+                }}
+              />
+            </div>
+          )}
 
           {/* Meta */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -629,6 +891,7 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
   const [visibility, setVisibility] = useState("PUBLIC");
   const [defaultTimer, setDefaultTimer] = useState("30");
   const [scheduledStartTime, setScheduledStartTime] = useState(null);
+  const [coverImageUrl, setCoverImageUrl] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -650,6 +913,7 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
       setVisibility(quiz?.visibility ?? "PUBLIC");
       setDefaultTimer(String(quiz?.defaultTimer ?? 30));
       setScheduledStartTime(quiz?.scheduledStartTime ?? null);
+      setCoverImageUrl(quiz?.coverImageUrl ?? null);
       setSelectedIds(new Set());
       setShowInlineCreate(false);
     }
@@ -695,6 +959,7 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
         visibility,
         defaultTimer: timer,
         scheduledStartTime: scheduledStartTime,
+        coverImageUrl: coverImageUrl ?? null,
       };
 
       if (isEdit) {
@@ -763,9 +1028,16 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
       : "New quiz — Add questions";
 
   return (
-    <Modal open={open} onClose={onClose} title={modalTitle} width={560}>
+    <Modal open={open} onClose={onClose} title={modalTitle} width={700}>
       {step === 1 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <ImageUploader
+            label="Cover image"
+            hint="(optional)"
+            folder="quiz-covers"
+            value={coverImageUrl}
+            onChange={setCoverImageUrl}
+          />
           <Input
             label="Title"
             value={title}
@@ -790,7 +1062,7 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
             </div>
             <div style={{ width: 170 }}>
               <Input
-                label="Default timer (Sec)"
+                label="Default timer (seconds)"
                 type="number"
                 min={1}
                 value={defaultTimer}
@@ -1263,7 +1535,7 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Add questions" width={600}>
+    <Modal open={open} onClose={onClose} title="Add questions" width={760}>
       <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
         {showCreate ? (
           <div
@@ -1469,7 +1741,13 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
   const [showGroups, setShowGroups] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
-  const [viewQuestion, setViewQuestion] = useState(null); // question to show in modal
+  const [viewQuestion, setViewQuestion] = useState(null);
+
+  // Drag-and-drop reorder state
+  const dragIndexRef = useRef(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+  const [orderDirty, setOrderDirty] = useState(false);
+  const [savingOrder, setSavingOrder] = useState(false);
 
   const status = quizStatus(quiz);
   const meta = STATUS_META[status] ?? STATUS_META.DRAFT;
@@ -1480,6 +1758,7 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
     try {
       const data = await quizCompositionApi.getQuestions(quiz.id);
       setQuizQuestions(data ?? []);
+      setOrderDirty(false);
     } catch {
       // non-fatal
     } finally {
@@ -1499,6 +1778,68 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
     } catch (err) {
       toast(err.message || "Failed to remove.", "error");
     }
+  }
+
+  // ── Drag handlers ──────────────────────────────────────────────────────────
+
+  function handleDragStart(e, idx) {
+    dragIndexRef.current = idx;
+    e.dataTransfer.effectAllowed = "move";
+    // Tiny delay so the browser snapshot doesn't show the hover state
+    requestAnimationFrame(() => {
+      e.target.style.opacity = "0.4";
+    });
+  }
+
+  function handleDragEnd(e) {
+    e.target.style.opacity = "1";
+    setDragOverIdx(null);
+  }
+
+  function handleDragOver(e, idx) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (idx !== dragOverIdx) setDragOverIdx(idx);
+  }
+
+  function handleDragLeave() {
+    setDragOverIdx(null);
+  }
+
+  function handleDrop(e, dropIdx) {
+    e.preventDefault();
+    setDragOverIdx(null);
+    const fromIdx = dragIndexRef.current;
+    dragIndexRef.current = null;
+    if (fromIdx === null || fromIdx === dropIdx) return;
+
+    // Update local order only — don't touch the backend yet
+    const reordered = [...quizQuestions];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(dropIdx, 0, moved);
+    setQuizQuestions(reordered);
+    setOrderDirty(true);
+  }
+
+  async function saveOrder() {
+    setSavingOrder(true);
+    try {
+      const orderedIds = quizQuestions.map(
+        (m) => m.questionId ?? m.question?.id,
+      );
+      await quizCompositionApi.reorderQuestions(quiz.id, orderedIds);
+      toast("Order saved.", "success");
+      setOrderDirty(false);
+    } catch (err) {
+      toast(err.message || "Failed to save order.", "error");
+    } finally {
+      setSavingOrder(false);
+    }
+  }
+
+  function discardOrder() {
+    setOrderDirty(false);
+    fetchQuizQuestions();
   }
 
   async function handlePublishToggle() {
@@ -1601,6 +1942,33 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
         </div>
       </div>
 
+      {/* Cover image */}
+      {quiz.coverImageUrl && (
+        <div
+          style={{
+            borderRadius: 10,
+            overflow: "hidden",
+            border: `1px solid ${T.cardBorder}`,
+            marginBottom: 14,
+            flexShrink: 0,
+            maxWidth: 480,
+            alignSelf: "flex-start",
+          }}
+        >
+          <img
+            src={quiz.coverImageUrl}
+            alt={quiz.title}
+            style={{
+              width: "100%",
+              height: 160,
+              objectFit: "contain",
+              display: "block",
+              background: T.pageBg,
+            }}
+          />
+        </div>
+      )}
+
       {/* Description */}
       {quiz.description && (
         <p
@@ -1678,29 +2046,75 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
       </div>
 
       {/* Questions header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 10,
-        }}
-      >
+      <div style={{ marginBottom: 10 }}>
         <div
           style={{
-            fontSize: 12,
-            fontWeight: 700,
-            color: T.textMuted,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          Questions ({quizQuestions.length})
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: T.textMuted,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              Questions ({quizQuestions.length})
+            </div>
+            {canEditContent && quizQuestions.length > 1 && !orderDirty && (
+              <span style={{ fontSize: 11, color: T.textMuted }}>
+                · drag to reorder
+              </span>
+            )}
+          </div>
+          {canEditContent && !orderDirty && (
+            <Button size="sm" onClick={() => setShowAddQs(true)}>
+              + Add questions
+            </Button>
+          )}
         </div>
-        {canEditContent && (
-          <Button size="sm" onClick={() => setShowAddQs(true)}>
-            + Add questions
-          </Button>
+
+        {/* Save order bar — slides in when there are unsaved reorders */}
+        {orderDirty && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: 8,
+              padding: "8px 12px",
+              background: `${T.primary}15`,
+              border: `1px solid ${T.primary}40`,
+              borderRadius: 8,
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: 12, color: T.primary, fontWeight: 600 }}>
+              ↕ Order changed — save when you're done
+            </span>
+            <div style={{ display: "flex", gap: 7, flexShrink: 0 }}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={discardOrder}
+                disabled={savingOrder}
+              >
+                Discard
+              </Button>
+              <Button size="sm" onClick={saveOrder} disabled={savingOrder}>
+                {savingOrder ? (
+                  <Spinner size={13} color="#fff" />
+                ) : (
+                  "Save order"
+                )}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -1732,28 +2146,84 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
           {quizQuestions.map((mapping, idx) => {
             const q = mapping.question;
             const timer = q?.customTimer ?? quiz.defaultTimer;
+            const isDragTarget = dragOverIdx === idx;
             return (
               <div
                 key={mapping.questionId ?? q?.id}
+                draggable={canEditContent}
+                onDragStart={
+                  canEditContent ? (e) => handleDragStart(e, idx) : undefined
+                }
+                onDragEnd={canEditContent ? handleDragEnd : undefined}
+                onDragOver={
+                  canEditContent ? (e) => handleDragOver(e, idx) : undefined
+                }
+                onDragLeave={canEditContent ? handleDragLeave : undefined}
+                onDrop={canEditContent ? (e) => handleDrop(e, idx) : undefined}
                 onClick={() => setViewQuestion(q)}
                 style={{
                   display: "flex",
                   gap: 10,
                   padding: "10px 13px",
                   background: T.pageBg,
-                  border: `1px solid ${T.cardBorder}`,
+                  border: `1px solid ${isDragTarget ? T.primary : T.cardBorder}`,
                   borderRadius: 10,
                   alignItems: "flex-start",
-                  cursor: "pointer",
-                  transition: "border-color 0.12s",
+                  cursor: canEditContent ? "grab" : "pointer",
+                  transition:
+                    "border-color 0.1s, transform 0.1s, box-shadow 0.1s",
+                  boxShadow: isDragTarget ? `0 0 0 2px ${T.primary}30` : "none",
+                  transform: isDragTarget ? "scale(1.01)" : "none",
+                  userSelect: "none",
                 }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.borderColor = T.primary + "60")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.borderColor = T.cardBorder)
-                }
+                onMouseEnter={(e) => {
+                  if (!isDragTarget)
+                    e.currentTarget.style.borderColor = T.primary + "60";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isDragTarget)
+                    e.currentTarget.style.borderColor = T.cardBorder;
+                }}
               >
+                {/* Drag handle (only when editable) */}
+                {canEditContent ? (
+                  <div
+                    title="Drag to reorder"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 2.5,
+                      padding: "4px 2px",
+                      flexShrink: 0,
+                      marginTop: 1,
+                      cursor: "grab",
+                      opacity: 0.35,
+                    }}
+                  >
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} style={{ display: "flex", gap: 2.5 }}>
+                        <div
+                          style={{
+                            width: 3,
+                            height: 3,
+                            borderRadius: "50%",
+                            background: T.textMuted,
+                          }}
+                        />
+                        <div
+                          style={{
+                            width: 3,
+                            height: 3,
+                            borderRadius: "50%",
+                            background: T.textMuted,
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {/* Position number */}
                 <div
                   style={{
                     width: 22,
@@ -1772,6 +2242,7 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
                 >
                   {idx + 1}
                 </div>
+
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
@@ -1799,6 +2270,7 @@ function QuizDetailPanel({ quiz, onBack, onQuizUpdated, role }) {
                     )}
                   </div>
                 </div>
+
                 {canEditContent && (
                   <button
                     onClick={(e) => {
@@ -2001,6 +2473,30 @@ function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
                     gap: 8,
                   }}
                 >
+                  {/* Cover thumbnail */}
+                  {quiz.coverImageUrl && (
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 8,
+                        overflow: "hidden",
+                        flexShrink: 0,
+                        border: `1px solid ${T.cardBorder}`,
+                      }}
+                    >
+                      <img
+                        src={quiz.coverImageUrl}
+                        alt=""
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          display: "block",
+                        }}
+                      />
+                    </div>
+                  )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
@@ -2154,171 +2650,193 @@ function QuestionBankPanel() {
         style={{ marginBottom: 12 }}
       />
 
-      {/* Everything below here scrolls together */}
+      {/* Two-column layout when creating: form left, list right */}
       <div
         style={{
           flex: 1,
-          overflowY: "auto",
+          overflowY: showNew ? "hidden" : "auto",
           display: "flex",
-          flexDirection: "column",
-          gap: 7,
+          flexDirection: showNew ? "row" : "column",
+          gap: showNew ? 18 : 7,
+          minHeight: 0,
         }}
       >
-        {/* Inline creator — inside the scroll area so long forms don't overflow */}
+        {/* Inline creator — left column, fixed width */}
         {showNew && (
           <div
             style={{
-              background: T.pageBg,
-              border: `1px solid ${T.primary}40`,
-              borderRadius: 10,
-              padding: 16,
+              width: 400,
               flexShrink: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 0,
             }}
           >
             <div
               style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: T.primary,
-                marginBottom: 12,
-                textTransform: "uppercase",
-                letterSpacing: "0.07em",
-              }}
-            >
-              New question
-            </div>
-            <QuestionForm
-              onSave={handleCreate}
-              onCancel={() => setShowNew(false)}
-              saveLabel="Create question"
-            />
-          </div>
-        )}
-
-        {loading ? (
-          <div style={{ textAlign: "center", padding: 40 }}>
-            <Spinner />
-          </div>
-        ) : filtered.length === 0 && !showNew ? (
-          <EmptyState
-            icon="💡"
-            title="No questions"
-            subtitle={
-              search ? "No matches." : 'Click "New question" to create one.'
-            }
-          />
-        ) : (
-          filtered.map((q) => (
-            <div
-              key={q.id}
-              onClick={() => setViewQuestion(q)}
-              style={{
-                padding: "11px 13px",
-                background: T.cardBg,
-                border: `1px solid ${T.cardBorder}`,
+                background: T.pageBg,
+                border: `1px solid ${T.primary}40`,
                 borderRadius: 10,
-                cursor: "pointer",
-                transition: "border-color 0.12s",
+                padding: 16,
+                overflowY: "auto",
               }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.borderColor = T.primary + "60")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.borderColor = T.cardBorder)
-              }
             >
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  gap: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: T.primary,
+                  marginBottom: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.07em",
                 }}
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: T.textPrimary,
-                      lineHeight: 1.45,
-                      marginBottom: 6,
-                    }}
-                  >
-                    {q.questionText}
-                  </div>
-                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                    <Badge
-                      label={typeLabel(q.questionType)}
-                      customColors={T.neutral}
-                    />
-                    {q.customTimer != null ? (
-                      <span style={{ fontSize: 11, color: T.textMuted }}>
-                        ⏱ {q.customTimer}s
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 11, color: T.textMuted }}>
-                        ⏱ quiz default
-                      </span>
-                    )}
-                    {q.options?.length > 0 && (
-                      <span style={{ fontSize: 11, color: T.textMuted }}>
-                        {q.options.filter((o) => o.isCorrect).length}/
-                        {q.options.length} correct
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <button
-                  onClick={(e) => deleteQuestion(q, e)}
-                  disabled={deletingId === q.id}
-                  title="Delete"
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: T.danger.dot,
-                    cursor: "pointer",
-                    fontSize: 14,
-                    padding: "1px 3px",
-                    lineHeight: 1,
-                    opacity: deletingId === q.id ? 0.5 : 0.7,
-                    flexShrink: 0,
-                  }}
-                >
-                  🗑
-                </button>
+                New question
               </div>
-              {/* Options preview (collapsed) */}
-              {q.options?.length > 0 && (
+              <QuestionForm
+                onSave={handleCreate}
+                onCancel={() => setShowNew(false)}
+                saveLabel="Create question"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Question list — scrollable right column (or full width when not creating) */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 7,
+          }}
+        >
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 40 }}>
+              <Spinner />
+            </div>
+          ) : filtered.length === 0 && !showNew ? (
+            <EmptyState
+              icon="💡"
+              title="No questions"
+              subtitle={
+                search ? "No matches." : 'Click "New question" to create one.'
+              }
+            />
+          ) : (
+            filtered.map((q) => (
+              <div
+                key={q.id}
+                onClick={() => setViewQuestion(q)}
+                style={{
+                  padding: "11px 13px",
+                  background: T.cardBg,
+                  border: `1px solid ${T.cardBorder}`,
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  transition: "border-color 0.12s",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.borderColor = T.primary + "60")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.borderColor = T.cardBorder)
+                }
+              >
                 <div
                   style={{
                     display: "flex",
-                    flexWrap: "wrap",
-                    gap: 5,
-                    marginTop: 7,
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 8,
                   }}
                 >
-                  {q.options.map((opt) => (
-                    <span
-                      key={opt.id}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
                       style={{
-                        fontSize: 11,
-                        padding: "2px 8px",
-                        borderRadius: 6,
-                        background: opt.isCorrect
-                          ? `${T.success.dot}20`
-                          : T.pageBg,
-                        color: opt.isCorrect ? T.success.text : T.textMuted,
-                        border: `1px solid ${opt.isCorrect ? T.success.dot + "40" : T.cardBorder}`,
+                        fontSize: 13,
+                        color: T.textPrimary,
+                        lineHeight: 1.45,
+                        marginBottom: 6,
                       }}
                     >
-                      {opt.optionText}
-                    </span>
-                  ))}
+                      {q.questionText}
+                    </div>
+                    <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                      <Badge
+                        label={typeLabel(q.questionType)}
+                        customColors={T.neutral}
+                      />
+                      {q.customTimer != null ? (
+                        <span style={{ fontSize: 11, color: T.textMuted }}>
+                          ⏱ {q.customTimer}s
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, color: T.textMuted }}>
+                          ⏱ quiz default
+                        </span>
+                      )}
+                      {q.options?.length > 0 && (
+                        <span style={{ fontSize: 11, color: T.textMuted }}>
+                          {q.options.filter((o) => o.isCorrect).length}/
+                          {q.options.length} correct
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => deleteQuestion(q, e)}
+                    disabled={deletingId === q.id}
+                    title="Delete"
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: T.danger.dot,
+                      cursor: "pointer",
+                      fontSize: 14,
+                      padding: "1px 3px",
+                      lineHeight: 1,
+                      opacity: deletingId === q.id ? 0.5 : 0.7,
+                      flexShrink: 0,
+                    }}
+                  >
+                    🗑
+                  </button>
                 </div>
-              )}
-            </div>
-          ))
-        )}
+                {/* Options preview (collapsed) */}
+                {q.options?.length > 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 5,
+                      marginTop: 7,
+                    }}
+                  >
+                    {q.options.map((opt) => (
+                      <span
+                        key={opt.id}
+                        style={{
+                          fontSize: 11,
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          background: opt.isCorrect
+                            ? `${T.success.dot}20`
+                            : T.pageBg,
+                          color: opt.isCorrect ? T.success.text : T.textMuted,
+                          border: `1px solid ${opt.isCorrect ? T.success.dot + "40" : T.cardBorder}`,
+                        }}
+                      >
+                        {opt.optionText}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Click-to-view/edit modal */}
@@ -2332,6 +2850,24 @@ function QuestionBankPanel() {
         }}
       />
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quiz Detail Modal — wraps QuizDetailPanel in a large modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function QuizDetailModal({ quiz, onClose, onQuizUpdated, role }) {
+  if (!quiz) return null;
+  return (
+    <Modal open={!!quiz} onClose={onClose} title="Quiz Detail" width={860}>
+      <QuizDetailPanel
+        quiz={quiz}
+        onBack={onClose}
+        onQuizUpdated={onQuizUpdated}
+        role={role}
+      />
+    </Modal>
   );
 }
 
@@ -2374,19 +2910,19 @@ export default function QuizzesPage() {
     if (selectedQuiz?.id === id) setSelectedQuiz(null);
   }
 
-  const panelHeight = "calc(100vh - 228px)";
+  const panelHeight = "calc(100vh - 200px)";
 
   return (
     <div
       style={{
-        padding: "32px 40px",
+        padding: "20px 32px",
         display: "flex",
         flexDirection: "column",
         boxSizing: "border-box",
       }}
     >
       {/* Page header */}
-      <div style={{ marginBottom: 22 }}>
+      <div style={{ marginBottom: 14 }}>
         <div
           style={{
             fontSize: 11,
@@ -2402,10 +2938,10 @@ export default function QuizzesPage() {
         <h1
           style={{
             margin: 0,
-            fontSize: 26,
+            fontSize: 20,
             fontWeight: 800,
             color: T.textPrimary,
-            letterSpacing: "-0.03em",
+            letterSpacing: "-0.02em",
           }}
         >
           Quiz Management
@@ -2451,13 +2987,7 @@ export default function QuizzesPage() {
 
       {/* Content */}
       {activeTab === "quizzes" && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: selectedQuiz ? "380px 1fr" : "1fr",
-            gap: 18,
-          }}
-        >
+        <div>
           <Card
             style={{
               padding: 18,
@@ -2477,24 +3007,13 @@ export default function QuizzesPage() {
             />
           </Card>
 
-          {selectedQuiz && (
-            <Card
-              style={{
-                padding: 18,
-                height: panelHeight,
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden",
-              }}
-            >
-              <QuizDetailPanel
-                quiz={selectedQuiz}
-                onBack={() => setSelectedQuiz(null)}
-                onQuizUpdated={fetchQuizzes}
-                role={role}
-              />
-            </Card>
-          )}
+          {/* Quiz detail as modal */}
+          <QuizDetailModal
+            quiz={selectedQuiz}
+            onClose={() => setSelectedQuiz(null)}
+            onQuizUpdated={fetchQuizzes}
+            role={role}
+          />
         </div>
       )}
 
