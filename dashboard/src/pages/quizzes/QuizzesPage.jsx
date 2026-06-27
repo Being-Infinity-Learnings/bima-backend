@@ -20,7 +20,6 @@ import {
   questionApi,
   quizCompositionApi,
   groupsApi,
-  uploadApi,
 } from "../../services/api.service.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import {
@@ -88,6 +87,22 @@ const STATUS_META = {
 
 const MAX_OPTIONS = 6;
 const ALLOWED_MIME = ["image/png", "image/jpeg", "image/webp"];
+
+// A value is "local" (i.e. not yet uploaded to S3) when it's a base64 data
+// URL straight out of FileReader. Anything else is treated as an existing
+// remote URL (e.g. an S3 link already stored on the quiz/question).
+function isLocalImage(value) {
+  return typeof value === "string" && value.startsWith("data:");
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Could not read file."));
+    reader.readAsDataURL(file);
+  });
+}
 
 function typeLabel(t) {
   return QUESTION_TYPES.find((x) => x.value === t)?.label ?? t;
@@ -256,9 +271,12 @@ function ImageUploader({
     setError("");
     setUploading(true);
     try {
-      onChange(await uploadApi.uploadFile(file, folder));
+      // Just read it locally for preview — it's only uploaded to S3 once the
+      // quiz/question is actually saved, so half-finished edits never leave
+      // orphaned files in the bucket.
+      onChange(await readFileAsDataUrl(file));
     } catch (err) {
-      setError(err.message || "Upload failed.");
+      setError(err.message || "Couldn't read that file.");
     } finally {
       setUploading(false);
     }
@@ -379,9 +397,7 @@ function ImageUploader({
               }}
             >
               <Spinner size={24} />
-              <span style={{ fontSize: 13, color: T.textMuted }}>
-                Uploading…
-              </span>
+              <span style={{ fontSize: 13, color: T.textMuted }}>Reading…</span>
             </div>
           ) : (
             <div
@@ -486,7 +502,7 @@ function QuestionForm({
         }))
       : defaultOptions(),
   );
-  const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? null);
+  const [imageUrl, setImageUrl] = useState(initial?.mediaUrl ?? null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -548,7 +564,9 @@ function QuestionForm({
         questionText: questionText.trim(),
         questionType,
         customTimer: timer,
-        imageUrl: imageUrl ?? null,
+        ...(isLocalImage(imageUrl)
+          ? { imageBase64: imageUrl }
+          : { mediaUrl: imageUrl ?? null }),
         options: isTextBased
           ? []
           : options.map((o) => ({
@@ -1002,7 +1020,7 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
             >
               {q.questionText}
             </div>
-            {q.imageUrl && (
+            {q.mediaUrl && (
               <div
                 style={{
                   borderRadius: 12,
@@ -1011,7 +1029,7 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
                 }}
               >
                 <img
-                  src={q.imageUrl}
+                  src={q.mediaUrl}
                   alt=""
                   style={{
                     width: "100%",
@@ -1228,7 +1246,9 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
         visibility,
         defaultTimer: timer,
         scheduledStartTime,
-        coverImageUrl: coverImageUrl ?? null,
+        ...(isLocalImage(coverImageUrl)
+          ? { coverImageBase64: coverImageUrl }
+          : { coverImageUrl: coverImageUrl ?? null }),
       };
       if (isEdit) {
         await quizApi.update(quiz.id, body);
@@ -2528,7 +2548,7 @@ function QuizDetailModal({ open, onClose, quiz, onQuizUpdated, role }) {
                 >
                   {idx + 1}
                 </div>
-                {q?.imageUrl && (
+                {q?.mediaUrl && (
                   <div
                     style={{
                       width: 46,
@@ -2540,7 +2560,7 @@ function QuizDetailModal({ open, onClose, quiz, onQuizUpdated, role }) {
                     }}
                   >
                     <img
-                      src={q.imageUrl}
+                      src={q.mediaUrl}
                       alt=""
                       style={{
                         width: "100%",
@@ -3097,7 +3117,7 @@ function QuestionBankPanel() {
                 e.currentTarget.style.boxShadow = "none";
               }}
             >
-              {q.imageUrl && (
+              {q.mediaUrl && (
                 <div
                   style={{
                     borderRadius: 10,
@@ -3106,7 +3126,7 @@ function QuestionBankPanel() {
                   }}
                 >
                   <img
-                    src={q.imageUrl}
+                    src={q.mediaUrl}
                     alt=""
                     style={{
                       width: "100%",

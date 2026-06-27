@@ -141,39 +141,11 @@ export const questionApi = {
   delete: (id) => request("DELETE", `/question/${id}`),
 };
 
-// ── Upload API ──────────────────────────────────────────────────────────────
-// Valid folders: quiz-covers | question-images | profile-images | notification-images
-// Sends the file as multipart/form-data; server handles the S3 upload directly.
-export const uploadApi = {
-  // Upload a File object and return the permanent CDN URL.
-  async uploadFile(file, folder) {
-    const token = await auth.currentUser?.getIdToken();
-    if (!token) throw new Error("Not authenticated");
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("folder", folder);
-
-    const res = await fetch(`${BASE}/uploads/image`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      // Do NOT set Content-Type — the browser sets it with the correct boundary.
-      body: formData,
-    });
-
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw {
-        status: res.status,
-        message: payload?.message || "Upload failed.",
-      };
-    }
-
-    const fileUrl = payload?.data?.fileUrl;
-    if (!fileUrl) throw new Error("Server did not return a file URL.");
-    return fileUrl;
-  },
-};
+// Image uploads no longer go through a separate endpoint. The dashboard
+// reads the picked file as a base64 data URL purely for local preview, and
+// only sends it to the backend (as `imageBase64` / `coverImageBase64`)
+// inside the question/quiz create or update request body — the backend
+// uploads to S3 at that point. See ImageUploader in QuizzesPage.jsx.
 
 // ── Quiz Composition API ────────────────────────────────────────────────────
 export const quizCompositionApi = {

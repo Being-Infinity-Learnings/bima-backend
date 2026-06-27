@@ -985,25 +985,6 @@ const options = {
           },
         },
 
-        // ─── Upload ─────────────────────────────────────────────────────────
-        UploadImageResponse: {
-          type: "object",
-          properties: {
-            success: { type: "boolean", example: true },
-            data: {
-              type: "object",
-              properties: {
-                url: {
-                  type: "string",
-                  description: "Public S3 URL of the uploaded image",
-                  example:
-                    "https://bima-assets.s3.ap-south-1.amazonaws.com/images/abc123.jpg",
-                },
-              },
-            },
-          },
-        },
-
         // ─── Admin ──────────────────────────────────────────────────────────
         BulkApproveRequest: {
           type: "object",
@@ -1094,13 +1075,14 @@ const quizRoutes = require("./modules/quiz/quiz.routes");
 
 const quizCompositionRoutes = require("./modules/quiz-composition/quiz-composition.routes");
 
-const uploadRoutes = require("./modules/upload/upload.routes");
-
 const app = express();
 
 app.use(cors());
 app.use(helmet());
-app.use(express.json());
+// Raised from the default 100kb limit: quiz/question create & update payloads
+// now carry base64-encoded cover/question images inline (see image.service.js),
+// so the body can be a few MB for a single request.
+app.use(express.json({ limit: "8mb" }));
 app.use(morgan("dev"));
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
@@ -1120,7 +1102,5 @@ app.use("/question", questionRoutes);
 app.use("/quiz", quizRoutes);
 
 app.use("/quiz-composition", quizCompositionRoutes);
-
-app.use("/uploads", uploadRoutes);
 
 module.exports = app;

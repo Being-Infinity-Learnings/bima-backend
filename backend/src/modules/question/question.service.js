@@ -1,6 +1,28 @@
 const prisma = require("../../config/prisma");
+const imageService = require("../upload/image.service");
+
+/**
+ * Resolves the mediaUrl for a question create/update payload.
+ * - If `imageBase64` is present, the image is uploaded to S3 now (i.e. only
+ *   once the question is actually being saved) and the resulting URL is used.
+ * - Otherwise falls back to an explicit `mediaUrl` (e.g. unchanged on edit,
+ *   or null to remove the image).
+ */
+async function resolveMediaUrl(data) {
+  if (data.imageBase64) {
+    return imageService.uploadBase64Image(data.imageBase64, "question-images");
+  }
+
+  if (data.mediaUrl !== undefined) {
+    return data.mediaUrl;
+  }
+
+  return undefined;
+}
 
 async function createQuestion(data, userId) {
+  const mediaUrl = await resolveMediaUrl(data);
+
   return prisma.$transaction(async (tx) => {
     const question = await tx.question.create({
       data: {
@@ -8,7 +30,7 @@ async function createQuestion(data, userId) {
 
         questionType: data.questionType ?? "SINGLE_CORRECT",
 
-        mediaUrl: data.mediaUrl ?? null,
+        mediaUrl: mediaUrl ?? null,
 
         customTimer: data.customTimer !== undefined ? data.customTimer : null,
 
@@ -66,6 +88,8 @@ async function getQuestionById(id) {
   });
 }
 async function updateQuestion(id, data) {
+  const mediaUrl = await resolveMediaUrl(data);
+
   return prisma.$transaction(async (tx) => {
     const updateData = {};
 
@@ -75,7 +99,7 @@ async function updateQuestion(id, data) {
     if (data.questionType !== undefined)
       updateData.questionType = data.questionType;
 
-    if (data.mediaUrl !== undefined) updateData.mediaUrl = data.mediaUrl;
+    if (mediaUrl !== undefined) updateData.mediaUrl = mediaUrl;
 
     if (data.customTimer !== undefined)
       updateData.customTimer = data.customTimer;

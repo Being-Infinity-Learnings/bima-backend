@@ -1,5 +1,25 @@
 const prisma = require("../../config/prisma");
 const validationService = require("./quiz-validation.service");
+const imageService = require("../upload/image.service");
+
+/**
+ * Resolves the coverImageUrl for a quiz create/update payload.
+ * - If `coverImageBase64` is present, the image is uploaded to S3 now (only
+ *   once the quiz is actually being saved) and the resulting URL is used.
+ * - Otherwise falls back to an explicit `coverImageUrl` (e.g. unchanged on
+ *   edit, or null to remove the image).
+ */
+async function resolveCoverImageUrl(data) {
+  if (data.coverImageBase64) {
+    return imageService.uploadBase64Image(data.coverImageBase64, "quiz-covers");
+  }
+
+  if (data.coverImageUrl !== undefined) {
+    return data.coverImageUrl;
+  }
+
+  return undefined;
+}
 
 /** Create a new quiz */
 async function createQuiz(data, userId) {
@@ -11,13 +31,15 @@ async function createQuiz(data, userId) {
     throw new Error("Default timer is required");
   }
 
+  const coverImageUrl = await resolveCoverImageUrl(data);
+
   return prisma.quiz.create({
     data: {
       title: data.title,
 
       description: data.description ?? null,
 
-      coverImageUrl: data.coverImageUrl ?? null,
+      coverImageUrl: coverImageUrl ?? null,
 
       visibility: data.visibility ?? "PUBLIC",
 
@@ -92,8 +114,8 @@ async function updateQuiz(id, data) {
 
   if (data.description !== undefined) updateData.description = data.description;
 
-  if (data.coverImageUrl !== undefined)
-    updateData.coverImageUrl = data.coverImageUrl;
+  const coverImageUrl = await resolveCoverImageUrl(data);
+  if (coverImageUrl !== undefined) updateData.coverImageUrl = coverImageUrl;
 
   if (data.visibility !== undefined) updateData.visibility = data.visibility;
 
