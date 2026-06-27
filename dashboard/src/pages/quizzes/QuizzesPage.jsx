@@ -35,6 +35,7 @@ import {
 import APP_CONFIG from "../../config/app.config.js";
 
 const T = APP_CONFIG.theme;
+const LIMITS = APP_CONFIG.quiz?.limits ?? { questionText: 120, optionText: 50 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -510,6 +511,12 @@ function QuestionForm({
       setError("Question text is required.");
       return;
     }
+    if (questionText.length > LIMITS.questionText) {
+      setError(
+        `Question text must be ${LIMITS.questionText} characters or fewer.`,
+      );
+      return;
+    }
     if (!isTextBased) {
       if (options.some((o) => !o.optionText.trim())) {
         setError("All options must have text.");
@@ -517,6 +524,15 @@ function QuestionForm({
       }
       if (!options.some((o) => o.isCorrect)) {
         setError("Mark at least one correct answer.");
+        return;
+      }
+      const longOption = options.find(
+        (o) => o.optionText.length > LIMITS.optionText,
+      );
+      if (longOption) {
+        setError(
+          `Option text must be ${LIMITS.optionText} characters or fewer.`,
+        );
         return;
       }
     }
@@ -558,17 +574,41 @@ function QuestionForm({
         }}
       >
         <div>
-          <label style={{ ...FIELD_LABEL, fontSize: 14 }}>Question text</label>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              marginBottom: 7,
+            }}
+          >
+            <label style={{ ...FIELD_LABEL, fontSize: 14, margin: 0 }}>
+              Question text
+            </label>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color:
+                  questionText.length > LIMITS.questionText
+                    ? T.danger.dot
+                    : T.textMuted,
+              }}
+            >
+              {questionText.length} / {LIMITS.questionText}
+            </span>
+          </div>
           <textarea
             value={questionText}
             onChange={(e) => setQuestionText(e.target.value)}
             placeholder="Write your question here…"
             rows={7}
+            maxLength={LIMITS.questionText}
             style={{
               width: "100%",
               boxSizing: "border-box",
               background: T.pageBg,
-              border: `1.5px solid ${T.cardBorder}`,
+              border: `1.5px solid ${questionText.length > LIMITS.questionText ? T.danger.dot : T.cardBorder}`,
               borderRadius: 12,
               padding: "14px 16px",
               color: T.textPrimary,
@@ -579,8 +619,18 @@ function QuestionForm({
               resize: "vertical",
               transition: "border-color 0.15s",
             }}
-            onFocus={(e) => (e.target.style.borderColor = T.primary)}
-            onBlur={(e) => (e.target.style.borderColor = T.cardBorder)}
+            onFocus={(e) =>
+              (e.target.style.borderColor =
+                questionText.length > LIMITS.questionText
+                  ? T.danger.dot
+                  : T.primary)
+            }
+            onBlur={(e) =>
+              (e.target.style.borderColor =
+                questionText.length > LIMITS.questionText
+                  ? T.danger.dot
+                  : T.cardBorder)
+            }
           />
         </div>
 
@@ -719,6 +769,7 @@ function QuestionForm({
                       setOption(idx, "optionText", e.target.value)
                     }
                     placeholder={`Option ${idx + 1}`}
+                    maxLength={LIMITS.optionText}
                     style={{
                       flex: 1,
                       background: "transparent",
@@ -729,6 +780,21 @@ function QuestionForm({
                       outline: "none",
                     }}
                   />
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color:
+                        opt.optionText.length > LIMITS.optionText
+                          ? T.danger.dot
+                          : T.textMuted,
+                      flexShrink: 0,
+                      minWidth: 36,
+                      textAlign: "right",
+                    }}
+                  >
+                    {opt.optionText.length}/{LIMITS.optionText}
+                  </span>
 
                   {opt.isCorrect && (
                     <span
@@ -866,20 +932,33 @@ function QuestionForm({
 
 function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
   const [editing, setEditing] = useState(false);
+  const [fullQuestion, setFullQuestion] = useState(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
   useEffect(() => {
-    if (open) setEditing(false);
+    if (open && question?.id) {
+      setEditing(false);
+      setFullQuestion(null);
+      setLoadingDetail(true);
+      questionApi
+        .getById(question.id)
+        .then((data) => setFullQuestion(data))
+        .catch(() => setFullQuestion(question))
+        .finally(() => setLoadingDetail(false));
+    }
   }, [open, question?.id]);
-  if (!question) return null;
+
+  const q = fullQuestion ?? question;
+  if (!q) return null;
 
   async function handleSave(data) {
-    await questionApi.update(question.id, data);
+    await questionApi.update(q.id, data);
     toast("Question updated.", "success");
     onSaved?.();
     onClose();
   }
 
-  const isTextBased =
-    question.questionType === "TEXT" || question.questionType === "NUMERIC";
+  const isTextBased = q.questionType === "TEXT" || q.questionType === "NUMERIC";
 
   return (
     <Modal
@@ -890,11 +969,15 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
     >
       {editing ? (
         <QuestionForm
-          initial={question}
+          initial={q}
           onSave={handleSave}
           onCancel={() => setEditing(false)}
           saveLabel="Save changes"
         />
+      ) : loadingDetail ? (
+        <div style={{ textAlign: "center", padding: 60 }}>
+          <Spinner />
+        </div>
       ) : (
         <div style={{ display: "flex", gap: 32 }}>
           <div
@@ -917,9 +1000,9 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
                 border: `1.5px solid ${T.cardBorder}`,
               }}
             >
-              {question.questionText}
+              {q.questionText}
             </div>
-            {question.imageUrl && (
+            {q.imageUrl && (
               <div
                 style={{
                   borderRadius: 12,
@@ -928,7 +1011,7 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
                 }}
               >
                 <img
-                  src={question.imageUrl}
+                  src={q.imageUrl}
                   alt=""
                   style={{
                     width: "100%",
@@ -955,7 +1038,7 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
                   Type
                 </span>
                 <Badge
-                  label={typeLabel(question.questionType)}
+                  label={typeLabel(q.questionType)}
                   customColors={T.neutral}
                 />
               </div>
@@ -964,14 +1047,14 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
                   Timer
                 </span>
                 <span style={{ fontSize: 13, color: T.textSecondary }}>
-                  {question.customTimer != null
-                    ? `${question.customTimer}s (custom)`
+                  {q.customTimer != null
+                    ? `${q.customTimer}s (custom)`
                     : "Uses quiz default"}
                 </span>
               </div>
             </div>
 
-            {!isTextBased && question.options?.length > 0 && (
+            {!isTextBased && q.options?.length > 0 && (
               <div>
                 <div style={{ ...SECTION_LABEL_STYLE, marginBottom: 12 }}>
                   Options
@@ -979,7 +1062,7 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
                 <div
                   style={{ display: "flex", flexDirection: "column", gap: 8 }}
                 >
-                  {question.options.map((opt) => (
+                  {q.options.map((opt) => (
                     <div
                       key={opt.id}
                       style={{
@@ -3048,7 +3131,13 @@ function QuestionBankPanel() {
                     color: T.textPrimary,
                     lineHeight: 1.6,
                     flex: 1,
+                    display: "-webkit-box",
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    wordBreak: "break-word",
                   }}
+                  title={q.questionText}
                 >
                   {q.questionText}
                 </div>
@@ -3090,6 +3179,7 @@ function QuestionBankPanel() {
                   {q.options.map((opt) => (
                     <span
                       key={opt.id}
+                      title={opt.optionText}
                       style={{
                         fontSize: 12,
                         padding: "3px 10px",
@@ -3099,6 +3189,11 @@ function QuestionBankPanel() {
                           : T.pageBg,
                         color: opt.isCorrect ? T.success.text : T.textMuted,
                         border: `1px solid ${opt.isCorrect ? T.success.dot + "40" : T.cardBorder}`,
+                        maxWidth: 120,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        display: "inline-block",
                       }}
                     >
                       {opt.optionText}
