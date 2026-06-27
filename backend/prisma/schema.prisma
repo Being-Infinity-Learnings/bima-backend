@@ -36,6 +36,11 @@ model User {
 
   groupMemberships UserGroup[]
   createdGroups    Group[]     @relation("GroupCreator")
+  createdQuizzes   Quiz[]      @relation("QuizCreator")
+  createdQuestions Question[]  @relation("QuestionCreator")
+
+  fcmTokens     FcmToken[]
+  notifications Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -54,20 +59,189 @@ model Group {
 
   members UserGroup[]
 
+  allowedQuizzes QuizAllowedGroup[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model UserGroup {
-
-  userId String
+  userId  String
   groupId String
 
-  user User @relation(fields: [userId],references: [id])
+  user User @relation(fields: [userId], references: [id])
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
   @@id([userId, groupId])
+}
+
+model FcmToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String // "android" | "ios"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id    String           @id @default(uuid())
+  title String
+  body  String
+  type  NotificationType @default(ANNOUNCEMENT)
+
+  // Targeting
+  targetType NotifTargetType @default(ALL)
+  groupId    String? // set when targetType = GROUP
+
+  // Scheduling
+  sendAt DateTime? // null = immediate
+  sentAt DateTime? // null = not yet sent
+  status NotifStatus @default(PENDING)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Quiz {
+  id String @id @default(uuid())
+
+  title String
+
+  description String?
+
+  coverImageUrl String?
+
+  visibility QuizVisibility @default(PUBLIC)
+
+  defaultTimer Int
+
+  status QuizStatus @default(DRAFT)
+
+  scheduledStartTime DateTime
+
+  actualStartTime DateTime?
+
+  completedAt DateTime?
+
+  createdById String
+
+  createdBy User @relation("QuizCreator", fields: [createdById], references: [id])
+
+  quizQuestions QuizQuestionMap[]
+
+  allowedGroups QuizAllowedGroup[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Question {
+  id String @id @default(uuid())
+
+  questionText String
+
+  questionType QuestionType @default(SINGLE_CORRECT)
+
+  mediaUrl String?
+
+  customTimer Int?
+
+  createdById String?
+
+  createdBy User? @relation("QuestionCreator", fields: [createdById], references: [id])
+
+  options QuestionOption[]
+
+  quizzes QuizQuestionMap[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model QuestionOption {
+  id String @id @default(uuid())
+
+  questionId String
+
+  optionText String
+
+  isCorrect Boolean @default(false)
+
+  orderIndex Int
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
+
+model QuizQuestionMap {
+  quizId String
+
+  questionId String
+
+  orderIndex Int
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([quizId, questionId])
+}
+
+model QuizAllowedGroup {
+  quizId String
+
+  groupId String
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([quizId, groupId])
+}
+
+enum NotificationType {
+  QUIZ_REMINDER
+  ANNOUNCEMENT
+  CONTEST
+  RESULT
+}
+
+enum NotifTargetType {
+  ALL
+  GROUP
+  APPROVED_ONLY
+}
+
+enum NotifStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum QuizVisibility {
+  PUBLIC
+  RESTRICTED
+}
+
+enum QuestionType {
+  SINGLE_CORRECT
+  MULTI_CORRECT
+  TEXT
+  NUMERIC
+}
+
+enum QuizStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  COMPLETED
+  CANCELLED
 }

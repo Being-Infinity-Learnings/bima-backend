@@ -1,0 +1,589 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+import '../data/quiz_dummy_data.dart';
+import '../../../config/app_config.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+class QuizLeaderboardScreen extends StatefulWidget {
+  final String quizId;
+  final Map<String, dynamic>? extra;
+
+  const QuizLeaderboardScreen({super.key, required this.quizId, this.extra});
+
+  @override
+  State<QuizLeaderboardScreen> createState() => _QuizLeaderboardScreenState();
+}
+
+class _QuizLeaderboardScreenState extends State<QuizLeaderboardScreen>
+    with TickerProviderStateMixin {
+  late AnimationController _entranceCtrl;
+  late List<Animation<double>> _rowAnims;
+  late AnimationController _countdownRingCtrl;
+
+  Timer? _autoAdvance;
+  late int _secondsLeft;
+
+  bool get _isLast => widget.extra?['isLast'] == true;
+  String? get _submittedId => widget.extra?['submittedAnswerId'] as String?;
+  String? get _correctId => widget.extra?['correctAnswerId'] as String?;
+  bool get _wasCorrect => _submittedId != null && _submittedId == _correctId;
+  bool get _didNotAnswer => _submittedId == null;
+
+  @override
+  void initState() {
+    super.initState();
+    _secondsLeft = demoLeaderboardDisplaySeconds;
+
+    _entranceCtrl = AnimationController(
+      vsync: this,
+      duration: Duration(
+        milliseconds: 300 + demoLeaderboardEntries.length * 55,
+      ),
+    );
+    _rowAnims = List.generate(demoLeaderboardEntries.length, (i) {
+      final start = (i / demoLeaderboardEntries.length) * 0.65;
+      final end = ((i + 1) / demoLeaderboardEntries.length) * 0.65 + 0.35;
+      return Tween<double>(begin: 0, end: 1).animate(
+        CurvedAnimation(
+          parent: _entranceCtrl,
+          curve: Interval(
+            start,
+            end.clamp(0.0, 1.0),
+            curve: Curves.easeOutCubic,
+          ),
+        ),
+      );
+    });
+
+    _countdownRingCtrl = AnimationController(
+      vsync: this,
+      duration: Duration(seconds: demoLeaderboardDisplaySeconds),
+    )..forward();
+
+    _entranceCtrl.forward();
+    _startAutoAdvance();
+  }
+
+  void _startAutoAdvance() {
+    _autoAdvance = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final left = _secondsLeft - 1;
+      if (left <= 0) {
+        _autoAdvance?.cancel();
+        if (mounted) context.pop();
+      } else {
+        setState(() => _secondsLeft = left);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoAdvance?.cancel();
+    _entranceCtrl.dispose();
+    _countdownRingCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      backgroundColor: AppConfig.scaffoldColor(isDark),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _TopBar(
+              isLast: _isLast,
+              secondsLeft: _secondsLeft,
+              totalSeconds: demoLeaderboardDisplaySeconds,
+              countdownCtrl: _countdownRingCtrl,
+              isDark: isDark,
+            ),
+
+            const SizedBox(height: 12),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: _AnswerResultBanner(
+                wasCorrect: _wasCorrect,
+                didNotAnswer: _didNotAnswer,
+                isDark: isDark,
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: _YourRankCallout(rank: demoUserRank, isDark: isDark),
+            ),
+
+            const SizedBox(height: 14),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'LIVE STANDINGS',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                  color: AppConfig.mutedTextColor(isDark),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                itemCount: demoLeaderboardEntries.length,
+                itemBuilder: (_, i) {
+                  final entry = demoLeaderboardEntries[i];
+                  final isYou = entry.name == 'You';
+                  return AnimatedBuilder(
+                    animation: _rowAnims[i],
+                    builder: (_, child) => Opacity(
+                      opacity: _rowAnims[i].value,
+                      child: Transform.translate(
+                        offset: Offset(0, 18 * (1 - _rowAnims[i].value)),
+                        child: child,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _LeaderboardRow(
+                        entry: entry,
+                        isYou: isYou,
+                        isDark: isDark,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            _AutoAdvanceHint(
+              isLast: _isLast,
+              secondsLeft: _secondsLeft,
+              isDark: isDark,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  final bool isLast;
+  final int secondsLeft;
+  final int totalSeconds;
+  final AnimationController countdownCtrl;
+  final bool isDark;
+
+  const _TopBar({
+    required this.isLast,
+    required this.secondsLeft,
+    required this.totalSeconds,
+    required this.countdownCtrl,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'LEADERBOARD',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                  color: AppConfig.mutedTextColor(isDark),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                isLast ? 'Final standings' : 'Live standings',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                  color: AppConfig.bodyTextColor(isDark),
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          AnimatedBuilder(
+            animation: countdownCtrl,
+            builder: (_, __) {
+              final progress = (1.0 - countdownCtrl.value).clamp(0.0, 1.0);
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 52,
+                    height: 52,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 3.5,
+                      backgroundColor: AppConfig.subtleOverlay(isDark),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppConfig.primaryColor,
+                      ),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '$secondsLeft',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: AppConfig.primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnswerResultBanner extends StatelessWidget {
+  final bool wasCorrect;
+  final bool didNotAnswer;
+  final bool isDark;
+
+  const _AnswerResultBanner({
+    required this.wasCorrect,
+    required this.didNotAnswer,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color;
+    final IconData icon;
+    final String headline;
+    final String sub;
+
+    if (didNotAnswer) {
+      color = AppConfig.mutedTextColor(isDark);
+      icon = Icons.timer_off_rounded;
+      headline = 'No answer — time ran out';
+      sub = 'Submit before the timer ends next time';
+    } else if (wasCorrect) {
+      color = AppConfig.successColor;
+      icon = Icons.check_circle_rounded;
+      headline = 'Correct! +860 pts';
+      sub = 'Speed bonus applied — great timing!';
+    } else {
+      color = AppConfig.errorColor;
+      icon = Icons.cancel_rounded;
+      headline = 'Wrong answer';
+      sub = 'You selected the wrong option, 0 points awarded';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(isDark ? 0.09 : 0.15),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.22)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  headline,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  sub,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppConfig.mutedTextColor(isDark),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _YourRankCallout extends StatelessWidget {
+  final int rank;
+  final bool isDark;
+  const _YourRankCallout({required this.rank, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppConfig.highlightRankCardStart(isDark),
+            AppConfig.highlightRankCardEnd(isDark),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppConfig.rankGold.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.emoji_events_rounded,
+            size: 20,
+            color: AppConfig.rankGold,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'Your current rank',
+            style: TextStyle(
+              fontSize: 13,
+              color: AppConfig.mutedTextColor(isDark),
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '#$rank',
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: AppConfig.rankGold,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'of $demoTotalParticipants',
+            style: TextStyle(
+              fontSize: 13,
+              color: AppConfig.mutedTextColor(isDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeaderboardRow extends StatelessWidget {
+  final DemoLeaderboardEntry entry;
+  final bool isYou;
+  final bool isDark;
+
+  const _LeaderboardRow({
+    required this.entry,
+    required this.isYou,
+    required this.isDark,
+  });
+
+  Color _rankColor(bool isDark) {
+    if (entry.rank == 1) return AppConfig.rankGold;
+    if (entry.rank == 2) return AppConfig.rankSilver;
+    if (entry.rank == 3) return AppConfig.rankBronze;
+    return AppConfig.mutedTextColor(isDark);
+  }
+
+  String get _rankLabel {
+    if (entry.rank == 1) return '🥇';
+    if (entry.rank == 2) return '🥈';
+    if (entry.rank == 3) return '🥉';
+    return '${entry.rank}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rankC = _rankColor(isDark);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: isYou
+            ? AppConfig.rankGold.withOpacity(0.08)
+            : AppConfig.cardColor(isDark),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isYou
+              ? AppConfig.rankGold.withOpacity(0.3)
+              : AppConfig.subtleOverlay(isDark),
+          width: isYou ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 34,
+            child: Text(
+              _rankLabel,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: entry.rank <= 3 ? 18 : 13,
+                fontWeight: FontWeight.w800,
+                color: rankC,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isYou
+                  ? AppConfig.rankGold.withOpacity(0.18)
+                  : AppConfig.subtleOverlay(isDark),
+              border: Border.all(
+                color: isYou
+                    ? AppConfig.rankGold.withOpacity(0.35)
+                    : AppConfig.strongOverlay(isDark),
+              ),
+            ),
+            child: Center(
+              child: Text(
+                entry.name[0],
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: isYou
+                      ? AppConfig.rankGold
+                      : AppConfig.bodyTextColor(isDark),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.name,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: isYou ? FontWeight.w800 : FontWeight.w600,
+                    color: isYou
+                        ? AppConfig.rankGold
+                        : AppConfig.bodyTextColor(isDark),
+                  ),
+                ),
+                if (entry.label != null && entry.label!.isNotEmpty) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    entry.label!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppConfig.mutedTextColor(isDark),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${entry.score}',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: isYou
+                      ? AppConfig.rankGold
+                      : AppConfig.bodyTextColor(isDark),
+                ),
+              ),
+              Text(
+                'pts',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: AppConfig.mutedTextColor(isDark),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutoAdvanceHint extends StatelessWidget {
+  final bool isLast;
+  final int secondsLeft;
+  final bool isDark;
+
+  const _AutoAdvanceHint({
+    required this.isLast,
+    required this.secondsLeft,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = isLast
+        ? 'Results in $secondsLeft s...'
+        : 'Next question in $secondsLeft s...';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.timer_outlined,
+            size: 14,
+            color: AppConfig.mutedTextColor(isDark),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppConfig.mutedTextColor(isDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -42,7 +42,16 @@ async function getAllUsers(req, res) {
 
 async function getUserById(req, res) {
   try {
-    const user = await adminService.getUserById(req.params.id);
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const user = await adminService.getUserById(id);
 
     if (!user) {
       return res.status(404).json({
@@ -54,8 +63,7 @@ async function getUserById(req, res) {
       success: true,
       data: user,
     });
-  }
-    catch (error) {
+  } catch (error) {
     return res.status(500).json({
       success: false,
       message: error.message,
@@ -67,7 +75,15 @@ async function getUserById(req, res) {
 // - Marks the target user as approved.
 async function approveUser(req, res) {
   try {
-    const user = await adminService.approveUser(req.params.id);
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+    const user = await adminService.approveUser(id);
 
     return res.status(200).json({
       success: true,
@@ -85,7 +101,16 @@ async function approveUser(req, res) {
 // - Marks the target user as blocked to prevent login/access.
 async function blockUser(req, res) {
   try {
-    const user = await adminService.blockUser(req.params.id);
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const user = await adminService.blockUser(id);
 
     return res.status(200).json({
       success: true,
@@ -103,7 +128,16 @@ async function blockUser(req, res) {
 // - Clears the blocked flag for a target user.
 async function unblockUser(req, res) {
   try {
-    const user = await adminService.unblockUser(req.params.id);
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const user = await adminService.unblockUser(id);
 
     return res.status(200).json({
       success: true,
@@ -121,7 +155,16 @@ async function unblockUser(req, res) {
 // - Validates and updates the role of a target user.
 async function updateUserRole(req, res) {
   try {
+    const { id } = req.params;
     const { role } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
     const allowedRoles = ["ADMIN", "AUTHOR", "STUDENT"];
 
     if (!role || !allowedRoles.includes(role)) {
@@ -131,11 +174,37 @@ async function updateUserRole(req, res) {
       });
     }
 
-    const user = await adminService.updateUserRole(req.params.id, role);
+    const user = await adminService.updateUserRole(id, role);
 
     return res.status(200).json({
       success: true,
       data: user,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
+// Handler: getUserGroups(req, res)
+// - Returns all groups the given user is a member of.
+async function getUserGroups(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const groups = await adminService.getUserGroups(id);
+    return res.status(200).json({
+      success: true,
+      data: groups,
     });
   } catch (error) {
     return res.status(500).json({
@@ -153,4 +222,23 @@ module.exports = {
   unblockUser,
   updateUserRole,
   getUserById,
+  getUserGroups,
 };
+
+// Handler: bulkApproveUsers(req, res)
+async function bulkApproveUsers(req, res) {
+  try {
+    const { userIds } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "userIds must be a non-empty array" });
+    }
+    const result = await adminService.bulkApproveUsers(userIds);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+Object.assign(module.exports, { bulkApproveUsers });

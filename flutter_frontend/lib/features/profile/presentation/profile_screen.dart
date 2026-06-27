@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../config/app_config.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../shared/enums/auth_status.dart';
+import '../../../shared/widgets/shared_widgets.dart';
 import 'edit_profile_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -30,21 +32,13 @@ class ProfileScreen extends ConsumerWidget {
         : '?';
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF0C0E14)
-          : const Color(0xFFF5F6FA),
+      backgroundColor: AppConfig.scaffoldColor(isDark),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: isDark
-                ? [
-                    const Color(0xFF0C0E14),
-                    const Color(0xFF131720),
-                    const Color(0xFF0F1219),
-                  ]
-                : [const Color(0xFFF5F6FA), const Color(0xFFEEF0F7)],
+            colors: AppConfig.backgroundGradient(isDark),
           ),
         ),
         child: SafeArea(
@@ -253,7 +247,7 @@ class ProfileScreen extends ConsumerWidget {
 
                     const SizedBox(height: 10),
 
-                    // ── Logout button ────────────────────────────────────
+                    // ── Logout button — shows confirmation first ──────────
                     _ActionButton(
                       isDark: isDark,
                       icon: Icons.logout_rounded,
@@ -261,7 +255,19 @@ class ProfileScreen extends ConsumerWidget {
                       iconColor: const Color(0xFFFF6B6B),
                       isDestructive: true,
                       onTap: () async {
-                        await ref.read(authProvider.notifier).logout();
+                        final confirmed = await showConfirmationSheet(
+                          context,
+                          title: 'Log Out?',
+                          message:
+                              'You will be signed out of your account. You can log back in anytime.',
+                          confirmLabel: 'Log Out',
+                          icon: Icons.logout_rounded,
+                          isDestructive: true,
+                        );
+
+                        if (confirmed == true) {
+                          await ref.read(authProvider.notifier).logout();
+                        }
                       },
                     ),
 

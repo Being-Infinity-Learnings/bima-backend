@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/providers/auth_provider.dart';
+import '../../../shared/widgets/shared_widgets.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
@@ -20,6 +21,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
   String? _selectedGender;
 
+  // Track whether the form has been changed from the original values
+  bool _hasChanges = false;
+
   @override
   void initState() {
     super.initState();
@@ -29,19 +33,55 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _collegeCtrl = TextEditingController(text: user.collegeName);
     _rollCtrl = TextEditingController(text: user.rollNumber);
     _selectedGender = user.gender;
+
+    // Listen for changes to enable the save button
+    for (final ctrl in [_nameCtrl, _emailCtrl, _collegeCtrl, _rollCtrl]) {
+      ctrl.addListener(_onFieldChanged);
+    }
+  }
+
+  void _onFieldChanged() {
+    final user = ref.read(authProvider).user!;
+    final changed =
+        _nameCtrl.text.trim() != user.fullName ||
+        _emailCtrl.text.trim() != (user.email ?? '') ||
+        _collegeCtrl.text.trim() != user.collegeName ||
+        _rollCtrl.text.trim() != user.rollNumber ||
+        _selectedGender != user.gender;
+
+    if (changed != _hasChanges) {
+      setState(() => _hasChanges = changed);
+    }
+
+    // Clear error on typing
+    if (ref.read(authProvider).errorMessage != null) {
+      ref.read(authProvider.notifier).clearError();
+    }
   }
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _emailCtrl.dispose();
-    _collegeCtrl.dispose();
-    _rollCtrl.dispose();
+    for (final ctrl in [_nameCtrl, _emailCtrl, _collegeCtrl, _rollCtrl]) {
+      ctrl.removeListener(_onFieldChanged);
+      ctrl.dispose();
+    }
     super.dispose();
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Ask for confirmation before saving changes
+    final confirmed = await showConfirmationSheet(
+      context,
+      title: 'Save Changes?',
+      message: 'Your profile information will be updated.',
+      confirmLabel: 'Save Changes',
+      icon: Icons.save_outlined,
+    );
+
+    if (confirmed != true) return;
+
     try {
       await ref
           .read(authProvider.notifier)
@@ -52,12 +92,58 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             collegeName: _collegeCtrl.text.trim(),
             rollNumber: _rollCtrl.text.trim(),
           );
+
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Profile updated')));
+
+      // Show success snackbar
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(
+                Icons.check_circle_outline_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+              SizedBox(width: 10),
+              Text('Profile updated successfully'),
+            ],
+          ),
+          backgroundColor: const Color(0xFF22C55E),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+
       Navigator.pop(context);
-    } catch (_) {}
+    } catch (_) {
+      // Error is already set in the provider state — displayed via ErrorBanner
+    }
+  }
+
+  /// Handles back navigation, prompting user if they have unsaved changes.
+  Future<void> _handleBack() async {
+    if (!_hasChanges) {
+      Navigator.pop(context);
+      return;
+    }
+
+    final confirmed = await showConfirmationSheet(
+      context,
+      title: 'Discard Changes?',
+      message: 'You have unsaved changes. If you leave now, they will be lost.',
+      confirmLabel: 'Discard',
+      cancelLabel: 'Keep Editing',
+      icon: Icons.warning_amber_rounded,
+      isDestructive: true,
+    );
+
+    if (confirmed == true && mounted) {
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -65,290 +151,363 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final authState = ref.watch(authProvider);
 
-    return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF0C0E14)
-          : const Color(0xFFF5F6FA),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isDark
-                ? [
-                    const Color(0xFF0C0E14),
-                    const Color(0xFF131720),
-                    const Color(0xFF0F1219),
-                  ]
-                : [const Color(0xFFF5F6FA), const Color(0xFFEEF0F7)],
+    final isNoInternet =
+        authState.errorMessage?.toLowerCase().contains('internet') ?? false;
+
+    return PopScope(
+      canPop: !_hasChanges,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (!didPop) {
+          await _handleBack();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: isDark
+            ? const Color(0xFF0C0E14)
+            : const Color(0xFFF5F6FA),
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isDark
+                  ? [
+                      const Color(0xFF0C0E14),
+                      const Color(0xFF131720),
+                      const Color(0xFF0F1219),
+                    ]
+                  : [const Color(0xFFF5F6FA), const Color(0xFFEEF0F7)],
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // ── Custom app bar ───────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
-                ),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? const Color(0xFF161B26)
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
+          child: SafeArea(
+            child: Column(
+              children: [
+                // ── Custom app bar ───────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: _handleBack,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
                             color: isDark
-                                ? const Color(0xFFFFFFFF).withOpacity(0.06)
-                                : const Color(0xFF000000).withOpacity(0.06),
+                                ? const Color(0xFF161B26)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFFFFFFFF).withOpacity(0.06)
+                                  : const Color(0xFF000000).withOpacity(0.06),
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.arrow_back_rounded,
+                            size: 20,
+                            color: isDark
+                                ? Colors.white
+                                : const Color(0xFF0C0E14),
                           ),
                         ),
-                        child: Icon(
-                          Icons.arrow_back_rounded,
-                          size: 20,
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        'Edit Profile',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.4,
                           color: isDark
                               ? Colors.white
                               : const Color(0xFF0C0E14),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Text(
-                      'Edit Profile',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.4,
-                        color: isDark ? Colors.white : const Color(0xFF0C0E14),
-                      ),
-                    ),
-                  ],
+
+                      // Unsaved-changes indicator dot
+                      if (_hasChanges) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFC8FF57),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
 
-              // ── Form ────────────────────────────────────────────────
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 500),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _SectionLabel(
-                              label: 'PERSONAL INFO',
-                              isDark: isDark,
-                            ),
-                            const SizedBox(height: 14),
+                // Error banner (outside scroll to stay visible)
+                if (authState.errorMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: isNoInternet
+                        ? const NoInternetBanner()
+                        : ErrorBanner(message: authState.errorMessage!),
+                  ),
 
-                            _InputCard(
-                              isDark: isDark,
-                              children: [
-                                _FieldRow(
-                                  isDark: isDark,
-                                  icon: Icons.person_outline,
-                                  iconColor: const Color(0xFFC8FF57),
-                                  label: 'Full Name',
-                                  child: TextFormField(
-                                    controller: _nameCtrl,
-                                    style: _inputStyle(isDark),
-                                    decoration: _inputDecoration(
-                                      isDark,
-                                      hint: 'Your full name',
-                                    ),
-                                    validator: (v) =>
-                                        (v == null || v.trim().isEmpty)
-                                        ? 'Required'
-                                        : null,
-                                  ),
-                                  isLast: false,
-                                ),
-                                _FieldRow(
-                                  isDark: isDark,
-                                  icon: Icons.email_outlined,
-                                  iconColor: const Color(0xFF6C8EFF),
-                                  label: 'Email',
-                                  child: TextFormField(
-                                    controller: _emailCtrl,
-                                    keyboardType: TextInputType.emailAddress,
-                                    style: _inputStyle(isDark),
-                                    decoration: _inputDecoration(
-                                      isDark,
-                                      hint: 'your@email.com',
-                                    ),
-                                    validator: (v) =>
-                                        (v == null || v.trim().isEmpty)
-                                        ? 'Required'
-                                        : null,
-                                  ),
-                                  isLast: true,
-                                ),
-                              ],
-                            ),
+                // ── Form ────────────────────────────────────────────────
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 500),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SectionLabel(
+                                label: 'PERSONAL INFO',
+                                isDark: isDark,
+                              ),
+                              const SizedBox(height: 14),
 
-                            const SizedBox(height: 24),
-
-                            _SectionLabel(
-                              label: 'ACADEMIC INFO',
-                              isDark: isDark,
-                            ),
-                            const SizedBox(height: 14),
-
-                            _InputCard(
-                              isDark: isDark,
-                              children: [
-                                _FieldRow(
-                                  isDark: isDark,
-                                  icon: Icons.school_outlined,
-                                  iconColor: const Color(0xFFFFD166),
-                                  label: 'College',
-                                  child: TextFormField(
-                                    controller: _collegeCtrl,
-                                    style: _inputStyle(isDark),
-                                    decoration: _inputDecoration(
-                                      isDark,
-                                      hint: 'Your college name',
-                                    ),
-                                  ),
-                                  isLast: false,
-                                ),
-                                _FieldRow(
-                                  isDark: isDark,
-                                  icon: Icons.badge_outlined,
-                                  iconColor: const Color(0xFFFF6B6B),
-                                  label: 'Roll Number',
-                                  child: TextFormField(
-                                    controller: _rollCtrl,
-                                    style: _inputStyle(isDark),
-                                    decoration: _inputDecoration(
-                                      isDark,
-                                      hint: 'e.g. 2022CSE042',
-                                    ),
-                                  ),
-                                  isLast: false,
-                                ),
-                                _FieldRow(
-                                  isDark: isDark,
-                                  icon: Icons.person_outline,
-                                  iconColor: const Color(0xFF6C8EFF),
-                                  label: 'Gender',
-                                  child: DropdownButtonFormField<String>(
-                                    value: _selectedGender,
-                                    style: _inputStyle(isDark),
-                                    dropdownColor: isDark
-                                        ? const Color(0xFF1E2535)
-                                        : Colors.white,
-                                    decoration: _inputDecoration(
-                                      isDark,
-                                      hint: 'Select gender',
-                                    ),
-                                    icon: Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: isDark
-                                          ? const Color(0xFF7A8499)
-                                          : const Color(0xFF9CA3AF),
-                                    ),
-                                    items: const [
-                                      DropdownMenuItem(
-                                        value: 'Male',
-                                        child: Text('Male'),
+                              _InputCard(
+                                isDark: isDark,
+                                children: [
+                                  _FieldRow(
+                                    isDark: isDark,
+                                    icon: Icons.person_outline,
+                                    iconColor: const Color(0xFFC8FF57),
+                                    label: 'Full Name',
+                                    child: TextFormField(
+                                      controller: _nameCtrl,
+                                      textCapitalization:
+                                          TextCapitalization.words,
+                                      style: _inputStyle(isDark),
+                                      decoration: _inputDecoration(
+                                        isDark,
+                                        hint: 'Your full name',
                                       ),
-                                      DropdownMenuItem(
-                                        value: 'Female',
-                                        child: Text('Female'),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'Other',
-                                        child: Text('Other'),
-                                      ),
-                                    ],
-                                    onChanged: (value) =>
-                                        setState(() => _selectedGender = value),
+                                      validator: (v) {
+                                        if (v == null || v.trim().isEmpty) {
+                                          return 'Full name is required';
+                                        }
+                                        if (v.trim().length < 2) {
+                                          return 'Name must be at least 2 characters';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    isLast: false,
                                   ),
-                                  isLast: true,
-                                ),
-                              ],
-                            ),
+                                  _FieldRow(
+                                    isDark: isDark,
+                                    icon: Icons.email_outlined,
+                                    iconColor: const Color(0xFF6C8EFF),
+                                    label: 'Email',
+                                    child: TextFormField(
+                                      controller: _emailCtrl,
+                                      keyboardType: TextInputType.emailAddress,
+                                      autocorrect: false,
+                                      style: _inputStyle(isDark),
+                                      decoration: _inputDecoration(
+                                        isDark,
+                                        hint: 'your@email.com',
+                                      ),
+                                      validator: (v) {
+                                        if (v == null || v.trim().isEmpty) {
+                                          return 'Email is required';
+                                        }
+                                        if (!RegExp(
+                                          r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                                        ).hasMatch(v.trim())) {
+                                          return 'Enter a valid email address';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    isLast: true,
+                                  ),
+                                ],
+                              ),
 
-                            const SizedBox(height: 32),
+                              const SizedBox(height: 24),
 
-                            // ── Save button ──────────────────────────
-                            GestureDetector(
-                              onTap: authState.isLoading ? null : _save,
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                decoration: BoxDecoration(
-                                  gradient: authState.isLoading
-                                      ? null
-                                      : const LinearGradient(
-                                          colors: [
-                                            Color(0xFFC8FF57),
-                                            Color(0xFF8AE600),
-                                          ],
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
+                              _SectionLabel(
+                                label: 'ACADEMIC INFO',
+                                isDark: isDark,
+                              ),
+                              const SizedBox(height: 14),
+
+                              _InputCard(
+                                isDark: isDark,
+                                children: [
+                                  _FieldRow(
+                                    isDark: isDark,
+                                    icon: Icons.school_outlined,
+                                    iconColor: const Color(0xFFFFD166),
+                                    label: 'College',
+                                    child: TextFormField(
+                                      controller: _collegeCtrl,
+                                      textCapitalization:
+                                          TextCapitalization.words,
+                                      style: _inputStyle(isDark),
+                                      decoration: _inputDecoration(
+                                        isDark,
+                                        hint: 'Your college name',
+                                      ),
+                                      validator: (v) =>
+                                          (v == null || v.trim().isEmpty)
+                                          ? 'College name is required'
+                                          : null,
+                                    ),
+                                    isLast: false,
+                                  ),
+                                  _FieldRow(
+                                    isDark: isDark,
+                                    icon: Icons.badge_outlined,
+                                    iconColor: const Color(0xFFFF6B6B),
+                                    label: 'Roll Number',
+                                    child: TextFormField(
+                                      controller: _rollCtrl,
+                                      textCapitalization:
+                                          TextCapitalization.characters,
+                                      style: _inputStyle(isDark),
+                                      decoration: _inputDecoration(
+                                        isDark,
+                                        hint: 'e.g. 2022CSE042',
+                                      ),
+                                      validator: (v) =>
+                                          (v == null || v.trim().isEmpty)
+                                          ? 'Roll number is required'
+                                          : null,
+                                    ),
+                                    isLast: false,
+                                  ),
+                                  _FieldRow(
+                                    isDark: isDark,
+                                    icon: Icons.person_outline,
+                                    iconColor: const Color(0xFF6C8EFF),
+                                    label: 'Gender',
+                                    child: DropdownButtonFormField<String>(
+                                      value: _selectedGender,
+                                      style: _inputStyle(isDark),
+                                      dropdownColor: isDark
+                                          ? const Color(0xFF1E2535)
+                                          : Colors.white,
+                                      decoration: _inputDecoration(
+                                        isDark,
+                                        hint: 'Select gender',
+                                      ),
+                                      icon: Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: isDark
+                                            ? const Color(0xFF7A8499)
+                                            : const Color(0xFF9CA3AF),
+                                      ),
+                                      items: const [
+                                        DropdownMenuItem(
+                                          value: 'Male',
+                                          child: Text('Male'),
                                         ),
-                                  color: authState.isLoading
-                                      ? (isDark
-                                            ? const Color(0xFF161B26)
-                                            : const Color(0xFFE5E7EB))
-                                      : null,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: authState.isLoading
-                                      ? null
-                                      : [
-                                          BoxShadow(
-                                            color: const Color(
-                                              0xFFC8FF57,
-                                            ).withOpacity(0.3),
-                                            blurRadius: 16,
-                                            offset: const Offset(0, 6),
-                                          ),
-                                        ],
-                                ),
-                                child: Center(
-                                  child: authState.isLoading
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Color(0xFF7A8499),
-                                          ),
-                                        )
-                                      : const Text(
-                                          'Save Changes',
-                                          style: TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w800,
-                                            color: Color(0xFF0C0E14),
-                                            letterSpacing: -0.2,
-                                          ),
+                                        DropdownMenuItem(
+                                          value: 'Female',
+                                          child: Text('Female'),
                                         ),
+                                        DropdownMenuItem(
+                                          value: 'Other',
+                                          child: Text('Other'),
+                                        ),
+                                      ],
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _selectedGender = value;
+                                        });
+                                        _onFieldChanged();
+                                      },
+                                    ),
+                                    isLast: true,
+                                  ),
+                                ],
+                              ),
+
+                              const SizedBox(height: 32),
+
+                              // ── Save button ──────────────────────────
+                              GestureDetector(
+                                onTap: (authState.isLoading || !_hasChanges)
+                                    ? null
+                                    : _save,
+                                child: AnimatedOpacity(
+                                  opacity: _hasChanges ? 1.0 : 0.4,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      gradient: authState.isLoading
+                                          ? null
+                                          : const LinearGradient(
+                                              colors: [
+                                                Color(0xFFC8FF57),
+                                                Color(0xFF8AE600),
+                                              ],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                      color: authState.isLoading
+                                          ? (isDark
+                                                ? const Color(0xFF161B26)
+                                                : const Color(0xFFE5E7EB))
+                                          : null,
+                                      borderRadius: BorderRadius.circular(16),
+                                      boxShadow:
+                                          authState.isLoading || !_hasChanges
+                                          ? null
+                                          : [
+                                              BoxShadow(
+                                                color: const Color(
+                                                  0xFFC8FF57,
+                                                ).withOpacity(0.3),
+                                                blurRadius: 16,
+                                                offset: const Offset(0, 6),
+                                              ),
+                                            ],
+                                    ),
+                                    child: Center(
+                                      child: authState.isLoading
+                                          ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Color(0xFF7A8499),
+                                              ),
+                                            )
+                                          : const Text(
+                                              'Save Changes',
+                                              style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w800,
+                                                color: Color(0xFF0C0E14),
+                                                letterSpacing: -0.2,
+                                              ),
+                                            ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -384,7 +543,7 @@ class _InputCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Field Row — icon + label stacked above input
+// Field Row
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _FieldRow extends StatelessWidget {

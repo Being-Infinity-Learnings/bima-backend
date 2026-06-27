@@ -2,6 +2,8 @@
 // - `registerProfile` creates a profile for the currently authenticated Firebase user
 // - `me` returns the authenticated user's database profile
 
+const { Prisma } = require("@prisma/client");
+
 const {
   registerProfileSchema,
   updateProfileSchema,
@@ -36,9 +38,43 @@ async function registerProfile(req, res) {
       data: user,
     });
   } catch (error) {
+    console.error(error);
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const field = error.meta?.target?.[0];
+
+      let message = "A record already exists.";
+
+      switch (field) {
+        case "email":
+          message = "A user with this email already exists.";
+          break;
+
+        case "phone":
+          message = "A user with this phone number already exists.";
+          break;
+
+        case "rollNumber":
+          message = "This roll number is already registered.";
+          break;
+
+        case "firebaseUid":
+          message = "This account is already registered.";
+          break;
+      }
+
+      return res.status(409).json({
+        success: false,
+        error: message,
+      });
+    }
+
     return res.status(400).json({
       success: false,
-      error: error.message,
+      error: "Unable to complete registration.",
     });
   }
 }
@@ -86,9 +122,39 @@ async function updateProfile(req, res) {
       data: updatedUser,
     });
   } catch (error) {
+    console.error(error);
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const field = error.meta?.target?.[0];
+
+      let message = "A record already exists.";
+
+      switch (field) {
+        case "email":
+          message = "A user with this email already exists.";
+          break;
+
+        case "phone":
+          message = "A user with this phone number already exists.";
+          break;
+
+        case "rollNumber":
+          message = "This roll number is already registered.";
+          break;
+      }
+
+      return res.status(409).json({
+        success: false,
+        error: message,
+      });
+    }
+
     return res.status(400).json({
       success: false,
-      error: error.message,
+      error: "Unable to update profile.",
     });
   }
 }

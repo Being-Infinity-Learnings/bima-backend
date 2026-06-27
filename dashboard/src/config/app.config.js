@@ -14,8 +14,17 @@ export const APP_CONFIG = {
 
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL || "http://localhost:3000",
 
+  quiz: {
+    limits: {
+      questionText: 120,
+      optionText: 50,
+      quizTitle: 50,
+      quizDescription: 120,
+    },
+  },
+
   theme: {
-    primary: "#b5e82c",
+    primary: "#87ae1a",
     primaryDark: "#6c891d",
     primaryLight: "#5d7a0c",
     primaryText: "#e0f2fe",

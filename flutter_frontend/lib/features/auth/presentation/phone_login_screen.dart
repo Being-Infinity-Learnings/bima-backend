@@ -1,13 +1,11 @@
-/// Login screen for users to sign into the application.
-///
-/// This screen renders the email/password form and triggers auth actions.
+/// Login screen for users to sign into the application via phone OTP.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/widgets/shared_widgets.dart';
 import '../providers/auth_provider.dart';
-
+import '../../../config/app_config.dart';
 import '../../../shared/enums/auth_status.dart';
 
 class PhoneLoginScreen extends ConsumerStatefulWidget {
@@ -42,7 +40,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
     super.dispose();
   }
 
-  /// Validates the login form and sends the sign-in request.
+  /// Validates the login form and sends the OTP request.
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -54,7 +52,6 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
   }
 
   @override
-  /// Builds the login page UI and listens for auth state changes.
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
@@ -62,6 +59,10 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     final authState = ref.watch(authProvider);
+
+    // Detect if the error is a connectivity error so we show the right banner
+    final isNoInternet =
+        authState.errorMessage?.toLowerCase().contains('internet') ?? false;
 
     ref.listen(authProvider, (previous, next) {
       if (next.verificationId != null) {
@@ -92,9 +93,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: isDark
-                ? [const Color(0xFF0F1117), const Color(0xFF161B22)]
-                : [const Color(0xFFF8F9FC), const Color(0xFFF2F4F9)],
+            colors: AppConfig.backgroundGradient(isDark),
           ),
         ),
         child: SafeArea(
@@ -151,7 +150,11 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                             if (authState.errorMessage != null) ...[
                               const SizedBox(height: 20),
 
-                              ErrorBanner(message: authState.errorMessage!),
+                              // Show the right banner based on error type
+                              if (isNoInternet)
+                                const NoInternetBanner()
+                              else
+                                ErrorBanner(message: authState.errorMessage!),
 
                               const SizedBox(height: 20),
                             ],
@@ -172,8 +175,10 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                                   return 'Mobile number is required';
                                 }
 
-                                if (value.trim().length != 10) {
-                                  return 'Enter a valid mobile number';
+                                if (!RegExp(
+                                  r'^[6-9]\d{9}$',
+                                ).hasMatch(value.trim())) {
+                                  return 'Enter a valid 10-digit Indian mobile number';
                                 }
 
                                 return null;
@@ -185,7 +190,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                             SizedBox(
                               width: double.infinity,
                               child: PrimaryButton(
-                                label: 'Continue',
+                                label: 'Send OTP',
                                 loading: authState.isLoading,
                                 onPressed: _submit,
                               ),

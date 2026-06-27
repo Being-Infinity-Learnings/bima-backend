@@ -19,7 +19,7 @@ class AppTheme {
 
     return _buildTheme(
       colorScheme: colorScheme,
-      scaffoldColor: const Color(0xFFF7F8FC),
+      scaffoldColor: AppConfig.scaffoldColor(false),
       cardColor: Colors.white,
       inputFillColor: Colors.white,
     );
@@ -33,9 +33,9 @@ class AppTheme {
 
     return _buildTheme(
       colorScheme: colorScheme,
-      scaffoldColor: const Color(0xFF0F1117),
-      cardColor: const Color(0xFF1A1D24),
-      inputFillColor: const Color(0xFF232733),
+      scaffoldColor: AppConfig.scaffoldColor(true),
+      cardColor: AppConfig.cardColor(true),
+      inputFillColor: AppConfig.inputFillColor(true),
     );
   }
 

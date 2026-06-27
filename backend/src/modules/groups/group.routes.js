@@ -469,4 +469,172 @@ router.delete(
   groupController.deleteGroup,
 );
 
+/**
+ * @swagger
+ * /groups/{groupId}/bulk-assign:
+ *   post:
+ *     summary: Bulk-assign users to a group by user ID array
+ *     description: >
+ *       Adds multiple users to the group in a single operation.
+ *       Users already in the group are counted as skipped (not an error).
+ *       UUIDs that do not correspond to any user are counted as notFound.
+ *     tags: [Groups]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: UUID of the target group
+ *         example: "802ff6e6-7b1b-4f1a-9515-305fb6a04a8f"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userIds]
+ *             properties:
+ *               userIds:
+ *                 type: array
+ *                 minItems: 1
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 description: UUIDs of users to add to the group
+ *                 example:
+ *                   - "3d0dbd70-4104-4a0f-995a-4e9e4e2e3d8b"
+ *                   - "6c3aa914-04bb-4d64-876f-f34b9d890df5"
+ *     responses:
+ *       200:
+ *         description: Bulk assignment completed — returns added/skipped/notFound counts
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BulkAssignResponse'
+ *             example:
+ *               success: true
+ *               data:
+ *                 added: 1
+ *                 skipped: 1
+ *                 notFound: 0
+ *       400:
+ *         description: groupId missing, userIds not supplied, or group not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: Missing or invalid Bearer token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Forbidden — requires ADMIN role
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Unexpected server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post(
+  "/:groupId/bulk-assign",
+  authenticate,
+  authorize("ADMIN"),
+  groupController.bulkAssignUsersByIds,
+);
+
+/**
+ * @swagger
+ * /groups/{groupId}/bulk-assign-by-file:
+ *   post:
+ *     summary: Bulk-assign users to a group by email or phone identifiers
+ *     description: >
+ *       Looks up users by email address or phone number (E.164 format) and adds
+ *       them to the group. Identifiers that match no user are counted as notFound.
+ *       Users already in the group are counted as skipped.
+ *     tags: [Groups]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: UUID of the target group
+ *         example: "802ff6e6-7b1b-4f1a-9515-305fb6a04a8f"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [identifiers]
+ *             properties:
+ *               identifiers:
+ *                 type: array
+ *                 minItems: 1
+ *                 items:
+ *                   type: string
+ *                 description: >
+ *                   Array of email addresses or E.164 phone numbers used to look up users
+ *                 example:
+ *                   - "student1@example.com"
+ *                   - "+919876543210"
+ *     responses:
+ *       200:
+ *         description: Bulk assignment completed — returns added/skipped/notFound counts
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BulkAssignResponse'
+ *             example:
+ *               success: true
+ *               data:
+ *                 added: 1
+ *                 skipped: 0
+ *                 notFound: 1
+ *       400:
+ *         description: groupId missing, identifiers not supplied, or group not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: Missing or invalid Bearer token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Forbidden — requires ADMIN role
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Unexpected server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post(
+  "/:groupId/bulk-assign-by-file",
+  authenticate,
+  authorize("ADMIN"),
+  groupController.bulkAssignUsersByFile,
+);
+
 module.exports = router;

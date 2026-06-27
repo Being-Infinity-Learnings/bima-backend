@@ -1,19 +1,23 @@
-// This file Verifies incoming requests by validating the Firebase ID token
-// and attaching both the decoded Firebase token and corresponding
-// database user record (if any) to `req` for downstream handlers.
+/**
+ * auth.middleware.js
+ *
+ * Verifies incoming requests by validating the Firebase ID token and
+ * attaching both the decoded Firebase token and the corresponding database
+ * user record (including group memberships) to `req` for downstream handlers.
+ *
+ * `req.dbUser` shape:
+ *   id, firebaseUid, email, phone, fullName, gender, collegeName,
+ *   rollNumber, role, approved, blocked, createdAt, updatedAt,
+ *   groupMemberships: [{ groupId, userId, createdAt }]
+ *
+ * The groupMemberships relation is included here (rather than in each
+ * controller) so that every protected route can use it for notification
+ * targeting, permission checks, etc. without extra round-trips.
+ */
 
 const admin = require("../config/firebase");
-
 const prisma = require("../config/prisma");
 
-// Middleware: authenticate
-// - Reads the `Authorization` header for a Bearer token
-// - Verifies the Firebase ID token via `admin.auth().verifyIdToken`
-// - Looks up the matching user record in the database
-// - Attaches `req.user` (decoded Firebase token) and `req.dbUser`
-//   (Prisma user record) to the request object
-// - Returns appropriate 401/403/404 responses for invalid tokens,
-//   blocked accounts, or missing profiles
 async function authenticate(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -29,9 +33,14 @@ async function authenticate(req, res, next) {
 
     const decoded = await admin.auth().verifyIdToken(token);
 
+    // Include groupMemberships so controllers can use them for audience
+    // checks (e.g. notification targeting) without a second query.
     const user = await prisma.user.findUnique({
-      where: {
-        firebaseUid: decoded.uid,
+      where: { firebaseUid: decoded.uid },
+      include: {
+        groupMemberships: {
+          select: { groupId: true },
+        },
       },
     });
 

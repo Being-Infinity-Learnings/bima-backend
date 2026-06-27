@@ -1,5 +1,4 @@
-// Not in use 
-
+// Not in use
 
 /// Login screen for users to sign into the application.
 ///
@@ -7,7 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
+import '../../../config/app_config.dart';
 import '../../../shared/widgets/shared_widgets.dart';
 import '../providers/auth_provider.dart';
 
@@ -98,9 +97,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: isDark
-                ? [const Color(0xFF0F1117), const Color(0xFF161B22)]
-                : [const Color(0xFFF8F9FC), const Color(0xFFF2F4F9)],
+            colors: AppConfig.backgroundGradient(isDark),
           ),
         ),
         child: SafeArea(
