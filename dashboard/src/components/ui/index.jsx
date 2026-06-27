@@ -169,11 +169,15 @@ export function Input({ label, error: err, style: s = {}, ...props }) {
       {label && (
         <label
           style={{
+            display: "flex",
+            alignItems: "flex-end",
+            minHeight: 32,
             fontSize: 12,
             fontWeight: 700,
             color: T.textSecondary,
             textTransform: "uppercase",
             letterSpacing: "0.06em",
+            boxSizing: "border-box",
           }}
         >
           {label}
@@ -250,11 +254,15 @@ export function Select({ label, options, style: s = {}, ...props }) {
       {label && (
         <label
           style={{
+            display: "flex",
+            alignItems: "flex-end",
+            minHeight: 32,
             fontSize: 12,
             fontWeight: 700,
             color: T.textSecondary,
             textTransform: "uppercase",
             letterSpacing: "0.06em",
+            boxSizing: "border-box",
           }}
         >
           {label}

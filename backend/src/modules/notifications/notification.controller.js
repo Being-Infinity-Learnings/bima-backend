@@ -89,23 +89,6 @@ async function listNotifications(req, res) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// User feed: GET /notifications/my
-//
-// BUG FIX: previously returned ALL sent notifications to every user.
-// Now correctly filters by targetType and the user's group memberships.
-//
-// Query params (all optional):
-//   type      – NotificationType filter  (e.g. ANNOUNCEMENT, QUIZ_REMINDER)
-//   dateFrom  – ISO date string, start of range (inclusive)
-//   dateTo    – ISO date string, end of range   (inclusive, end of day)
-//   cursor    – Pagination cursor (last seen notification id)
-//   limit     – Items per page (default: DEFAULT_PAGE_SIZE, max: MAX_PAGE_SIZE)
-//
-// Response shape:
-//   { success: true, data: { items: [...], nextCursor: string|null } }
-// ─────────────────────────────────────────────────────────────────────────────
-
 // Handler: getMyNotifications(req, res)
 // - Returns the authenticated user's notification feed with filtering and pagination.
 async function getMyNotifications(req, res) {
