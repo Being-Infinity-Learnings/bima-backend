@@ -18,6 +18,8 @@ export const APP_CONFIG = {
     limits: {
       questionText: 120,
       optionText: 50,
+      quizTitle: 50,
+      quizDescription: 120,
     },
   },
 

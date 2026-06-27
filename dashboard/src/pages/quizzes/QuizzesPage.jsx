@@ -34,7 +34,12 @@ import {
 import APP_CONFIG from "../../config/app.config.js";
 
 const T = APP_CONFIG.theme;
-const LIMITS = APP_CONFIG.quiz?.limits ?? { questionText: 120, optionText: 50 };
+const LIMITS = APP_CONFIG.quiz?.limits ?? {
+  questionText: 120,
+  optionText: 50,
+  quizTitle: 50,
+  quizDescription: 120,
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1224,6 +1229,16 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
       setError("Title is required.");
       return;
     }
+    if (title.length > LIMITS.quizTitle) {
+      setError(`Title must be ${LIMITS.quizTitle} characters or fewer.`);
+      return;
+    }
+    if (description.length > LIMITS.quizDescription) {
+      setError(
+        `Description must be ${LIMITS.quizDescription} characters or fewer.`,
+      );
+      return;
+    }
     const timer = parseInt(defaultTimer, 10);
     if (!timer || timer <= 0) {
       setError("Default timer must be a positive number.");
@@ -1330,37 +1345,112 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
             }}
           >
             <div>
-              <label style={{ ...FIELD_LABEL, fontSize: 14 }}>Title</label>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  marginBottom: 7,
+                }}
+              >
+                <label style={{ ...FIELD_LABEL, fontSize: 14, margin: 0 }}>
+                  Title
+                </label>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color:
+                      title.length > LIMITS.quizTitle
+                        ? T.danger.dot
+                        : T.textMuted,
+                  }}
+                >
+                  {title.length} / {LIMITS.quizTitle}
+                </span>
+              </div>
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Biology Chapter 3"
-                style={{ ...INPUT_BASE, fontSize: 15 }}
-                onFocus={(e) => (e.target.style.borderColor = T.primary)}
-                onBlur={(e) => (e.target.style.borderColor = T.cardBorder)}
+                maxLength={LIMITS.quizTitle}
+                style={{
+                  ...INPUT_BASE,
+                  fontSize: 15,
+                  borderColor:
+                    title.length > LIMITS.quizTitle
+                      ? T.danger.dot
+                      : T.cardBorder,
+                }}
+                onFocus={(e) =>
+                  (e.target.style.borderColor =
+                    title.length > LIMITS.quizTitle ? T.danger.dot : T.primary)
+                }
+                onBlur={(e) =>
+                  (e.target.style.borderColor =
+                    title.length > LIMITS.quizTitle
+                      ? T.danger.dot
+                      : T.cardBorder)
+                }
               />
             </div>
 
             <div>
-              <label style={{ ...FIELD_LABEL, fontSize: 14 }}>
-                Description{" "}
-                <span style={{ fontWeight: 400, color: T.textMuted }}>
-                  (optional)
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  marginBottom: 7,
+                }}
+              >
+                <label style={{ ...FIELD_LABEL, fontSize: 14, margin: 0 }}>
+                  Description{" "}
+                  <span style={{ fontWeight: 400, color: T.textMuted }}>
+                    (optional)
+                  </span>
+                </label>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color:
+                      description.length > LIMITS.quizDescription
+                        ? T.danger.dot
+                        : T.textMuted,
+                  }}
+                >
+                  {description.length} / {LIMITS.quizDescription}
                 </span>
-              </label>
+              </div>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Short description of this quiz…"
                 rows={3}
+                maxLength={LIMITS.quizDescription}
                 style={{
                   ...INPUT_BASE,
                   fontSize: 14,
                   resize: "vertical",
                   lineHeight: 1.6,
+                  borderColor:
+                    description.length > LIMITS.quizDescription
+                      ? T.danger.dot
+                      : T.cardBorder,
                 }}
-                onFocus={(e) => (e.target.style.borderColor = T.primary)}
-                onBlur={(e) => (e.target.style.borderColor = T.cardBorder)}
+                onFocus={(e) =>
+                  (e.target.style.borderColor =
+                    description.length > LIMITS.quizDescription
+                      ? T.danger.dot
+                      : T.primary)
+                }
+                onBlur={(e) =>
+                  (e.target.style.borderColor =
+                    description.length > LIMITS.quizDescription
+                      ? T.danger.dot
+                      : T.cardBorder)
+                }
               />
             </div>
 
