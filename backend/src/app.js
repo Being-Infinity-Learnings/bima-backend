@@ -1075,6 +1075,8 @@ const quizRoutes = require("./modules/quiz/quiz.routes");
 
 const quizCompositionRoutes = require("./modules/quiz-composition/quiz-composition.routes");
 
+const runtimeRoutes = require("./modules/runtime/runtime.routes");
+
 const app = express();
 
 app.use(cors());
@@ -1102,5 +1104,7 @@ app.use("/question", questionRoutes);
 app.use("/quiz", quizRoutes);
 
 app.use("/quiz-composition", quizCompositionRoutes);
+
+app.use("/runtime", runtimeRoutes);
 
 module.exports = app;

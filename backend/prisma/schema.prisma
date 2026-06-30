@@ -34,10 +34,12 @@ model User {
 
   blocked Boolean @default(false)
 
+
   groupMemberships UserGroup[]
   createdGroups    Group[]     @relation("GroupCreator")
   createdQuizzes   Quiz[]      @relation("QuizCreator")
   createdQuestions Question[]  @relation("QuestionCreator")
+  quizSubmissions QuizSubmission[]
 
   fcmTokens     FcmToken[]
   notifications Notification[]
@@ -140,6 +142,8 @@ model Quiz {
 
   allowedGroups QuizAllowedGroup[]
 
+  submissions QuizSubmission[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -162,6 +166,8 @@ model Question {
   options QuestionOption[]
 
   quizzes QuizQuestionMap[]
+
+  submissions QuizSubmission[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -205,6 +211,38 @@ model QuizAllowedGroup {
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@id([quizId, groupId])
+}
+
+model QuizSubmission {
+  id String @id @default(cuid())
+
+  quizId String
+  userId String
+  questionId String
+
+  selectedOptionIds String[]
+
+  correct Boolean
+
+  score Int
+
+  elapsedMs Int
+
+  submittedAt DateTime
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  user User @relation( fields: [userId], references: [id], onDelete: Cascade )
+
+  question Question @relation( fields: [questionId], references: [id], onDelete: Cascade )
+
+  @@unique([quizId, userId, questionId])
+
+  @@index([quizId])
+
+  @@index([userId])
+
+  @@index([questionId])
 }
 
 enum NotificationType {

@@ -1,0 +1,29 @@
+const registerQuizEvents = require("./quiz.socket");
+
+function registerEvents(io, socket) {
+  console.log(
+    `[Socket] Connected: ${socket.dbUser.fullName} (${socket.dbUser.id})`,
+  );
+
+  registerQuizEvents(io, socket);
+
+  socket.on("disconnect", () => {
+    const quizId = socket.data.quizId;
+
+    if (quizId) {
+      try {
+        const runtime = require("../runtime/runtime.manager").requireRuntime(
+          quizId,
+        );
+
+        runtime.connectedUsers.delete(socket.dbUser.id);
+      } catch (_) {}
+    }
+
+    console.log(`[Socket] Disconnected: ${socket.dbUser.fullName}`);
+  });
+}
+
+module.exports = registerEvents;
+
+module.exports = registerEvents;
