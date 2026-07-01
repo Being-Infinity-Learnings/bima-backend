@@ -142,6 +142,10 @@ router.post("/", auth, allowRoles("ADMIN", "AUTHOR"), controller.createQuiz);
  */
 router.get("/", auth, allowRoles("ADMIN", "AUTHOR"), controller.getQuizzes);
 
+router.get("/my", auth, controller.getMyQuizzes);
+
+router.get("/my/:quizId", auth, controller.getMyQuizById);
+
 /**
  * @swagger
  * /quiz/{id}:
@@ -680,9 +684,5 @@ router.delete(
   allowRoles("ADMIN", "AUTHOR"),
   controller.removeGroupFromQuiz,
 );
-
-router.get("/my", auth, controller.getMyQuizzes);
-
-router.get("/my/:quizId", auth, controller.getMyQuizById);
 
 module.exports = router;

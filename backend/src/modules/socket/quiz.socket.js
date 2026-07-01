@@ -1,5 +1,6 @@
 const runtimeManager = require("../runtime/runtime.manager");
 const socketManager = require("./socket.manager");
+const { QuizPhase } = require("../runtime/runtime.constants");
 
 function registerQuizEvents(io, socket) {
   socket.on("joinQuiz", ({ quizId }) => {
