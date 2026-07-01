@@ -34,9 +34,6 @@ class RuntimeEngine {
     } else {
       this.runtime.phaseEndsAt = null;
     }
-
-    // Notify everyone that the runtime has changed.
-    this.broadcastRuntimeState();
   }
 
   scheduleNext(callback, delay) {
@@ -70,6 +67,8 @@ class RuntimeEngine {
 
     this.changePhase(QuizPhase.LOBBY, RuntimeConfig.LOBBY_DURATION_MS);
 
+    this.broadcastRuntimeState();
+
     this.scheduleNext(
       () => this.enterQuestion(),
       RuntimeConfig.LOBBY_DURATION_MS,
@@ -96,16 +95,22 @@ class RuntimeEngine {
 
     this.changePhase(QuizPhase.QUESTION, duration);
 
-    this.scheduleNext(() => {
-      const isLastQuestion =
-        this.runtime.currentQuestionIndex === this.runtime.questions.length - 1;
+    this.broadcastRuntimeState();
 
-      if (isLastQuestion) {
-        this.enterResults();
-      } else {
-        this.enterLeaderboard();
-      }
-    }, duration);
+    this.scheduleNext(() => this.finishQuestion(), duration);
+  }
+
+  finishQuestion() {
+    const isLastQuestion =
+      this.runtime.currentQuestionIndex === this.runtime.questions.length - 1;
+
+    if (isLastQuestion) {
+      this.enterResults();
+      return;
+    }
+
+    this.enterLeaderboard();
+    this.runtime.lastQuestionResults = this.buildQuestionResults();
   }
 
   enterLeaderboard() {
@@ -116,16 +121,35 @@ class RuntimeEngine {
       RuntimeConfig.LEADERBOARD_DURATION_MS,
     );
 
+    socketBroadcast.broadcastLeaderboard(
+      this.runtime.quiz.id,
+      this.buildLeaderboardPayload(),
+    );
+
+    socketBroadcast.broadcastQuestionResults(this.buildQuestionResults());
+
+    this.broadcastRuntimeState();
+
     this.scheduleNext(
       () => this.enterQuestion(),
       RuntimeConfig.LEADERBOARD_DURATION_MS,
     );
   }
-
   enterResults() {
-    console.log(`[Runtime] Results`);
+    console.log("[Runtime] Results");
 
     this.changePhase(QuizPhase.RESULTS, RuntimeConfig.RESULTS_DURATION_MS);
+
+    this.runtime.finalResults = this.buildFinalResults();
+
+    socketBroadcast.broadcastLeaderboard(
+      this.runtime.quiz.id,
+      this.buildLeaderboardPayload(),
+    );
+
+    socketBroadcast.broadcastFinalResults(this.runtime.finalResults);
+
+    this.broadcastRuntimeState();
 
     this.scheduleNext(() => this.complete(), RuntimeConfig.RESULTS_DURATION_MS);
   }
@@ -187,15 +211,7 @@ class RuntimeEngine {
 
     this.runtime.submissions.set(userId, submission);
 
-    return {
-      correct,
-
-      score,
-
-      totalScore,
-
-      elapsedMs,
-    };
+    return;
   }
 
   validateSubmission({ userId, questionId }) {
@@ -232,11 +248,37 @@ class RuntimeEngine {
   }
 
   updateLeaderboard(userId, score) {
-    const totalScore = (this.runtime.leaderboard.get(userId) ?? 0) + score;
+    let entry = this.runtime.leaderboard.get(userId);
 
-    this.runtime.leaderboard.set(userId, totalScore);
+    if (!entry) {
+      entry = {
+        score: 0,
 
-    return totalScore;
+        fullName: "",
+
+        profileImage: null,
+      };
+    }
+
+    entry.score += score;
+
+    this.runtime.leaderboard.set(userId, entry);
+
+    return entry.score;
+  }
+
+  registerParticipant(user) {
+    if (this.runtime.leaderboard.has(user.id)) {
+      return;
+    }
+
+    this.runtime.leaderboard.set(user.id, {
+      score: 0,
+
+      fullName: user.fullName,
+
+      profileImage: user.profileImage,
+    });
   }
 
   buildSubmission({
@@ -324,7 +366,9 @@ class RuntimeEngine {
   }
 
   buildLeaderboardPayload(limit = 10) {
-    return this.getTopLeaderboard(limit);
+    return {
+      leaderboard: this.getLeaderboard().slice(0, limit),
+    };
   }
 
   buildResultsPayload() {
@@ -333,13 +377,63 @@ class RuntimeEngine {
     };
   }
 
+  buildFinalResults() {
+    const results = new Map();
+
+    const leaderboard = this.getLeaderboard();
+
+    for (const entry of leaderboard) {
+      results.set(entry.userId, {
+        rank: entry.rank,
+
+        totalScore: entry.totalScore,
+      });
+    }
+
+    return results;
+  }
+
+  buildQuestionResults() {
+    const correctOptionIds = this.runtime.currentQuestion.options
+      .filter((option) => option.isCorrect)
+      .map((option) => option.id);
+
+    const results = new Map();
+
+    for (const [userId, submission] of this.runtime.submissions) {
+      results.set(userId, {
+        correct: submission.correct,
+
+        score: submission.score,
+
+        totalScore: this.getUserScore(userId),
+
+        rank: this.getUserRank(userId),
+
+        correctOptionIds,
+      });
+    }
+
+    return results;
+  }
+
   getLeaderboard() {
     return [...this.runtime.leaderboard.entries()]
-      .map(([userId, totalScore]) => ({
+      .map(([userId, entry]) => ({
         userId,
-        totalScore,
+
+        fullName: entry.fullName,
+
+        profileImage: entry.profileImage,
+
+        totalScore: entry.score,
       }))
-      .sort((a, b) => b.totalScore - a.totalScore);
+      .sort((a, b) => b.totalScore - a.totalScore)
+      .map((entry, index) => ({
+        rank: index + 1,
+
+        ...entry,
+      }));
   }
 
   getTopLeaderboard(limit = 10) {
@@ -356,6 +450,10 @@ class RuntimeEngine {
     }
 
     return index + 1;
+  }
+
+  getUserScore(userId) {
+    return this.runtime.leaderboard.get(userId)?.score ?? 0;
   }
 
   getRuntimeState() {
@@ -390,18 +488,10 @@ class RuntimeEngine {
         };
 
       case QuizPhase.LEADERBOARD:
-        return {
-          ...baseState,
-
-          leaderboard: this.buildLeaderboardPayload(),
-        };
+        return baseState;
 
       case QuizPhase.RESULTS:
-        return {
-          ...baseState,
-
-          results: this.buildResultsPayload(),
-        };
+        return baseState;
 
       case QuizPhase.COMPLETED:
         return {
@@ -420,6 +510,10 @@ class RuntimeEngine {
     );
   }
 
+  isParticipantRegistered(userId) {
+    return this.runtime.leaderboard.has(userId);
+  }
+
   async complete() {
     await prisma.quiz.update({
       where: {
@@ -435,9 +529,11 @@ class RuntimeEngine {
 
     this.changePhase(QuizPhase.COMPLETED);
 
+    this.broadcastRuntimeState();
+
     manager.destroy(this.runtime.quiz.id);
 
-    console.log(`[Runtime] Completed`);
+    console.log("[Runtime] Completed");
   }
 }
 

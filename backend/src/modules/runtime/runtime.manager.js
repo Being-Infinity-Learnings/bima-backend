@@ -45,6 +45,10 @@ function getAll() {
   return [...activeQuizzes.values()];
 }
 
+function getRuntime(quizId) {
+  return activeQuizzes.get(quizId)?.runtime ?? null;
+}
+
 module.exports = {
   create,
 
@@ -59,4 +63,6 @@ module.exports = {
   destroy,
 
   getAll,
+
+  getRuntime,
 };

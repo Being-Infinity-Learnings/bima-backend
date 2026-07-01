@@ -1,6 +1,7 @@
 const prisma = require("../../config/prisma");
 const validationService = require("./quiz-validation.service");
 const imageService = require("../upload/image.service");
+const runtimeManager = require("../runtime/runtime.manager");
 
 /**
  * Resolves the coverImageUrl for a quiz create/update payload.
@@ -282,6 +283,130 @@ async function removeGroupFromQuiz(quizId, groupId) {
   });
 }
 
+/** Get quizzes that the user can access */
+async function getMyQuizzes(user) {
+  return prisma.quiz.findMany({
+    where: {
+      status: {
+        in: ["SCHEDULED", "LIVE"],
+      },
+
+      OR: [
+        {
+          visibility: "PUBLIC",
+        },
+
+        {
+          visibility: "RESTRICTED",
+
+          allowedGroups: {
+            some: {
+              groupId: {
+                in: user.groupMemberships.map(
+                  (membership) => membership.groupId,
+                ),
+              },
+            },
+          },
+        },
+      ],
+    },
+
+    select: {
+      id: true,
+
+      title: true,
+
+      coverImageUrl: true,
+
+      scheduledStartTime: true,
+
+      status: true,
+
+      visibility: true,
+
+      _count: {
+        select: {
+          quizQuestions: true,
+        },
+      },
+    },
+
+    orderBy: {
+      scheduledStartTime: "asc",
+    },
+  });
+}
+
+async function getMyQuizById(quizId, user) {
+  const quiz = await prisma.quiz.findFirst({
+    where: {
+      id: quizId,
+
+      status: {
+        in: ["SCHEDULED", "LIVE"],
+      },
+
+      OR: [
+        {
+          visibility: "PUBLIC",
+        },
+
+        {
+          visibility: "RESTRICTED",
+
+          allowedGroups: {
+            some: {
+              groupId: {
+                in: user.groupMemberships.map(
+                  (membership) => membership.groupId,
+                ),
+              },
+            },
+          },
+        },
+      ],
+    },
+
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      coverImageUrl: true,
+      visibility: true,
+      scheduledStartTime: true,
+      defaultTimer: true,
+      status: true,
+
+      _count: {
+        select: {
+          quizQuestions: true,
+        },
+      },
+    },
+  });
+
+  if (!quiz) {
+    throw new Error("Quiz not found");
+  }
+
+  const runtime = runtimeManager.getRuntime(quiz.id);
+
+  return {
+    ...quiz,
+
+    runtime: runtime
+      ? {
+          phase: runtime.phase,
+
+          remainingTime: runtime.phaseEndsAt
+            ? Math.max(runtime.phaseEndsAt.getTime() - Date.now(), 0)
+            : null,
+        }
+      : null,
+  };
+}
+
 module.exports = {
   createQuiz,
   getQuizzes,
@@ -293,4 +418,6 @@ module.exports = {
   addGroupsToQuiz,
   getQuizGroups,
   removeGroupFromQuiz,
+  getMyQuizzes,
+  getMyQuizById,
 };

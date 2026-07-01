@@ -681,4 +681,8 @@ router.delete(
   controller.removeGroupFromQuiz,
 );
 
+router.get("/my", auth, controller.getMyQuizzes);
+
+router.get("/my/:quizId", auth, controller.getMyQuizById);
+
 module.exports = router;

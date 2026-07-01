@@ -1,4 +1,5 @@
 const registerQuizEvents = require("./quiz.socket");
+const socketManager = require("./socket.manager");
 
 function registerEvents(io, socket) {
   console.log(
@@ -19,7 +20,7 @@ function registerEvents(io, socket) {
         runtime.connectedUsers.delete(socket.dbUser.id);
       } catch (_) {}
     }
-
+    socketManager.unregisterSocket(socket.dbUser.id);
     console.log(`[Socket] Disconnected: ${socket.dbUser.fullName}`);
   });
 }

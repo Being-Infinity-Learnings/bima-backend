@@ -1,4 +1,5 @@
 const runtimeManager = require("../runtime/runtime.manager");
+const socketManager = require("./socket.manager");
 
 function registerQuizEvents(io, socket) {
   socket.on("joinQuiz", ({ quizId }) => {
@@ -10,15 +11,48 @@ function registerQuizEvents(io, socket) {
       validateUser(runtime, socket.dbUser);
 
       socket.join(`quiz:${quizId}`);
+      socketManager.registerSocket(socket.dbUser.id, socket);
 
       socket.data.quizId = quizId;
 
       runtime.connectedUsers.add(socket.dbUser.id);
 
+      if (!engine.isParticipantRegistered(socket.dbUser.id)) {
+        engine.registerParticipant(socket.dbUser);
+      }
+
       socket.emit("quizJoined", {
         success: true,
         data: engine.getRuntimeState(),
       });
+
+      if (runtime.phase === "LEADERBOARD") {
+        socket.emit("leaderboardUpdated", {
+          success: true,
+          data: engine.buildLeaderboardPayload(),
+        });
+
+        const result = engine.buildQuestionResults().get(socket.dbUser.id);
+
+        socket.emit("questionResults", {
+          success: true,
+          data: result,
+        });
+      }
+
+      if (runtime.phase === QuizPhase.RESULTS) {
+        socket.emit("leaderboardUpdated", {
+          success: true,
+          data: engine.buildLeaderboardPayload(),
+        });
+
+        const result = runtime.finalResults.get(socket.dbUser.id);
+
+        socket.emit("finalResults", {
+          success: true,
+          data: result,
+        });
+      }
 
       console.log(`[Socket] ${socket.dbUser.fullName} joined quiz ${quizId}`);
     } catch (error) {
@@ -50,8 +84,6 @@ function registerQuizEvents(io, socket) {
 
       socket.emit("answerSubmitted", {
         success: true,
-
-        data: result,
       });
     } catch (error) {
       socket.emit("answerSubmissionError", {

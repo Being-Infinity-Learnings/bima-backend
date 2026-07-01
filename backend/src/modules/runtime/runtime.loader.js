@@ -77,6 +77,9 @@ async function load(quizId) {
 
     connectedUsers: new Set(),
 
+    lastQuestionResults: null,
+
+    finalResults: null,
     // Metadata
 
     initializedAt: new Date(),
