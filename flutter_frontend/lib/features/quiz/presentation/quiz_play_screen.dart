@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../data/quiz_models.dart';
 import '../providers/quiz_providers.dart';
@@ -20,13 +19,16 @@ import '../../../config/app_config.dart';
 // question-end and get rejected, which is fine: an unanswered question is
 // scored as incorrect either way.
 //
-// The actual green/red "reveal" only happens once BOTH of these are true:
-//   1) the server has moved the phase past QUESTION (LEADERBOARD/RESULTS)
-//   2) `questionResults` has arrived with the real `correctOptionIds`
-// Both are guaranteed to arrive together (the backend emits them in the
-// same tick), so in practice the reveal follows the phase change instantly.
-// We hold the reveal on screen for ~2s before navigating on, exactly like
-// the original design.
+// The green/red "reveal" starts the instant `questionResults` arrives for
+// the current question — the backend guarantees this fires for every
+// question, including the last one. This screen does NOT decide where to
+// go next or when: it just shows the reveal colors. `QuizPhaseSync` (see
+// quiz_phase_sync.dart), wrapping this route, is the only thing that
+// navigates, and it does so the moment the server actually flips the phase
+// to LEADERBOARD/RESULTS — which the backend always does exactly
+// `REVEAL_DELAY_MS` after `questionResults` was sent. That gives every
+// client the same ~2s reveal window without this screen needing to guess
+// or time anything itself.
 
 class QuizPlayScreen extends ConsumerStatefulWidget {
   final String quizId;
@@ -41,17 +43,14 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   String? _trackedQuestionId;
   QuizQuestionPayload? _cachedQuestion;
   DateTime? _trackedPhaseEndsAt;
-  QuizPhase? _pendingNextPhase;
 
   bool _locked = false;
   bool _revealed = false;
   bool _autoSubmitAttempted = false;
-  bool _navigatedForward = false;
 
   int _secondsLeft = 0;
   int _totalSeconds = 0;
   Timer? _secondsTimer;
-  Timer? _revealHoldTimer;
 
   late AnimationController _questionSlideCtrl;
   late Animation<Offset> _questionSlide;
@@ -95,7 +94,6 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   @override
   void dispose() {
     _secondsTimer?.cancel();
-    _revealHoldTimer?.cancel();
     _questionSlideCtrl.dispose();
     _timerCtrl.dispose();
     _submitPulseCtrl.dispose();
@@ -142,8 +140,6 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     _locked = false;
     _revealed = false;
     _autoSubmitAttempted = false;
-    _navigatedForward = false;
-    _pendingNextPhase = null;
 
     final totalMs = question.durationMs ?? remainingMs ?? 20000;
     final leftMs =
@@ -210,19 +206,12 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   }
 
   /// Called whenever the controller's state changes. Starts the reveal the
-  /// moment both the phase has moved on AND the real question result has
-  /// arrived.
+  /// moment the real question result has arrived. Doesn't navigate anywhere
+  /// — `QuizPhaseSync` (wrapping this route) takes care of moving on once
+  /// the server actually advances the phase.
   void _maybeReveal(QuizRuntimeState state) {
-    if (!mounted || _revealed || _navigatedForward) return;
-
+    if (!mounted || _revealed) return;
     if (state.myQuestionResult == null) return;
-
-    // Remember where the backend already moved us.
-    if (state.phase == QuizPhase.leaderboard ||
-        state.phase == QuizPhase.results ||
-        state.phase == QuizPhase.completed) {
-      _pendingNextPhase = state.phase;
-    }
 
     _secondsTimer?.cancel();
 
@@ -232,26 +221,6 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     });
 
     HapticFeedback.mediumImpact();
-
-    _revealHoldTimer?.cancel();
-
-    _revealHoldTimer = Timer(const Duration(seconds: 2), () {
-      if (!mounted || _navigatedForward) return;
-
-      _navigatedForward = true;
-
-      switch (_pendingNextPhase) {
-        case QuizPhase.results:
-        case QuizPhase.completed:
-          context.pushReplacement('/quiz/${widget.quizId}/results');
-          break;
-
-        case QuizPhase.leaderboard:
-        default:
-          context.pushReplacement('/quiz/${widget.quizId}/leaderboard');
-          break;
-      }
-    });
   }
 
   void _onAnswerTapped(String id) {

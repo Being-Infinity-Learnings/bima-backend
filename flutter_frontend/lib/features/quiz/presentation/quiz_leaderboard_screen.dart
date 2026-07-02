@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../data/quiz_models.dart';
 import '../providers/quiz_providers.dart';
@@ -35,7 +34,6 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
   int _secondsLeft = 0;
   int _totalSeconds = 0;
   bool _clockInitialized = false;
-  bool _navigatedForward = false;
 
   Timer? _leaderboardTimer;
   int? _leaderboardEndsAtMs;
@@ -61,20 +59,38 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
     super.dispose();
   }
 
-  void _initClock(int? remainingMs) {
-    if (_clockInitialized) return;
+  /// (Re)starts the local countdown from the server's authoritative
+  /// `phaseEndsAt`. Keyed off `phaseEndsAt` itself (not a one-shot flag) so
+  /// that a reconnect mid-leaderboard — which re-delivers a fresh
+  /// `runtimeUpdated` with a recomputed `remainingTime` — correctly resyncs
+  /// the clock instead of quietly keeping whatever the client's ticker
+  /// happened to have counted down to locally.
+  void _initClock(DateTime? phaseEndsAt, int? remainingMs) {
+    final syncKey = phaseEndsAt?.toIso8601String() ?? 'no-deadline';
+    if (_clockInitialized && _leaderboardSyncKey == syncKey) return;
     _clockInitialized = true;
+    _leaderboardSyncKey = syncKey;
 
-    final total = ((remainingMs ?? 5000) / 1000).ceil();
+    final leftMs =
+        phaseEndsAt?.difference(DateTime.now()).inMilliseconds ??
+        remainingMs ??
+        5000;
+    final total = (leftMs / 1000).ceil();
     _totalSeconds = total > 0 ? total : 1;
-    _secondsLeft = _totalSeconds;
+    _secondsLeft = leftMs > 0 ? _totalSeconds : 0;
 
     _countdownRingCtrl.duration = Duration(seconds: _totalSeconds);
-    _countdownRingCtrl.forward();
+    _countdownRingCtrl
+      ..reset()
+      ..forward();
 
+    _localTicker?.cancel();
     _localTicker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      final left = _secondsLeft - 1;
+      final msLeft =
+          phaseEndsAt?.difference(DateTime.now()).inMilliseconds ??
+          (_secondsLeft - 1) * 1000;
+      final left = (msLeft / 1000).ceil().clamp(0, _totalSeconds);
       if (left <= 0) {
         _localTicker?.cancel();
         if (mounted) setState(() => _secondsLeft = 0);
@@ -104,33 +120,11 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
     _entranceCtrl.forward(from: 0);
   }
 
-  void _navigateForPhase(QuizPhase phase) {
-    if (_navigatedForward || !mounted) return;
-    switch (phase) {
-      case QuizPhase.question:
-        _navigatedForward = true;
-        context.pushReplacement('/quiz/${widget.quizId}/play');
-        break;
-      case QuizPhase.results:
-      case QuizPhase.completed:
-        _navigatedForward = true;
-        context.pushReplacement('/quiz/${widget.quizId}/results');
-        break;
-      default:
-        break;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final quizState = ref.watch(quizRuntimeControllerProvider(widget.quizId));
     final myId = ref.watch(authProvider).user?.id;
-
-    ref.listen<QuizRuntimeState>(
-      quizRuntimeControllerProvider(widget.quizId),
-      (previous, next) => _navigateForPhase(next.phase),
-    );
 
     if (quizState.connectionStatus != SocketConnectionStatus.connected) {
       return Scaffold(
@@ -141,7 +135,10 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
       );
     }
 
-    _initClock(quizState.runtime?.remainingTimeMs);
+    _initClock(
+      quizState.runtime?.phaseEndsAt,
+      quizState.runtime?.remainingTimeMs,
+    );
 
     final leaderboard = List<LeaderboardEntry>.from(quizState.leaderboard)
       ..sort((a, b) => a.rank.compareTo(b.rank));

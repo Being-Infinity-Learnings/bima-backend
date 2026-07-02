@@ -18,6 +18,7 @@ import '../features/quiz/presentation/quiz_lobby_screen.dart';
 import '../features/quiz/presentation/quiz_play_screen.dart';
 import '../features/quiz/presentation/quiz_leaderboard_screen.dart';
 import '../features/quiz/presentation/quiz_results_screen.dart';
+import '../features/quiz/presentation/quiz_phase_sync.dart';
 
 /// The global router configuration for the app.
 ///
@@ -70,28 +71,52 @@ final appRouter = GoRouter(
           QuizWaitingScreen(quizId: state.pathParameters['quizId']!),
     ),
 
+    // Every gameplay route below is wrapped in `QuizPhaseSync`, which is the
+    // single place in the app that decides when to move from one quiz
+    // screen to the next (driven purely by the server's `runtime.phase`).
+    // The screens themselves no longer navigate on phase changes.
     GoRoute(
       path: '/quiz/:quizId/lobby',
-      builder: (context, state) =>
-          QuizLobbyScreen(quizId: state.pathParameters['quizId']!),
+      builder: (context, state) {
+        final quizId = state.pathParameters['quizId']!;
+        return QuizPhaseSync(
+          quizId: quizId,
+          child: QuizLobbyScreen(quizId: quizId),
+        );
+      },
     ),
 
     GoRoute(
       path: '/quiz/:quizId/play',
-      builder: (context, state) =>
-          QuizPlayScreen(quizId: state.pathParameters['quizId']!),
+      builder: (context, state) {
+        final quizId = state.pathParameters['quizId']!;
+        return QuizPhaseSync(
+          quizId: quizId,
+          child: QuizPlayScreen(quizId: quizId),
+        );
+      },
     ),
 
     GoRoute(
       path: '/quiz/:quizId/leaderboard',
-      builder: (context, state) =>
-          QuizLeaderboardScreen(quizId: state.pathParameters['quizId']!),
+      builder: (context, state) {
+        final quizId = state.pathParameters['quizId']!;
+        return QuizPhaseSync(
+          quizId: quizId,
+          child: QuizLeaderboardScreen(quizId: quizId),
+        );
+      },
     ),
 
     GoRoute(
       path: '/quiz/:quizId/results',
-      builder: (context, state) =>
-          QuizResultsScreen(quizId: state.pathParameters['quizId']!),
+      builder: (context, state) {
+        final quizId = state.pathParameters['quizId']!;
+        return QuizPhaseSync(
+          quizId: quizId,
+          child: QuizResultsScreen(quizId: quizId),
+        );
+      },
     ),
   ],
 );

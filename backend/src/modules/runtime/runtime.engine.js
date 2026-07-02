@@ -100,6 +100,20 @@ class RuntimeEngine {
     this.scheduleNext(() => this.finishQuestion(), duration);
   }
 
+  /// Called exactly once, the instant a question's timer runs out (whether
+  /// it was the last question or not). This is the ONLY place that decides
+  /// what happens next, and it always does the same two things in the same
+  /// order for every question:
+  ///
+  ///   1. Immediately tell every client whether they were right/wrong (the
+  ///      server stays logically in the QUESTION phase while this plays out
+  ///      client-side, so the reveal animation can run without racing a
+  ///      phase change).
+  ///   2. Exactly REVEAL_DELAY_MS later, atomically flip the phase AND
+  ///      broadcast that new phase together, in the same tick — never one
+  ///      before the other. Clients navigate purely off `runtimeUpdated`,
+  ///      so this is what guarantees the reveal always lasts exactly
+  ///      REVEAL_DELAY_MS on every client, no more, no less.
   finishQuestion() {
     const questionResults = this.buildQuestionResults();
 
@@ -108,40 +122,42 @@ class RuntimeEngine {
     const isLastQuestion =
       this.runtime.currentQuestionIndex === this.runtime.questions.length - 1;
 
-    if (isLastQuestion) {
-      this.enterResults();
-      return;
-    }
+    socketBroadcast.broadcastQuestionResults(questionResults);
 
-    this.enterLeaderboard(questionResults);
+    this.scheduleNext(() => {
+      if (isLastQuestion) {
+        this.enterResults();
+      } else {
+        this.enterLeaderboard();
+      }
+    }, RuntimeConfig.REVEAL_DELAY_MS);
   }
 
-  enterLeaderboard(questionResults = null) {
+  enterLeaderboard() {
     console.log("[Runtime] Leaderboard");
 
+    // changePhase() (which stamps phaseStartedAt/phaseEndsAt) and the
+    // broadcast that tells clients about it happen back-to-back, with
+    // nothing async in between — so the timestamps we hand out are exactly
+    // the timestamps clients start counting down from.
     this.changePhase(
       QuizPhase.LEADERBOARD,
       RuntimeConfig.LEADERBOARD_DURATION_MS,
     );
 
-    // 1. Tell every player whether they were correct.
-    socketBroadcast.broadcastQuestionResults(questionResults);
+    socketBroadcast.broadcastLeaderboard(
+      this.runtime.quiz.id,
+      this.buildLeaderboardPayload(),
+    );
 
-    // 2. Wait a little so the Flutter reveal animation can play.
-    setTimeout(() => {
-      socketBroadcast.broadcastLeaderboard(
-        this.runtime.quiz.id,
-        this.buildLeaderboardPayload(),
-      );
-
-      this.broadcastRuntimeState();
-    }, 2000);
+    this.broadcastRuntimeState();
 
     this.scheduleNext(
       () => this.enterQuestion(),
       RuntimeConfig.LEADERBOARD_DURATION_MS,
     );
   }
+
   enterResults() {
     console.log("[Runtime] Results");
 

@@ -27,7 +27,6 @@ class QuizLobbyScreen extends ConsumerStatefulWidget {
 
 class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
     with TickerProviderStateMixin {
-  bool _navigatedForward = false;
   Timer? _tickTimer;
   Timer? _clockTimer;
   int _secondsLeft = 0;
@@ -95,27 +94,6 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
     setState(() {});
   }
 
-  void _navigateForPhase(QuizPhase phase) {
-    if (_navigatedForward || !mounted) return;
-    switch (phase) {
-      case QuizPhase.question:
-        _navigatedForward = true;
-        context.pushReplacement('/quiz/${widget.quizId}/play');
-        break;
-      case QuizPhase.leaderboard:
-        _navigatedForward = true;
-        context.pushReplacement('/quiz/${widget.quizId}/leaderboard');
-        break;
-      case QuizPhase.results:
-      case QuizPhase.completed:
-        _navigatedForward = true;
-        context.pushReplacement('/quiz/${widget.quizId}/results');
-        break;
-      default:
-        break;
-    }
-  }
-
   void _leaveLobby() {
     ref.read(quizRuntimeControllerProvider(widget.quizId).notifier).leaveQuiz();
     if (mounted) context.pop();
@@ -135,15 +113,6 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final quizAsync = ref.watch(myQuizDetailProvider(widget.quizId));
     final quizState = ref.watch(quizRuntimeControllerProvider(widget.quizId));
-
-    ref.listen<QuizRuntimeState>(
-      quizRuntimeControllerProvider(widget.quizId),
-      (previous, next) => _navigateForPhase(next.phase),
-    );
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _navigateForPhase(quizState.phase);
-    });
 
     const accent = AppConfig.primaryColor;
 
