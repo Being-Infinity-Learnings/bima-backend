@@ -43,7 +43,9 @@ class QuizSocketService {
     final socket = io.io(
       Environment.apiBaseUrl,
       io.OptionBuilder()
-          .setTransports(['websocket'])
+          // Keep websocket first, but allow polling fallback so the client
+          // can still connect on networks where websocket upgrades are flaky.
+          .setTransports(['websocket', 'polling'])
           .disableAutoConnect()
           .setAuth({'token': token})
           .build(),

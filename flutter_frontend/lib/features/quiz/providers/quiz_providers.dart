@@ -1,3 +1,5 @@
+import 'dart:async';
+
 /// Riverpod providers for the quiz feature.
 ///
 /// • [myQuizzesProvider]        — Home screen "Upcoming Quizzes" list.
@@ -123,13 +125,33 @@ class QuizRuntimeState {
 
 class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
   QuizRuntimeController(this._quizId, this._repository)
-      : super(const QuizRuntimeState());
+    : super(const QuizRuntimeState());
 
   final String _quizId;
   final QuizRepository _repository;
   final QuizSocketService _socket = QuizSocketService();
 
   bool _disposed = false;
+  Timer? _connectTimeoutTimer;
+
+  void _clearConnectTimeout() {
+    _connectTimeoutTimer?.cancel();
+    _connectTimeoutTimer = null;
+  }
+
+  void _startConnectTimeout() {
+    _clearConnectTimeout();
+    _connectTimeoutTimer = Timer(const Duration(seconds: 12), () {
+      if (_disposed) return;
+      if (state.connectionStatus == SocketConnectionStatus.connecting) {
+        state = state.copyWith(
+          connectionStatus: SocketConnectionStatus.error,
+          connectionError:
+              'Connection timed out. Check your network and try again.',
+        );
+      }
+    });
+  }
 
   /// Opens the socket connection (if not already connecting/connected) and
   /// joins the quiz room. Safe to call multiple times — subsequent calls
@@ -144,11 +166,13 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
       connectionStatus: SocketConnectionStatus.connecting,
       clearConnectionError: true,
     );
+    _startConnectTimeout();
 
     final token = await _repository.getSocketToken();
     if (_disposed) return;
 
     if (token == null) {
+      _clearConnectTimeout();
       state = state.copyWith(
         connectionStatus: SocketConnectionStatus.error,
         connectionError: 'You need to be signed in to join this quiz.',
@@ -164,6 +188,7 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
       },
       onConnectError: (message) {
         if (_disposed) return;
+        _clearConnectTimeout();
         state = state.copyWith(
           connectionStatus: SocketConnectionStatus.error,
           connectionError: message,
@@ -171,6 +196,7 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
       },
       onDisconnect: () {
         if (_disposed) return;
+        _clearConnectTimeout();
         if (state.connectionStatus == SocketConnectionStatus.connected) {
           state = state.copyWith(
             connectionStatus: SocketConnectionStatus.disconnected,
@@ -182,26 +208,29 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
         if (data['success'] == false) {
           state = state.copyWith(
             connectionStatus: SocketConnectionStatus.error,
-            connectionError: data['message'] as String? ?? 'Could not join quiz.',
+            connectionError:
+                data['message'] as String? ?? 'Could not join quiz.',
           );
           return;
         }
         final runtime = RuntimeState.fromJson(
           data['data'] as Map<String, dynamic>,
         );
+        _clearConnectTimeout();
         state = state.copyWith(
           connectionStatus: SocketConnectionStatus.connected,
           runtime: runtime,
           peakParticipantCount: runtime.connectedUsers != null
               ? (runtime.connectedUsers! > state.peakParticipantCount
-                  ? runtime.connectedUsers!
-                  : state.peakParticipantCount)
+                    ? runtime.connectedUsers!
+                    : state.peakParticipantCount)
               : state.peakParticipantCount,
         );
         _resetPerQuestionStateIfNeeded(runtime);
       },
       onJoinQuizError: (data) {
         if (_disposed) return;
+        _clearConnectTimeout();
         state = state.copyWith(
           connectionStatus: SocketConnectionStatus.error,
           connectionError:
@@ -218,8 +247,8 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
           runtime: runtime,
           peakParticipantCount: runtime.connectedUsers != null
               ? (runtime.connectedUsers! > state.peakParticipantCount
-                  ? runtime.connectedUsers!
-                  : state.peakParticipantCount)
+                    ? runtime.connectedUsers!
+                    : state.peakParticipantCount)
               : state.peakParticipantCount,
         );
         _resetPerQuestionStateIfNeeded(runtime);
@@ -238,7 +267,9 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
         if (_disposed) return;
         final payload = data['data'] as Map<String, dynamic>?;
         if (payload == null) return;
-        state = state.copyWith(myQuestionResult: QuestionResult.fromJson(payload));
+        state = state.copyWith(
+          myQuestionResult: QuestionResult.fromJson(payload),
+        );
       },
       onFinalResults: (data) {
         if (_disposed) return;
@@ -304,6 +335,7 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
   /// leaves the quiz flow (back out of the lobby, or finishes on the
   /// results screen) — not on every screen transition within the flow.
   void leaveQuiz() {
+    _clearConnectTimeout();
     _socket.disconnect();
     state = const QuizRuntimeState();
   }
@@ -311,12 +343,17 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
   @override
   void dispose() {
     _disposed = true;
+    _clearConnectTimeout();
     _socket.disconnect();
     super.dispose();
   }
 }
 
-final quizRuntimeControllerProvider = StateNotifierProvider.family<
-    QuizRuntimeController, QuizRuntimeState, String>((ref, quizId) {
-  return QuizRuntimeController(quizId, ref.read(quizRepositoryProvider));
-});
+final quizRuntimeControllerProvider =
+    StateNotifierProvider.family<
+      QuizRuntimeController,
+      QuizRuntimeState,
+      String
+    >((ref, quizId) {
+      return QuizRuntimeController(quizId, ref.read(quizRepositoryProvider));
+    });

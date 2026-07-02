@@ -29,6 +29,10 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
     with TickerProviderStateMixin {
   bool _navigatedForward = false;
   Timer? _tickTimer;
+  Timer? _clockTimer;
+  bool _clockInitialized = false;
+  int _secondsLeft = 0;
+  int _totalSeconds = 0;
 
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
@@ -74,9 +78,30 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
   @override
   void dispose() {
     _tickTimer?.cancel();
+    _clockTimer?.cancel();
     _pulseCtrl.dispose();
     _entranceCtrl.dispose();
     super.dispose();
+  }
+
+  void _initClock(int? remainingMs) {
+    if (_clockInitialized) return;
+    _clockInitialized = true;
+
+    final total = ((remainingMs ?? 30000) / 1000).ceil();
+    _totalSeconds = total > 0 ? total : 1;
+    _secondsLeft = _totalSeconds;
+
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final next = _secondsLeft - 1;
+      if (next <= 0) {
+        _clockTimer?.cancel();
+        setState(() => _secondsLeft = 0);
+      } else {
+        setState(() => _secondsLeft = next);
+      }
+    });
   }
 
   void _navigateForPhase(QuizPhase phase) {
@@ -135,6 +160,8 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
         : Duration.zero;
     final connectedUsers = quizState.runtime?.connectedUsers ?? 0;
 
+    _initClock(quizState.runtime?.remainingTimeMs);
+
     return Scaffold(
       backgroundColor: AppConfig.scaffoldColor(isDark),
       body: FadeTransition(
@@ -159,15 +186,20 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
                 ),
 
                 Expanded(
-                  child: quizState.connectionStatus == SocketConnectionStatus.error
+                  child:
+                      quizState.connectionStatus == SocketConnectionStatus.error
                       ? Center(
                           child: _ErrorState(
-                            message: quizState.connectionError ??
+                            message:
+                                quizState.connectionError ??
                                 'Something went wrong.',
                             isDark: isDark,
                             onRetry: () => ref
-                                .read(quizRuntimeControllerProvider(widget.quizId)
-                                    .notifier)
+                                .read(
+                                  quizRuntimeControllerProvider(
+                                    widget.quizId,
+                                  ).notifier,
+                                )
                                 .connectAndJoin(),
                           ),
                         )
@@ -314,9 +346,15 @@ class _ConnectionPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = switch (status) {
       SocketConnectionStatus.connected => ('LOBBY OPEN', AppConfig.errorColor),
-      SocketConnectionStatus.connecting => ('CONNECTING', AppConfig.warningColor),
+      SocketConnectionStatus.connecting => (
+        'CONNECTING',
+        AppConfig.warningColor,
+      ),
       SocketConnectionStatus.error => ('ERROR', AppConfig.errorColor),
-      SocketConnectionStatus.disconnected => ('RECONNECTING', AppConfig.warningColor),
+      SocketConnectionStatus.disconnected => (
+        'RECONNECTING',
+        AppConfig.warningColor,
+      ),
       SocketConnectionStatus.idle => ('CONNECTING', AppConfig.warningColor),
     };
 
@@ -369,12 +407,19 @@ class _ErrorState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline_rounded, size: 48, color: AppConfig.errorColor),
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 48,
+            color: AppConfig.errorColor,
+          ),
           const SizedBox(height: 16),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: AppConfig.mutedTextColor(isDark)),
+            style: TextStyle(
+              fontSize: 14,
+              color: AppConfig.mutedTextColor(isDark),
+            ),
           ),
           const SizedBox(height: 20),
           ElevatedButton(

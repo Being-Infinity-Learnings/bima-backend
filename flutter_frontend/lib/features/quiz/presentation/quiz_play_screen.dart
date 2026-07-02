@@ -39,6 +39,8 @@ class QuizPlayScreen extends ConsumerStatefulWidget {
 class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     with TickerProviderStateMixin {
   String? _trackedQuestionId;
+  QuizQuestionPayload? _cachedQuestion;
+  int? _cachedRemainingMs;
 
   bool _locked = false;
   bool _revealed = false;
@@ -105,6 +107,8 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   void _syncQuestion(QuizQuestionPayload question, int? remainingMs) {
     if (_trackedQuestionId == question.id) return;
     _trackedQuestionId = question.id;
+    _cachedQuestion = question;
+    _cachedRemainingMs = remainingMs;
 
     _locked = false;
     _revealed = false;
@@ -211,7 +215,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     );
 
     final runtime = quizState.runtime;
-    final question = runtime?.question;
+    final question = runtime?.question ?? _cachedQuestion;
 
     if (quizState.connectionStatus != SocketConnectionStatus.connected ||
         question == null) {
@@ -224,18 +228,20 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     }
 
     // Sync local per-question state (idempotent — only acts on a new id).
-    _syncQuestion(question, runtime!.remainingTimeMs);
+    _syncQuestion(question, runtime?.remainingTimeMs ?? _cachedRemainingMs);
 
     final totalQ = quizDetail.value?.questionCount ?? 0;
-    final idx = runtime.questionIndex ?? 0;
-    final hasImage = question.questionImage != null && question.questionImage!.isNotEmpty;
+    final idx = runtime?.questionIndex ?? 0;
+    final hasImage =
+        question.questionImage != null && question.questionImage!.isNotEmpty;
 
-    final hasSubmitted = quizState.submissionStatus == SubmissionStatus.submitted ||
+    final hasSubmitted =
+        quizState.submissionStatus == SubmissionStatus.submitted ||
         quizState.submissionStatus == SubmissionStatus.pending;
-    final submitActive = quizState.selectedOptionId != null &&
-        !hasSubmitted &&
-        !_locked;
-    final correctOptionIds = quizState.myQuestionResult?.correctOptionIds ?? const [];
+    final submitActive =
+        quizState.selectedOptionId != null && !hasSubmitted && !_locked;
+    final correctOptionIds =
+        quizState.myQuestionResult?.correctOptionIds ?? const [];
 
     return Scaffold(
       backgroundColor: AppConfig.scaffoldColor(isDark),
@@ -658,8 +664,9 @@ class _AnswerGrid extends StatelessWidget {
               revealed: revealed,
               isCorrect: correctOptionIds.contains(option.id),
               onTap: onTap,
-              revealStaggerIndex:
-                  correctOptionIds.contains(option.id) ? options.length : j,
+              revealStaggerIndex: correctOptionIds.contains(option.id)
+                  ? options.length
+                  : j,
               isDark: isDark,
             ),
           ),
@@ -853,7 +860,9 @@ class _AnswerTileState extends State<_AnswerTile>
       bgColor = baseColor.withOpacity(isDark ? 0.13 : 0.18);
       borderColor = baseColor.withOpacity(isDark ? 0.25 : 0.4);
       borderWidth = 1.0;
-      tileOpacity = (isSelected == false && widget.selectedId != null) ? 0.55 : 1.0;
+      tileOpacity = (isSelected == false && widget.selectedId != null)
+          ? 0.55
+          : 1.0;
       trailingIcon = null;
       trailingIconColor = null;
     }
@@ -931,14 +940,38 @@ class _AnswerTileState extends State<_AnswerTile>
                       ),
                     ),
                     Expanded(
-                      child: Text(
-                        option.optionText,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: effectiveTextColor,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if ((option.optionImage ?? '').isNotEmpty) ...[
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: AspectRatio(
+                                  aspectRatio: 16 / 9,
+                                  child: Image.network(
+                                    option.optionImage!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        const SizedBox.shrink(),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            Text(
+                              option.optionText,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: effectiveTextColor,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

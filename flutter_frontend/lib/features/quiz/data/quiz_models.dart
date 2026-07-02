@@ -131,7 +131,15 @@ class MyQuizDetail {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Mirrors the backend's `QuizPhase` enum (runtime.constants.js).
-enum QuizPhase { waiting, lobby, question, leaderboard, results, completed, unknown }
+enum QuizPhase {
+  waiting,
+  lobby,
+  question,
+  leaderboard,
+  results,
+  completed,
+  unknown,
+}
 
 QuizPhase quizPhaseFromString(String? raw) {
   switch (raw) {
@@ -167,7 +175,10 @@ class QuizOptionPayload {
     return QuizOptionPayload(
       id: json['id'] as String,
       optionText: json['optionText'] as String? ?? '',
-      optionImage: json['optionImage'] as String?,
+      optionImage:
+          json['optionImage'] as String? ??
+          json['mediaUrl'] as String? ??
+          json['imageUrl'] as String?,
     );
   }
 }
@@ -191,7 +202,10 @@ class QuizQuestionPayload {
     return QuizQuestionPayload(
       id: json['id'] as String,
       questionText: json['questionText'] as String? ?? '',
-      questionImage: json['questionImage'] as String?,
+      questionImage:
+          json['questionImage'] as String? ??
+          json['mediaUrl'] as String? ??
+          json['imageUrl'] as String?,
       questionType: json['questionType'] as String? ?? 'SINGLE_CORRECT',
       options: ((json['options'] as List?) ?? [])
           .map((o) => QuizOptionPayload.fromJson(o as Map<String, dynamic>))

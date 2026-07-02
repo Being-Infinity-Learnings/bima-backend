@@ -351,7 +351,10 @@ class RuntimeEngine {
 
       questionText: this.runtime.currentQuestion.questionText,
 
-      questionImage: this.runtime.currentQuestion.questionImage,
+      // Prisma stores the question media as `mediaUrl`; the Flutter client
+      // expects `questionImage`, so expose both for compatibility.
+      questionImage: this.runtime.currentQuestion.mediaUrl ?? null,
+      mediaUrl: this.runtime.currentQuestion.mediaUrl ?? null,
 
       questionType: this.runtime.currentQuestion.questionType,
 
@@ -360,7 +363,10 @@ class RuntimeEngine {
 
         optionText: option.optionText,
 
-        optionImage: option.optionImage,
+        // The current schema does not yet have option-level media, but we
+        // still pass through any future `optionImage`/`mediaUrl` field so the
+        // frontend can render it without another runtime change.
+        optionImage: option.optionImage ?? option.mediaUrl ?? null,
       })),
     };
   }
@@ -399,16 +405,21 @@ class RuntimeEngine {
       .map((option) => option.id);
 
     const results = new Map();
+    const leaderboard = this.getLeaderboard();
 
-    for (const [userId, submission] of this.runtime.submissions) {
-      results.set(userId, {
-        correct: submission.correct,
+    for (const entry of leaderboard) {
+      const submission = this.runtime.submissions.get(entry.userId);
 
-        score: submission.score,
+      results.set(entry.userId, {
+        // Everyone needs a result payload so the client can animate and
+        // advance even if they timed out or never submitted an answer.
+        correct: submission?.correct ?? false,
 
-        totalScore: this.getUserScore(userId),
+        score: submission?.score ?? 0,
 
-        rank: this.getUserRank(userId),
+        totalScore: entry.totalScore,
+
+        rank: entry.rank,
 
         correctOptionIds,
       });
