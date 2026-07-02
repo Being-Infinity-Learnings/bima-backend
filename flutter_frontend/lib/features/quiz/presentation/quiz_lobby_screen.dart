@@ -30,7 +30,6 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
   bool _navigatedForward = false;
   Timer? _tickTimer;
   Timer? _clockTimer;
-  bool _clockInitialized = false;
   int _secondsLeft = 0;
   int _totalSeconds = 0;
 
@@ -84,24 +83,16 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
     super.dispose();
   }
 
-  void _initClock(int? remainingMs) {
-    if (_clockInitialized) return;
-    _clockInitialized = true;
+  Duration _remainingFromRuntime(QuizRuntimeState quizState) {
+    final endsAt = quizState.runtime?.phaseEndsAt;
+    if (endsAt == null) return Duration.zero;
+    final remaining = endsAt.difference(DateTime.now());
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
 
-    final total = ((remainingMs ?? 30000) / 1000).ceil();
-    _totalSeconds = total > 0 ? total : 1;
-    _secondsLeft = _totalSeconds;
-
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      final next = _secondsLeft - 1;
-      if (next <= 0) {
-        _clockTimer?.cancel();
-        setState(() => _secondsLeft = 0);
-      } else {
-        setState(() => _secondsLeft = next);
-      }
-    });
+  void _refreshClock() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _navigateForPhase(QuizPhase phase) {
@@ -131,6 +122,7 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
   }
 
   String _formatDuration(Duration d) {
+    if (d.isNegative) d = Duration.zero;
     final h = d.inHours;
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
@@ -155,12 +147,14 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
 
     const accent = AppConfig.primaryColor;
 
-    final remaining = quizState.runtime?.remainingTimeMs != null
-        ? Duration(milliseconds: quizState.runtime!.remainingTimeMs!)
-        : Duration.zero;
+    final phaseEndsAt =
+        quizState.runtime?.phaseEndsAt ?? quizAsync.value?.runtime?.phaseEndsAt;
+    final remaining = phaseEndsAt == null
+        ? Duration.zero
+        : phaseEndsAt.difference(DateTime.now()).isNegative
+        ? Duration.zero
+        : phaseEndsAt.difference(DateTime.now());
     final connectedUsers = quizState.runtime?.connectedUsers ?? 0;
-
-    _initClock(quizState.runtime?.remainingTimeMs);
 
     return Scaffold(
       backgroundColor: AppConfig.scaffoldColor(isDark),

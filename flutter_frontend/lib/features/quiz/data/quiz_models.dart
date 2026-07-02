@@ -59,13 +59,26 @@ class MyQuizSummary {
 class QuizRuntimeSnapshot {
   final String phase;
   final int? remainingTime;
+  final DateTime? phaseStartedAt;
+  final DateTime? phaseEndsAt;
 
-  const QuizRuntimeSnapshot({required this.phase, required this.remainingTime});
+  const QuizRuntimeSnapshot({
+    required this.phase,
+    required this.remainingTime,
+    required this.phaseStartedAt,
+    required this.phaseEndsAt,
+  });
 
   factory QuizRuntimeSnapshot.fromJson(Map<String, dynamic> json) {
     return QuizRuntimeSnapshot(
       phase: json['phase'] as String,
       remainingTime: json['remainingTime'] as int?,
+      phaseStartedAt: json['phaseStartedAt'] == null
+          ? null
+          : DateTime.parse(json['phaseStartedAt'] as String).toLocal(),
+      phaseEndsAt: json['phaseEndsAt'] == null
+          ? null
+          : DateTime.parse(json['phaseEndsAt'] as String).toLocal(),
     );
   }
 
@@ -188,6 +201,7 @@ class QuizQuestionPayload {
   final String questionText;
   final String? questionImage;
   final String questionType;
+  final int? durationMs;
   final List<QuizOptionPayload> options;
 
   const QuizQuestionPayload({
@@ -195,6 +209,7 @@ class QuizQuestionPayload {
     required this.questionText,
     required this.questionImage,
     required this.questionType,
+    required this.durationMs,
     required this.options,
   });
 
@@ -207,6 +222,7 @@ class QuizQuestionPayload {
           json['mediaUrl'] as String? ??
           json['imageUrl'] as String?,
       questionType: json['questionType'] as String? ?? 'SINGLE_CORRECT',
+      durationMs: (json['durationMs'] as num?)?.toInt(),
       options: ((json['options'] as List?) ?? [])
           .map((o) => QuizOptionPayload.fromJson(o as Map<String, dynamic>))
           .toList(),
@@ -218,6 +234,8 @@ class QuizQuestionPayload {
 class RuntimeState {
   final QuizPhase phase;
   final int? remainingTimeMs;
+  final DateTime? phaseStartedAt;
+  final DateTime? phaseEndsAt;
   final int? connectedUsers;
   final int? questionIndex;
   final QuizQuestionPayload? question;
@@ -225,6 +243,8 @@ class RuntimeState {
   const RuntimeState({
     required this.phase,
     required this.remainingTimeMs,
+    required this.phaseStartedAt,
+    required this.phaseEndsAt,
     this.connectedUsers,
     this.questionIndex,
     this.question,
@@ -234,6 +254,12 @@ class RuntimeState {
     return RuntimeState(
       phase: quizPhaseFromString(json['phase'] as String?),
       remainingTimeMs: json['remainingTime'] as int?,
+      phaseStartedAt: json['phaseStartedAt'] == null
+          ? null
+          : DateTime.parse(json['phaseStartedAt'] as String).toLocal(),
+      phaseEndsAt: json['phaseEndsAt'] == null
+          ? null
+          : DateTime.parse(json['phaseEndsAt'] as String).toLocal(),
       connectedUsers: json['connectedUsers'] as int?,
       questionIndex: json['questionIndex'] as int?,
       question: json['question'] == null

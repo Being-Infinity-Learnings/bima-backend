@@ -402,6 +402,8 @@ async function getMyQuizById(quizId, user) {
           remainingTime: runtime.phaseEndsAt
             ? Math.max(runtime.phaseEndsAt.getTime() - Date.now(), 0)
             : null,
+          phaseStartedAt: runtime.phaseStartedAt?.toISOString() ?? null,
+          phaseEndsAt: runtime.phaseEndsAt?.toISOString() ?? null,
         }
       : null,
   };

@@ -104,16 +104,19 @@ class RuntimeEngine {
     const isLastQuestion =
       this.runtime.currentQuestionIndex === this.runtime.questions.length - 1;
 
+    const questionResults = this.buildQuestionResults();
+    this.runtime.lastQuestionResults = questionResults;
+
     if (isLastQuestion) {
+      socketBroadcast.broadcastQuestionResults(questionResults);
       this.enterResults();
       return;
     }
 
-    this.enterLeaderboard();
-    this.runtime.lastQuestionResults = this.buildQuestionResults();
+    this.enterLeaderboard(questionResults);
   }
 
-  enterLeaderboard() {
+  enterLeaderboard(questionResults = null) {
     console.log("[Runtime] Leaderboard");
 
     this.changePhase(
@@ -126,7 +129,9 @@ class RuntimeEngine {
       this.buildLeaderboardPayload(),
     );
 
-    socketBroadcast.broadcastQuestionResults(this.buildQuestionResults());
+    socketBroadcast.broadcastQuestionResults(
+      questionResults ?? this.buildQuestionResults(),
+    );
 
     this.broadcastRuntimeState();
 
@@ -357,6 +362,9 @@ class RuntimeEngine {
       mediaUrl: this.runtime.currentQuestion.mediaUrl ?? null,
 
       questionType: this.runtime.currentQuestion.questionType,
+      durationMs:
+        this.runtime.currentDurationMs ??
+        this.getQuestionDuration(this.runtime.currentQuestion),
 
       options: this.runtime.currentQuestion.options.map((option) => ({
         id: option.id,
@@ -474,6 +482,8 @@ class RuntimeEngine {
       phase: this.runtime.phase,
 
       remainingTime: this.getRemainingTime(),
+      phaseStartedAt: this.runtime.phaseStartedAt?.toISOString() ?? null,
+      phaseEndsAt: this.runtime.phaseEndsAt?.toISOString() ?? null,
     };
 
     switch (this.runtime.phase) {

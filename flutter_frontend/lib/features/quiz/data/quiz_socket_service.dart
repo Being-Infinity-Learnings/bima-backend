@@ -46,6 +46,7 @@ class QuizSocketService {
           // Keep websocket first, but allow polling fallback so the client
           // can still connect on networks where websocket upgrades are flaky.
           .setTransports(['websocket', 'polling'])
+          .setTimeout(12000)
           .disableAutoConnect()
           .setAuth({'token': token})
           .build(),
@@ -54,6 +55,11 @@ class QuizSocketService {
     _socket = socket;
 
     socket.onConnect((_) => onConnect());
+    socket.onReconnect((_) => onConnect());
+    socket.onReconnectAttempt((_) {});
+    socket.onReconnectError(
+      (err) => onConnectError(err?.toString() ?? 'Reconnect error'),
+    );
     socket.onConnectError(
       (err) => onConnectError(err?.toString() ?? 'Connection error'),
     );

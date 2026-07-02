@@ -27,26 +27,26 @@ function registerQuizEvents(io, socket) {
         data: engine.getRuntimeState(),
       });
 
-      if (runtime.phase === "LEADERBOARD") {
+      if (
+        runtime.phase === "LEADERBOARD" ||
+        runtime.phase === QuizPhase.RESULTS
+      ) {
         socket.emit("leaderboardUpdated", {
           success: true,
           data: engine.buildLeaderboardPayload(),
         });
 
-        const result = engine.buildQuestionResults().get(socket.dbUser.id);
+        const questionResults =
+          runtime.lastQuestionResults?.get(socket.dbUser.id) ??
+          engine.buildQuestionResults().get(socket.dbUser.id);
 
         socket.emit("questionResults", {
           success: true,
-          data: result,
+          data: questionResults,
         });
       }
 
       if (runtime.phase === QuizPhase.RESULTS) {
-        socket.emit("leaderboardUpdated", {
-          success: true,
-          data: engine.buildLeaderboardPayload(),
-        });
-
         const result = runtime.finalResults.get(socket.dbUser.id);
 
         socket.emit("finalResults", {

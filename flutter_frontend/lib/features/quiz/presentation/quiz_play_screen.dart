@@ -40,7 +40,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     with TickerProviderStateMixin {
   String? _trackedQuestionId;
   QuizQuestionPayload? _cachedQuestion;
-  int? _cachedRemainingMs;
+  DateTime? _trackedPhaseEndsAt;
 
   bool _locked = false;
   bool _revealed = false;
@@ -104,23 +104,47 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
 
   /// Resets all per-question local state whenever a new question comes in
   /// from the server, and (re)starts the local countdown clock.
-  void _syncQuestion(QuizQuestionPayload question, int? remainingMs) {
-    if (_trackedQuestionId == question.id) return;
+  void _syncQuestion(
+    QuizQuestionPayload question,
+    DateTime? phaseEndsAt,
+    int? remainingMs,
+  ) {
+    final sameQuestion = _trackedQuestionId == question.id;
+    final sameDeadline = _trackedPhaseEndsAt == phaseEndsAt;
+    if (sameQuestion && sameDeadline) return;
+
     _trackedQuestionId = question.id;
+    _trackedPhaseEndsAt = phaseEndsAt;
     _cachedQuestion = question;
-    _cachedRemainingMs = remainingMs;
 
     _locked = false;
     _revealed = false;
     _autoSubmitAttempted = false;
     _navigatedForward = false;
 
-    final total = ((remainingMs ?? 20000) / 1000).ceil();
-    _totalSeconds = total > 0 ? total : 1;
-    _secondsLeft = _totalSeconds;
+    final totalMs = question.durationMs ?? remainingMs ?? 20000;
+    final leftMs =
+        phaseEndsAt?.difference(DateTime.now()).inMilliseconds ??
+        remainingMs ??
+        totalMs;
 
-    _timerCtrl.duration = Duration(seconds: _totalSeconds);
-    _timerCtrl.forward(from: 0);
+    _totalSeconds = (totalMs / 1000).ceil().clamp(1, 999999).toInt();
+    _secondsLeft = (leftMs / 1000).ceil().clamp(0, _totalSeconds).toInt();
+
+    final elapsedFraction = totalMs <= 0
+        ? 0.0
+        : (1.0 - (leftMs / totalMs)).clamp(0.0, 1.0).toDouble();
+    _timerCtrl.duration = Duration(milliseconds: totalMs);
+    _timerCtrl.value = elapsedFraction;
+    if (leftMs > 0) {
+      _timerCtrl.animateTo(
+        1.0,
+        duration: Duration(milliseconds: leftMs),
+        curve: Curves.linear,
+      );
+    } else {
+      _timerCtrl.value = 1.0;
+    }
 
     _questionSlideCtrl.reset();
     _questionSlideCtrl.forward();
@@ -128,13 +152,20 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     _secondsTimer?.cancel();
     _secondsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      final left = _secondsLeft - 1;
-      if (left <= 0) {
+      final endsAt = _trackedPhaseEndsAt;
+      final msLeft =
+          endsAt?.difference(DateTime.now()).inMilliseconds ??
+          _secondsLeft * 1000;
+      final nextSeconds = (msLeft / 1000)
+          .ceil()
+          .clamp(0, _totalSeconds)
+          .toInt();
+      if (nextSeconds <= 0) {
         _secondsTimer?.cancel();
         setState(() => _secondsLeft = 0);
         _onLocalTimeUp();
       } else {
-        setState(() => _secondsLeft = left);
+        setState(() => _secondsLeft = nextSeconds);
       }
     });
   }
@@ -143,6 +174,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   /// whatever was selected — the server remains the source of truth.
   void _onLocalTimeUp() {
     if (!mounted) return;
+    if (_locked) return;
     setState(() => _locked = true);
 
     final state = ref.read(quizRuntimeControllerProvider(widget.quizId));
@@ -228,7 +260,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     }
 
     // Sync local per-question state (idempotent — only acts on a new id).
-    _syncQuestion(question, runtime?.remainingTimeMs ?? _cachedRemainingMs);
+    _syncQuestion(question, runtime?.phaseEndsAt, runtime?.remainingTimeMs);
 
     final totalQ = quizDetail.value?.questionCount ?? 0;
     final idx = runtime?.questionIndex ?? 0;
