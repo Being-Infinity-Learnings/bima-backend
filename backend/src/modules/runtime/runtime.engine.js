@@ -101,14 +101,14 @@ class RuntimeEngine {
   }
 
   finishQuestion() {
+    const questionResults = this.buildQuestionResults();
+
+    this.runtime.lastQuestionResults = questionResults;
+
     const isLastQuestion =
       this.runtime.currentQuestionIndex === this.runtime.questions.length - 1;
 
-    const questionResults = this.buildQuestionResults();
-    this.runtime.lastQuestionResults = questionResults;
-
     if (isLastQuestion) {
-      socketBroadcast.broadcastQuestionResults(questionResults);
       this.enterResults();
       return;
     }
@@ -124,16 +124,18 @@ class RuntimeEngine {
       RuntimeConfig.LEADERBOARD_DURATION_MS,
     );
 
-    socketBroadcast.broadcastLeaderboard(
-      this.runtime.quiz.id,
-      this.buildLeaderboardPayload(),
-    );
+    // 1. Tell every player whether they were correct.
+    socketBroadcast.broadcastQuestionResults(questionResults);
 
-    socketBroadcast.broadcastQuestionResults(
-      questionResults ?? this.buildQuestionResults(),
-    );
+    // 2. Wait a little so the Flutter reveal animation can play.
+    setTimeout(() => {
+      socketBroadcast.broadcastLeaderboard(
+        this.runtime.quiz.id,
+        this.buildLeaderboardPayload(),
+      );
 
-    this.broadcastRuntimeState();
+      this.broadcastRuntimeState();
+    }, 2000);
 
     this.scheduleNext(
       () => this.enterQuestion(),

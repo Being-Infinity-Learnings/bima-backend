@@ -37,6 +37,11 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
   bool _clockInitialized = false;
   bool _navigatedForward = false;
 
+  Timer? _leaderboardTimer;
+  int? _leaderboardEndsAtMs;
+  String? _leaderboardSyncKey;
+  bool _leaderboardFinished = false;
+
   @override
   void initState() {
     super.initState();
@@ -52,6 +57,7 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
     _localTicker?.cancel();
     _entranceCtrl.dispose();
     _countdownRingCtrl.dispose();
+    _leaderboardTimer?.cancel();
     super.dispose();
   }
 
@@ -87,7 +93,11 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
       return Tween<double>(begin: 0, end: 1).animate(
         CurvedAnimation(
           parent: _entranceCtrl,
-          curve: Interval(start, end.clamp(0.0, 1.0), curve: Curves.easeOutCubic),
+          curve: Interval(
+            start,
+            end.clamp(0.0, 1.0),
+            curve: Curves.easeOutCubic,
+          ),
         ),
       );
     });
@@ -201,7 +211,9 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
                   ? Center(
                       child: Text(
                         'Waiting for scores…',
-                        style: TextStyle(color: AppConfig.mutedTextColor(isDark)),
+                        style: TextStyle(
+                          color: AppConfig.mutedTextColor(isDark),
+                        ),
                       ),
                     )
                   : ListView.builder(
@@ -417,7 +429,11 @@ class _YourRankCallout extends StatelessWidget {
   final int? rank;
   final int total;
   final bool isDark;
-  const _YourRankCallout({required this.rank, required this.total, required this.isDark});
+  const _YourRankCallout({
+    required this.rank,
+    required this.total,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -499,7 +515,9 @@ class _LeaderboardRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rankC = _rankColor(isDark);
-    final initial = entry.fullName.isNotEmpty ? entry.fullName[0].toUpperCase() : '?';
+    final initial = entry.fullName.isNotEmpty
+        ? entry.fullName[0].toUpperCase()
+        : '?';
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),

@@ -41,6 +41,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   String? _trackedQuestionId;
   QuizQuestionPayload? _cachedQuestion;
   DateTime? _trackedPhaseEndsAt;
+  QuizPhase? _pendingNextPhase;
 
   bool _locked = false;
   bool _revealed = false;
@@ -50,6 +51,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   int _secondsLeft = 0;
   int _totalSeconds = 0;
   Timer? _secondsTimer;
+  Timer? _revealHoldTimer;
 
   late AnimationController _questionSlideCtrl;
   late Animation<Offset> _questionSlide;
@@ -93,6 +95,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   @override
   void dispose() {
     _secondsTimer?.cancel();
+    _revealHoldTimer?.cancel();
     _questionSlideCtrl.dispose();
     _timerCtrl.dispose();
     _submitPulseCtrl.dispose();
@@ -111,7 +114,26 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   ) {
     final sameQuestion = _trackedQuestionId == question.id;
     final sameDeadline = _trackedPhaseEndsAt == phaseEndsAt;
-    if (sameQuestion && sameDeadline) return;
+    if (sameQuestion) {
+      // Ignore every socket update once reveal has started.
+      if (_revealed) {
+        return;
+      }
+
+      // Same question + same deadline = nothing changed.
+      if (sameDeadline) {
+        return;
+      }
+
+      // Same question but different deadline.
+      // Ignore tiny deadline corrections (<500 ms)
+      if (phaseEndsAt != null &&
+          _trackedPhaseEndsAt != null &&
+          (phaseEndsAt.difference(_trackedPhaseEndsAt!).inMilliseconds).abs() <
+              500) {
+        return;
+      }
+    }
 
     _trackedQuestionId = question.id;
     _trackedPhaseEndsAt = phaseEndsAt;
@@ -121,6 +143,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     _revealed = false;
     _autoSubmitAttempted = false;
     _navigatedForward = false;
+    _pendingNextPhase = null;
 
     final totalMs = question.durationMs ?? remainingMs ?? 20000;
     final leftMs =
@@ -190,24 +213,43 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   /// moment both the phase has moved on AND the real question result has
   /// arrived.
   void _maybeReveal(QuizRuntimeState state) {
-    if (_revealed || _navigatedForward || !mounted) return;
-    if (state.phase == QuizPhase.question) return;
+    if (!mounted || _revealed || _navigatedForward) return;
+
     if (state.myQuestionResult == null) return;
+
+    // Remember where the backend already moved us.
+    if (state.phase == QuizPhase.leaderboard ||
+        state.phase == QuizPhase.results ||
+        state.phase == QuizPhase.completed) {
+      _pendingNextPhase = state.phase;
+    }
+
+    _secondsTimer?.cancel();
 
     setState(() {
       _locked = true;
       _revealed = true;
     });
+
     HapticFeedback.mediumImpact();
 
-    final nextPhase = state.phase;
-    Future.delayed(const Duration(seconds: 2), () {
+    _revealHoldTimer?.cancel();
+
+    _revealHoldTimer = Timer(const Duration(seconds: 2), () {
       if (!mounted || _navigatedForward) return;
+
       _navigatedForward = true;
-      if (nextPhase == QuizPhase.leaderboard) {
-        context.pushReplacement('/quiz/${widget.quizId}/leaderboard');
-      } else {
-        context.pushReplacement('/quiz/${widget.quizId}/results');
+
+      switch (_pendingNextPhase) {
+        case QuizPhase.results:
+        case QuizPhase.completed:
+          context.pushReplacement('/quiz/${widget.quizId}/results');
+          break;
+
+        case QuizPhase.leaderboard:
+        default:
+          context.pushReplacement('/quiz/${widget.quizId}/leaderboard');
+          break;
       }
     });
   }
@@ -260,8 +302,9 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     }
 
     // Sync local per-question state (idempotent — only acts on a new id).
-    _syncQuestion(question, runtime?.phaseEndsAt, runtime?.remainingTimeMs);
-
+    if (!_revealed && quizState.phase == QuizPhase.question) {
+      _syncQuestion(question, runtime?.phaseEndsAt, runtime?.remainingTimeMs);
+    }
     final totalQ = quizDetail.value?.questionCount ?? 0;
     final idx = runtime?.questionIndex ?? 0;
     final hasImage =
