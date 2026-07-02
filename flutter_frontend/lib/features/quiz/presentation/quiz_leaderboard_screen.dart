@@ -40,6 +40,14 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
   String? _leaderboardSyncKey;
   bool _leaderboardFinished = false;
 
+  /// Server-clock-corrected "now" — see [QuizRuntimeState.estimatedServerNow].
+  /// Always use this (not raw `DateTime.now()`) when comparing against
+  /// `phaseEndsAt`, so a device with a skewed system clock still counts
+  /// down in lockstep with when the server actually advances the phase.
+  DateTime _serverNow() => ref
+      .read(quizRuntimeControllerProvider(widget.quizId))
+      .estimatedServerNow();
+
   @override
   void initState() {
     super.initState();
@@ -72,7 +80,7 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
     _leaderboardSyncKey = syncKey;
 
     final leftMs =
-        phaseEndsAt?.difference(DateTime.now()).inMilliseconds ??
+        phaseEndsAt?.difference(_serverNow()).inMilliseconds ??
         remainingMs ??
         5000;
     final total = (leftMs / 1000).ceil();
@@ -88,7 +96,7 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
     _localTicker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       final msLeft =
-          phaseEndsAt?.difference(DateTime.now()).inMilliseconds ??
+          phaseEndsAt?.difference(_serverNow()).inMilliseconds ??
           (_secondsLeft - 1) * 1000;
       final left = (msLeft / 1000).ceil().clamp(0, _totalSeconds);
       if (left <= 0) {

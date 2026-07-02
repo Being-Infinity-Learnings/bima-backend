@@ -240,7 +240,19 @@ class RuntimeState {
   final int? questionIndex;
   final QuizQuestionPayload? question;
 
-  const RuntimeState({
+  /// The server's own `Date.now()` at the instant this snapshot was built
+  /// (see `serverTime` in `runtime.engine.js#getRuntimeState`). Combined
+  /// with [receivedAt] (stamped locally the moment this object is parsed),
+  /// this lets callers compute how far the device's clock is from the
+  /// server's clock, instead of comparing `phaseEndsAt` against the
+  /// device's own possibly-skewed `DateTime.now()`.
+  final int? serverTime;
+
+  /// Local wall-clock time at the moment this snapshot was parsed. Used
+  /// together with [serverTime] to derive the clock offset.
+  final DateTime receivedAt;
+
+  RuntimeState({
     required this.phase,
     required this.remainingTimeMs,
     required this.phaseStartedAt,
@@ -248,7 +260,9 @@ class RuntimeState {
     this.connectedUsers,
     this.questionIndex,
     this.question,
-  });
+    this.serverTime,
+    DateTime? receivedAt,
+  }) : receivedAt = receivedAt ?? DateTime.now();
 
   factory RuntimeState.fromJson(Map<String, dynamic> json) {
     return RuntimeState(
@@ -267,7 +281,18 @@ class RuntimeState {
           : QuizQuestionPayload.fromJson(
               json['question'] as Map<String, dynamic>,
             ),
+      serverTime: json['serverTime'] as int?,
+      receivedAt: DateTime.now(),
     );
+  }
+
+  /// How far ahead the server's clock is compared to this device's clock,
+  /// captured at the moment this snapshot arrived. Add this to
+  /// `DateTime.now()` anywhere a screen needs to compare against
+  /// `phaseEndsAt`, instead of using the device's raw clock.
+  int? get clockOffsetMs {
+    if (serverTime == null) return null;
+    return serverTime! - receivedAt.millisecondsSinceEpoch;
   }
 }
 

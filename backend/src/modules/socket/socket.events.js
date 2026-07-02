@@ -1,6 +1,10 @@
+// Purpose: Register top-level socket event handlers when a client
+// connects, including quiz-related events and graceful disconnect
+// handling.
 const registerQuizEvents = require("./quiz.socket");
 const socketManager = require("./socket.manager");
 
+// Register per-socket event handlers and attach disconnect logic.
 function registerEvents(io, socket) {
   console.log(
     `[Socket] Connected: ${socket.dbUser.fullName} (${socket.dbUser.id})`,
@@ -24,7 +28,5 @@ function registerEvents(io, socket) {
     console.log(`[Socket] Disconnected: ${socket.dbUser.fullName}`);
   });
 }
-
-module.exports = registerEvents;
 
 module.exports = registerEvents;

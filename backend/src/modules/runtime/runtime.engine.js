@@ -1,3 +1,7 @@
+// Purpose: Implements the live quiz runtime engine. Manages quiz phases
+// (lobby, question, leaderboard, results, completed), scheduling of
+// phase transitions, handling of submissions, score calculation, and
+// broadcasting runtime updates and results to connected socket clients.
 const prisma = require("../../config/prisma");
 
 const manager = require("./runtime.manager");
@@ -8,15 +12,19 @@ const { socketBroadcast } = require("../socket");
 
 const calculateScore = require("./runtime.scoring");
 
+// RuntimeEngine: encapsulates an active quiz runtime and exposes methods
+// to start and progress the quiz, accept submissions, and compute results.
 class RuntimeEngine {
   constructor(runtime) {
     this.runtime = runtime;
   }
 
+  // Return the duration (ms) for a question, using a custom timer if set.
   getQuestionDuration(question) {
     return (question.customTimer ?? this.runtime.quiz.defaultTimer) * 1000;
   }
 
+  // Broadcast the current runtime state to all clients in the quiz room.
   broadcastRuntimeState() {
     socketBroadcast.broadcastRuntimeState(
       this.runtime.quiz.id,
@@ -24,6 +32,7 @@ class RuntimeEngine {
     );
   }
 
+  // Change the current runtime phase and set phase timing metadata.
   changePhase(phase, durationMs = null) {
     this.runtime.phase = phase;
 
@@ -36,6 +45,7 @@ class RuntimeEngine {
     }
   }
 
+  // Schedule the next phase/action; clears any existing timeout first.
   scheduleNext(callback, delay) {
     if (this.runtime.timeoutHandle) {
       clearTimeout(this.runtime.timeoutHandle);
@@ -44,6 +54,7 @@ class RuntimeEngine {
     this.runtime.timeoutHandle = setTimeout(callback, delay);
   }
 
+  // Start the runtime: mark quiz live in DB and enter lobby.
   async start() {
     await prisma.quiz.update({
       where: {
@@ -62,6 +73,7 @@ class RuntimeEngine {
     this.enterLobby();
   }
 
+  // Enter the lobby phase and schedule transition to the first question.
   enterLobby() {
     console.log(`[Runtime] Lobby`);
 
@@ -75,6 +87,8 @@ class RuntimeEngine {
     );
   }
 
+  // Advance to the next question, set timers, broadcast state, and
+  // schedule finishQuestion.
   enterQuestion() {
     this.runtime.currentQuestionIndex++;
 
@@ -114,6 +128,9 @@ class RuntimeEngine {
   ///      before the other. Clients navigate purely off `runtimeUpdated`,
   ///      so this is what guarantees the reveal always lasts exactly
   ///      REVEAL_DELAY_MS on every client, no more, no less.
+  // Called when a question's timer expires. Builds question results,
+  // broadcasts immediate per-user reveal payloads then schedules the
+  // transition to leaderboard or results after REVEAL_DELAY_MS.
   finishQuestion() {
     const questionResults = this.buildQuestionResults();
 
@@ -133,6 +150,8 @@ class RuntimeEngine {
     }, RuntimeConfig.REVEAL_DELAY_MS);
   }
 
+  // Enter leaderboard phase, broadcast leaderboard, and schedule next
+  // question.
   enterLeaderboard() {
     console.log("[Runtime] Leaderboard");
 
@@ -158,6 +177,7 @@ class RuntimeEngine {
     );
   }
 
+  // Enter results phase, compute final results and broadcast them.
   enterResults() {
     console.log("[Runtime] Results");
 
@@ -177,6 +197,7 @@ class RuntimeEngine {
     this.scheduleNext(() => this.complete(), RuntimeConfig.RESULTS_DURATION_MS);
   }
 
+  // Ensure provided selected option ids exist on the question.
   validateSelectedOptions(question, selectedOptionIds) {
     const validOptionIds = new Set(question.options.map((option) => option.id));
 
@@ -187,6 +208,8 @@ class RuntimeEngine {
     }
   }
 
+  // Process an incoming answer submission: validate, compute score,
+  // persist to DB, update leaderboard, and store the submission.
   async submitAnswer({ userId, questionId, selectedOptionIds }) {
     this.validateSubmission({
       userId,
@@ -237,6 +260,7 @@ class RuntimeEngine {
     return;
   }
 
+  // Validate that submissions are currently accepted and not duplicated.
   validateSubmission({ userId, questionId }) {
     if (this.runtime.phase !== QuizPhase.QUESTION) {
       throw new Error("Quiz is not accepting answers.");
@@ -251,6 +275,7 @@ class RuntimeEngine {
     }
   }
 
+  // Determine whether the submitted answer is correct for the question.
   isCorrectAnswer(question, selectedOptionIds) {
     switch (question.questionType) {
       case "SINGLE_CORRECT": {
@@ -270,6 +295,7 @@ class RuntimeEngine {
     }
   }
 
+  // Update in-memory leaderboard with a user's incremental score.
   updateLeaderboard(userId, score) {
     let entry = this.runtime.leaderboard.get(userId);
 
@@ -290,6 +316,7 @@ class RuntimeEngine {
     return entry.score;
   }
 
+  // Register a user in the runtime leaderboard if not present.
   registerParticipant(user) {
     if (this.runtime.leaderboard.has(user.id)) {
       return;
@@ -304,6 +331,7 @@ class RuntimeEngine {
     });
   }
 
+  // Build a normalized submission object for storage and in-memory use.
   buildSubmission({
     userId,
     questionId,
@@ -330,6 +358,7 @@ class RuntimeEngine {
     };
   }
 
+  // Persist a submission record to the database.
   async persistSubmission(submission) {
     await prisma.quizSubmission.create({
       data: {
@@ -352,6 +381,7 @@ class RuntimeEngine {
     });
   }
 
+  // Returns remaining time (ms) in the current phase, or null if none.
   getRemainingTime() {
     if (!this.runtime.phaseEndsAt) {
       return null;
@@ -360,10 +390,12 @@ class RuntimeEngine {
     return Math.max(this.runtime.phaseEndsAt.getTime() - Date.now(), 0);
   }
 
+  // Return the current question object.
   getCurrentQuestion() {
     return this.runtime.currentQuestion;
   }
 
+  // Build the payload sent to clients describing the current question.
   buildQuestionPayload() {
     if (!this.runtime.currentQuestion) {
       return null;
@@ -397,6 +429,7 @@ class RuntimeEngine {
     };
   }
 
+  // Build a leaderboard payload limited to the top N entries.
   buildLeaderboardPayload(limit = 10) {
     return {
       leaderboard: this.getLeaderboard().slice(0, limit),
@@ -409,6 +442,7 @@ class RuntimeEngine {
     };
   }
 
+  // Construct final results map for broadcast/storage.
   buildFinalResults() {
     const results = new Map();
 
@@ -425,6 +459,7 @@ class RuntimeEngine {
     return results;
   }
 
+  // Build per-user question results (correct flag, score, rank, etc.).
   buildQuestionResults() {
     const correctOptionIds = this.runtime.currentQuestion.options
       .filter((option) => option.isCorrect)
@@ -454,6 +489,7 @@ class RuntimeEngine {
     return results;
   }
 
+  // Return a sorted array representation of the in-memory leaderboard.
   getLeaderboard() {
     return [...this.runtime.leaderboard.entries()]
       .map(([userId, entry]) => ({
@@ -473,10 +509,12 @@ class RuntimeEngine {
       }));
   }
 
+  // Convenience: top N entries from leaderboard.
   getTopLeaderboard(limit = 10) {
     return this.getLeaderboard().slice(0, limit);
   }
 
+  // Return a user's current rank or null if not present.
   getUserRank(userId) {
     const leaderboard = this.getLeaderboard();
 
@@ -489,10 +527,12 @@ class RuntimeEngine {
     return index + 1;
   }
 
+  // Return a user's current total score.
   getUserScore(userId) {
     return this.runtime.leaderboard.get(userId)?.score ?? 0;
   }
 
+  // Build the canonical runtime state object sent to clients.
   getRuntimeState() {
     const baseState = {
       quizId: this.runtime.quiz.id,
@@ -502,6 +542,7 @@ class RuntimeEngine {
       remainingTime: this.getRemainingTime(),
       phaseStartedAt: this.runtime.phaseStartedAt?.toISOString() ?? null,
       phaseEndsAt: this.runtime.phaseEndsAt?.toISOString() ?? null,
+      serverTime: Date.now(),
     };
 
     switch (this.runtime.phase) {
@@ -542,6 +583,7 @@ class RuntimeEngine {
     }
   }
 
+  // Return whether the runtime is currently active/running.
   isRunning() {
     return (
       this.runtime.phase !== QuizPhase.COMPLETED &&
@@ -549,10 +591,13 @@ class RuntimeEngine {
     );
   }
 
+  // Check whether a user is registered as a participant in this runtime.
   isParticipantRegistered(userId) {
     return this.runtime.leaderboard.has(userId);
   }
 
+  // Mark the quiz completed in the DB, broadcast final state, and
+  // destroy the runtime manager entry.
   async complete() {
     await prisma.quiz.update({
       where: {

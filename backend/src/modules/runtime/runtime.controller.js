@@ -1,7 +1,11 @@
+// Purpose: HTTP controllers for initializing and controlling quiz
+// runtimes via REST endpoints used for debugging and administrative
+// actions.
 const loader = require("./runtime.loader");
 const manager = require("./runtime.manager");
 const RuntimeEngine = require("./runtime.engine");
 
+// Initialize a runtime for a scheduled quiz.
 async function initialize(req, res) {
   try {
     const { quizId } = req.params;
@@ -39,6 +43,7 @@ async function initialize(req, res) {
   }
 }
 
+// Start an initialized runtime (mark quiz LIVE and begin the engine).
 async function start(req, res) {
   try {
     const engine = manager.requireEngine(req.params.quizId);
@@ -59,7 +64,7 @@ async function start(req, res) {
   }
 }
 
-//debug
+// Debug: submit an answer via HTTP to the runtime engine.
 async function submitAnswer(req, res) {
   try {
     const engine = manager.requireEngine(req.params.quizId);
@@ -82,7 +87,7 @@ async function submitAnswer(req, res) {
   }
 }
 
-//debug
+// Debug: fetch the current runtime state for inspecting behavior.
 async function getRuntimeState(req, res) {
   try {
     const engine = manager.requireEngine(req.params.quizId);

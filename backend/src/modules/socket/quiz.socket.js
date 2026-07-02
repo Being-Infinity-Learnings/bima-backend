@@ -1,7 +1,10 @@
+// Purpose: Register quiz-specific socket event handlers (join, submit)
+// and perform runtime user validation.
 const runtimeManager = require("../runtime/runtime.manager");
 const socketManager = require("./socket.manager");
 const { QuizPhase } = require("../runtime/runtime.constants");
 
+// Register handlers for quiz-related socket events.
 function registerQuizEvents(io, socket) {
   socket.on("joinQuiz", ({ quizId }) => {
     try {
@@ -96,6 +99,8 @@ function registerQuizEvents(io, socket) {
   });
 }
 
+// Validate that a user is allowed to join the quiz based on visibility
+// and group membership.
 function validateUser(runtime, user) {
   // Public quizzes are open to everyone.
   if (runtime.quiz.visibility === "PUBLIC") {

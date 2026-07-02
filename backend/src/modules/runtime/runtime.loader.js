@@ -1,7 +1,10 @@
+// Purpose: Load quiz data from the database and construct an initial
+// in-memory runtime object ready for the runtime engine.
 const prisma = require("../../config/prisma");
 
 const { QuizPhase } = require("./runtime.constants");
 
+// Load quiz + questions and initialize runtime state for the engine.
 async function load(quizId) {
   const quiz = await prisma.quiz.findUnique({
     where: {

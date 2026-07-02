@@ -1,3 +1,5 @@
+// Purpose: Constants describing runtime phases and configuration values
+// used by the runtime engine.
 const QuizPhase = Object.freeze({
   WAITING: "WAITING",
 

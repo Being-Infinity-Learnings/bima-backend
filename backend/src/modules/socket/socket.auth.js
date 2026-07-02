@@ -1,6 +1,9 @@
+// Purpose: Socket middleware to authenticate clients using Firebase
+// ID tokens and attach the corresponding DB user to the socket.
 const admin = require("../../config/firebase");
 const prisma = require("../../config/prisma");
 
+// Authenticate incoming socket connections and populate `socket.dbUser`.
 async function authenticate(socket, next) {
   try {
     const token = socket.handshake.auth?.token;

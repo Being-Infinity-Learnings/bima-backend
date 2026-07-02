@@ -1,3 +1,5 @@
+// Purpose: Express routes for runtime management and debugging. Exposes
+// endpoints for initializing and controlling quiz runtimes.
 const express = require("express");
 
 const router = express.Router();
@@ -8,6 +10,7 @@ const allowRoles = require("../../middleware/role.middleware");
 
 const controller = require("./runtime.controller");
 
+// Initialize runtime for a scheduled quiz (ADMIN only)
 router.post(
   "/:quizId/initialize",
   auth,
@@ -15,12 +18,13 @@ router.post(
   controller.initialize,
 );
 
+// Start the runtime (ADMIN only)
 router.post("/:quizId/start", auth, allowRoles("ADMIN"), controller.start);
 
-//debug
+// Debug: submit an answer via HTTP
 router.post("/:quizId/submit", auth, controller.submitAnswer);
 
-//debug
+// Debug: fetch the current runtime state
 router.get("/:quizId/state", auth, controller.getRuntimeState);
 
 module.exports = router;

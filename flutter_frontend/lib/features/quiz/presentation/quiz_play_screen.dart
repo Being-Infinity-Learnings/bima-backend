@@ -103,6 +103,14 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   QuizRuntimeController get _controller =>
       ref.read(quizRuntimeControllerProvider(widget.quizId).notifier);
 
+  /// Server-clock-corrected "now" — see [QuizRuntimeState.estimatedServerNow].
+  /// Always use this (not raw `DateTime.now()`) when comparing against
+  /// `phaseEndsAt`, so a device with a skewed system clock still counts
+  /// down in lockstep with when the server actually ends the question.
+  DateTime _serverNow() => ref
+      .read(quizRuntimeControllerProvider(widget.quizId))
+      .estimatedServerNow();
+
   /// Resets all per-question local state whenever a new question comes in
   /// from the server, and (re)starts the local countdown clock.
   void _syncQuestion(
@@ -143,7 +151,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
 
     final totalMs = question.durationMs ?? remainingMs ?? 20000;
     final leftMs =
-        phaseEndsAt?.difference(DateTime.now()).inMilliseconds ??
+        phaseEndsAt?.difference(_serverNow()).inMilliseconds ??
         remainingMs ??
         totalMs;
 
@@ -173,7 +181,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
       if (!mounted) return;
       final endsAt = _trackedPhaseEndsAt;
       final msLeft =
-          endsAt?.difference(DateTime.now()).inMilliseconds ??
+          endsAt?.difference(_serverNow()).inMilliseconds ??
           _secondsLeft * 1000;
       final nextSeconds = (msLeft / 1000)
           .ceil()

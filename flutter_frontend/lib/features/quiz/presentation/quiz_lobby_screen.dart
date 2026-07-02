@@ -82,10 +82,18 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
     super.dispose();
   }
 
+  /// Server-clock-corrected "now" — see [QuizRuntimeState.estimatedServerNow].
+  /// Always use this (not raw `DateTime.now()`) when comparing against
+  /// `phaseEndsAt`, so a device with a skewed system clock still counts
+  /// down in lockstep with when the server actually ends the lobby.
+  DateTime _serverNow() => ref
+      .read(quizRuntimeControllerProvider(widget.quizId))
+      .estimatedServerNow();
+
   Duration _remainingFromRuntime(QuizRuntimeState quizState) {
     final endsAt = quizState.runtime?.phaseEndsAt;
     if (endsAt == null) return Duration.zero;
-    final remaining = endsAt.difference(DateTime.now());
+    final remaining = endsAt.difference(_serverNow());
     return remaining.isNegative ? Duration.zero : remaining;
   }
 
@@ -120,9 +128,9 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
         quizState.runtime?.phaseEndsAt ?? quizAsync.value?.runtime?.phaseEndsAt;
     final remaining = phaseEndsAt == null
         ? Duration.zero
-        : phaseEndsAt.difference(DateTime.now()).isNegative
+        : phaseEndsAt.difference(_serverNow()).isNegative
         ? Duration.zero
-        : phaseEndsAt.difference(DateTime.now());
+        : phaseEndsAt.difference(_serverNow());
     final connectedUsers = quizState.runtime?.connectedUsers ?? 0;
 
     return Scaffold(

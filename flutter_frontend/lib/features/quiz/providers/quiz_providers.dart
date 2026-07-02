@@ -79,6 +79,20 @@ class QuizRuntimeState {
 
   QuizPhase get phase => runtime?.phase ?? QuizPhase.waiting;
 
+  /// Best current estimate of the SERVER's clock, derived from the most
+  /// recent runtime snapshot's `serverTime` plus however long ago that
+  /// snapshot was received. Every screen that compares against
+  /// `phaseEndsAt`/`phaseStartedAt` should use this instead of a raw
+  /// `DateTime.now()`, so a device with a skewed system clock still shows
+  /// a countdown that lines up with when the server actually fires the
+  /// phase-end / reveal events. Falls back to the device clock if we
+  /// haven't received a `serverTime` yet (e.g. very first frame).
+  DateTime estimatedServerNow() {
+    final offset = runtime?.clockOffsetMs;
+    if (offset == null) return DateTime.now();
+    return DateTime.now().add(Duration(milliseconds: offset));
+  }
+
   QuizRuntimeState copyWith({
     SocketConnectionStatus? connectionStatus,
     String? connectionError,
