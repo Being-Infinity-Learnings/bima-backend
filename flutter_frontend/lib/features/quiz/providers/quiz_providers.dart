@@ -1,0 +1,322 @@
+/// Riverpod providers for the quiz feature.
+///
+/// • [myQuizzesProvider]        — Home screen "Upcoming Quizzes" list.
+/// • [myQuizDetailProvider]     — one-shot detail fetch (used by the waiting
+///   screen's polling loop and to bootstrap the runtime controller).
+/// • [quizRuntimeControllerProvider] — owns the Socket.IO connection for a
+///   single quiz attempt and is shared by the lobby / play / leaderboard /
+///   results screens so the connection survives navigation between them.
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../data/quiz_models.dart';
+import '../data/quiz_repository.dart';
+import '../data/quiz_socket_service.dart';
+
+final quizRepositoryProvider = Provider<QuizRepository>((ref) {
+  return QuizRepository();
+});
+
+/// Home screen upcoming-quizzes list.
+final myQuizzesProvider = FutureProvider.autoDispose<List<MyQuizSummary>>((
+  ref,
+) {
+  return ref.read(quizRepositoryProvider).getMyQuizzes();
+});
+
+/// One-shot fetch of a single quiz's detail + runtime snapshot.
+/// The waiting screen re-reads this provider on a timer via `ref.refresh`.
+final myQuizDetailProvider = FutureProvider.autoDispose
+    .family<MyQuizDetail, String>((ref, quizId) {
+      return ref.read(quizRepositoryProvider).getMyQuizById(quizId);
+    });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live runtime controller
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum SocketConnectionStatus { idle, connecting, connected, disconnected, error }
+
+enum SubmissionStatus { none, pending, submitted, error }
+
+class QuizRuntimeState {
+  final SocketConnectionStatus connectionStatus;
+  final String? connectionError;
+
+  final RuntimeState? runtime;
+  final List<LeaderboardEntry> leaderboard;
+  final QuestionResult? myQuestionResult;
+  final FinalResult? myFinalResult;
+
+  /// Highest `connectedUsers` count observed (from the LOBBY phase) —
+  /// used as an approximation of "players competed" on the results screen,
+  /// since the leaderboard payload itself is capped at 10 entries.
+  final int peakParticipantCount;
+
+  /// Locally selected (not-yet-submitted) option for the current question.
+  final String? selectedOptionId;
+  final SubmissionStatus submissionStatus;
+  final String? submissionError;
+
+  /// Tracks which question the current selection/submission belongs to so
+  /// we can reset state cleanly when a new question arrives.
+  final String? answeredForQuestionId;
+
+  const QuizRuntimeState({
+    this.connectionStatus = SocketConnectionStatus.idle,
+    this.connectionError,
+    this.runtime,
+    this.leaderboard = const [],
+    this.myQuestionResult,
+    this.myFinalResult,
+    this.peakParticipantCount = 0,
+    this.selectedOptionId,
+    this.submissionStatus = SubmissionStatus.none,
+    this.submissionError,
+    this.answeredForQuestionId,
+  });
+
+  QuizPhase get phase => runtime?.phase ?? QuizPhase.waiting;
+
+  QuizRuntimeState copyWith({
+    SocketConnectionStatus? connectionStatus,
+    String? connectionError,
+    bool clearConnectionError = false,
+    RuntimeState? runtime,
+    List<LeaderboardEntry>? leaderboard,
+    QuestionResult? myQuestionResult,
+    bool clearQuestionResult = false,
+    FinalResult? myFinalResult,
+    int? peakParticipantCount,
+    String? selectedOptionId,
+    bool clearSelectedOptionId = false,
+    SubmissionStatus? submissionStatus,
+    String? submissionError,
+    bool clearSubmissionError = false,
+    String? answeredForQuestionId,
+    bool clearAnsweredForQuestionId = false,
+  }) {
+    return QuizRuntimeState(
+      connectionStatus: connectionStatus ?? this.connectionStatus,
+      connectionError: clearConnectionError
+          ? null
+          : (connectionError ?? this.connectionError),
+      runtime: runtime ?? this.runtime,
+      leaderboard: leaderboard ?? this.leaderboard,
+      myQuestionResult: clearQuestionResult
+          ? null
+          : (myQuestionResult ?? this.myQuestionResult),
+      myFinalResult: myFinalResult ?? this.myFinalResult,
+      peakParticipantCount: peakParticipantCount ?? this.peakParticipantCount,
+      selectedOptionId: clearSelectedOptionId
+          ? null
+          : (selectedOptionId ?? this.selectedOptionId),
+      submissionStatus: submissionStatus ?? this.submissionStatus,
+      submissionError: clearSubmissionError
+          ? null
+          : (submissionError ?? this.submissionError),
+      answeredForQuestionId: clearAnsweredForQuestionId
+          ? null
+          : (answeredForQuestionId ?? this.answeredForQuestionId),
+    );
+  }
+}
+
+class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
+  QuizRuntimeController(this._quizId, this._repository)
+      : super(const QuizRuntimeState());
+
+  final String _quizId;
+  final QuizRepository _repository;
+  final QuizSocketService _socket = QuizSocketService();
+
+  bool _disposed = false;
+
+  /// Opens the socket connection (if not already connecting/connected) and
+  /// joins the quiz room. Safe to call multiple times — subsequent calls
+  /// while already connecting/connected are no-ops.
+  Future<void> connectAndJoin() async {
+    if (state.connectionStatus == SocketConnectionStatus.connecting ||
+        state.connectionStatus == SocketConnectionStatus.connected) {
+      return;
+    }
+
+    state = state.copyWith(
+      connectionStatus: SocketConnectionStatus.connecting,
+      clearConnectionError: true,
+    );
+
+    final token = await _repository.getSocketToken();
+    if (_disposed) return;
+
+    if (token == null) {
+      state = state.copyWith(
+        connectionStatus: SocketConnectionStatus.error,
+        connectionError: 'You need to be signed in to join this quiz.',
+      );
+      return;
+    }
+
+    _socket.connect(
+      token: token,
+      onConnect: () {
+        if (_disposed) return;
+        _socket.joinQuiz(_quizId);
+      },
+      onConnectError: (message) {
+        if (_disposed) return;
+        state = state.copyWith(
+          connectionStatus: SocketConnectionStatus.error,
+          connectionError: message,
+        );
+      },
+      onDisconnect: () {
+        if (_disposed) return;
+        if (state.connectionStatus == SocketConnectionStatus.connected) {
+          state = state.copyWith(
+            connectionStatus: SocketConnectionStatus.disconnected,
+          );
+        }
+      },
+      onQuizJoined: (data) {
+        if (_disposed) return;
+        if (data['success'] == false) {
+          state = state.copyWith(
+            connectionStatus: SocketConnectionStatus.error,
+            connectionError: data['message'] as String? ?? 'Could not join quiz.',
+          );
+          return;
+        }
+        final runtime = RuntimeState.fromJson(
+          data['data'] as Map<String, dynamic>,
+        );
+        state = state.copyWith(
+          connectionStatus: SocketConnectionStatus.connected,
+          runtime: runtime,
+          peakParticipantCount: runtime.connectedUsers != null
+              ? (runtime.connectedUsers! > state.peakParticipantCount
+                  ? runtime.connectedUsers!
+                  : state.peakParticipantCount)
+              : state.peakParticipantCount,
+        );
+        _resetPerQuestionStateIfNeeded(runtime);
+      },
+      onJoinQuizError: (data) {
+        if (_disposed) return;
+        state = state.copyWith(
+          connectionStatus: SocketConnectionStatus.error,
+          connectionError:
+              data['message'] as String? ?? 'Could not join this quiz.',
+        );
+      },
+      onRuntimeUpdated: (data) {
+        if (_disposed) return;
+        if (data['data'] == null) return;
+        final runtime = RuntimeState.fromJson(
+          data['data'] as Map<String, dynamic>,
+        );
+        state = state.copyWith(
+          runtime: runtime,
+          peakParticipantCount: runtime.connectedUsers != null
+              ? (runtime.connectedUsers! > state.peakParticipantCount
+                  ? runtime.connectedUsers!
+                  : state.peakParticipantCount)
+              : state.peakParticipantCount,
+        );
+        _resetPerQuestionStateIfNeeded(runtime);
+      },
+      onLeaderboardUpdated: (data) {
+        if (_disposed) return;
+        final payload = data['data'] as Map<String, dynamic>?;
+        final list = (payload?['leaderboard'] as List?) ?? [];
+        state = state.copyWith(
+          leaderboard: list
+              .map((e) => LeaderboardEntry.fromJson(e as Map<String, dynamic>))
+              .toList(),
+        );
+      },
+      onQuestionResults: (data) {
+        if (_disposed) return;
+        final payload = data['data'] as Map<String, dynamic>?;
+        if (payload == null) return;
+        state = state.copyWith(myQuestionResult: QuestionResult.fromJson(payload));
+      },
+      onFinalResults: (data) {
+        if (_disposed) return;
+        final payload = data['data'] as Map<String, dynamic>?;
+        if (payload == null) return;
+        state = state.copyWith(myFinalResult: FinalResult.fromJson(payload));
+      },
+      onAnswerSubmitted: () {
+        if (_disposed) return;
+        state = state.copyWith(submissionStatus: SubmissionStatus.submitted);
+      },
+      onAnswerSubmissionError: (message) {
+        if (_disposed) return;
+        state = state.copyWith(
+          submissionStatus: SubmissionStatus.error,
+          submissionError: message,
+        );
+      },
+    );
+  }
+
+  /// Clears per-question selection/submission state whenever the active
+  /// question changes (new QUESTION phase, or moving past LEADERBOARD).
+  void _resetPerQuestionStateIfNeeded(RuntimeState runtime) {
+    if (runtime.phase == QuizPhase.question && runtime.question != null) {
+      if (state.answeredForQuestionId != runtime.question!.id) {
+        state = state.copyWith(
+          clearSelectedOptionId: true,
+          submissionStatus: SubmissionStatus.none,
+          clearSubmissionError: true,
+          clearQuestionResult: true,
+          answeredForQuestionId: runtime.question!.id,
+        );
+      }
+    }
+  }
+
+  void selectOption(String optionId) {
+    if (state.submissionStatus != SubmissionStatus.none) return;
+    state = state.copyWith(selectedOptionId: optionId);
+  }
+
+  /// Deselects the current pick — only allowed before submitting.
+  void clearSelection() {
+    if (state.submissionStatus != SubmissionStatus.none) return;
+    state = state.copyWith(clearSelectedOptionId: true);
+  }
+
+  void submitSelectedAnswer() {
+    final questionId = state.runtime?.question?.id;
+    final selected = state.selectedOptionId;
+    if (questionId == null || selected == null) return;
+    if (state.submissionStatus != SubmissionStatus.none) return;
+
+    state = state.copyWith(
+      submissionStatus: SubmissionStatus.pending,
+      clearSubmissionError: true,
+    );
+    _socket.submitAnswer(questionId: questionId, selectedOptionIds: [selected]);
+  }
+
+  /// Fully tears down the socket connection. Call this when the student
+  /// leaves the quiz flow (back out of the lobby, or finishes on the
+  /// results screen) — not on every screen transition within the flow.
+  void leaveQuiz() {
+    _socket.disconnect();
+    state = const QuizRuntimeState();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _socket.disconnect();
+    super.dispose();
+  }
+}
+
+final quizRuntimeControllerProvider = StateNotifierProvider.family<
+    QuizRuntimeController, QuizRuntimeState, String>((ref, quizId) {
+  return QuizRuntimeController(quizId, ref.read(quizRepositoryProvider));
+});

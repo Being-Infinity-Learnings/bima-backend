@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../config/app_config.dart';
 import '../../quiz/data/quiz_dummy_data.dart';
+import '../../quiz/data/quiz_models.dart';
+import '../../quiz/providers/quiz_providers.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Countdown provider — ticks every second so quiz card timers update live
@@ -59,8 +61,10 @@ class HomeScreen extends ConsumerWidget {
         ),
         child: SafeArea(
           child: RefreshIndicator(
-            onRefresh: () async =>
-                await Future.delayed(const Duration(seconds: 1)),
+            onRefresh: () async {
+              ref.invalidate(myQuizzesProvider);
+              await ref.read(myQuizzesProvider.future);
+            },
             color: AppConfig.primaryColor,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -92,41 +96,86 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(height: 32),
 
                       // ── Upcoming quizzes ───────────────────────────────
-                      _SectionHeader(
-                        label: 'UPCOMING QUIZZES',
-                        isDark: isDark,
-                        trailing: demoUpcomingQuizzes.isEmpty
-                            ? null
-                            : Text(
-                                '${demoUpcomingQuizzes.length} scheduled',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark
-                                      ? const Color(0xFF7A8499)
-                                      : const Color(0xFF9CA3AF),
+                      Builder(builder: (context) {
+                        final upcomingAsync = ref.watch(myQuizzesProvider);
+
+                        return upcomingAsync.when(
+                          loading: () => Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SectionHeader(
+                                label: 'UPCOMING QUIZZES',
+                                isDark: isDark,
+                              ),
+                              const SizedBox(height: 14),
+                              const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 12),
+                                  child: CircularProgressIndicator(
+                                    color: AppConfig.primaryColor,
+                                  ),
                                 ),
                               ),
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      if (demoUpcomingQuizzes.isEmpty)
-                        _EmptyState(
-                          isDark: isDark,
-                          icon: Icons.event_note_outlined,
-                          message: 'No quizzes scheduled right now.\nCheck back later!',
-                        )
-                      else
-                        ...demoUpcomingQuizzes.map((quiz) => Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _UpcomingQuizCard(
-                                quiz: quiz,
+                            ],
+                          ),
+                          error: (err, __) => Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SectionHeader(
+                                label: 'UPCOMING QUIZZES',
                                 isDark: isDark,
-                                onTap: () =>
-                                    context.push('/quiz/${quiz.id}/lobby'),
                               ),
-                            )),
+                              const SizedBox(height: 14),
+                              _EmptyState(
+                                isDark: isDark,
+                                icon: Icons.wifi_off_rounded,
+                                message:
+                                    'Could not load quizzes.\nPull down to try again.',
+                              ),
+                            ],
+                          ),
+                          data: (quizzes) => Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SectionHeader(
+                                label: 'UPCOMING QUIZZES',
+                                isDark: isDark,
+                                trailing: quizzes.isEmpty
+                                    ? null
+                                    : Text(
+                                        '${quizzes.length} scheduled',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: isDark
+                                              ? const Color(0xFF7A8499)
+                                              : const Color(0xFF9CA3AF),
+                                        ),
+                                      ),
+                              ),
+                              const SizedBox(height: 14),
+                              if (quizzes.isEmpty)
+                                _EmptyState(
+                                  isDark: isDark,
+                                  icon: Icons.event_note_outlined,
+                                  message:
+                                      'No quizzes scheduled right now.\nCheck back later!',
+                                )
+                              else
+                                ...quizzes.map((quiz) => Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 12),
+                                      child: _UpcomingQuizCard(
+                                        quiz: quiz,
+                                        isDark: isDark,
+                                        onTap: () => context
+                                            .push('/quiz/${quiz.id}/waiting'),
+                                      ),
+                                    )),
+                            ],
+                          ),
+                        );
+                      }),
 
                       const SizedBox(height: 32),
 
@@ -426,7 +475,7 @@ class _SectionHeader extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _UpcomingQuizCard extends StatefulWidget {
-  final DemoQuiz quiz;
+  final MyQuizSummary quiz;
   final bool isDark;
   final VoidCallback onTap;
 
@@ -447,33 +496,18 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
   @override
   void initState() {
     super.initState();
-    _remaining = _parse(widget.quiz.scheduledAt);
+    _remaining = _diff(widget.quiz.scheduledStartTime);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {
-        if (_remaining.inSeconds > 0) {
-          _remaining -= const Duration(seconds: 1);
-        }
+        _remaining = _diff(widget.quiz.scheduledStartTime);
       });
     });
   }
 
-  Duration _parse(String raw) {
-    if (raw.startsWith('NOW+')) {
-      final parts = raw.substring(4).split(':');
-      return Duration(
-        hours: int.parse(parts[0]),
-        minutes: int.parse(parts[1]),
-        seconds: int.parse(parts[2]),
-      );
-    }
-    try {
-      final dt = DateTime.parse(raw);
-      final diff = dt.difference(DateTime.now());
-      return diff.isNegative ? Duration.zero : diff;
-    } catch (_) {
-      return const Duration(hours: 2);
-    }
+  Duration _diff(DateTime scheduledAt) {
+    final diff = scheduledAt.difference(DateTime.now());
+    return diff.isNegative ? Duration.zero : diff;
   }
 
   @override
@@ -492,22 +526,29 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
     return '${d.inSeconds}s';
   }
 
-  Color _tagColor(QuizTag tag) {
-    switch (tag) {
-      case QuizTag.daily:     return const Color(0xFF6C8EFF);
-      case QuizTag.challenge: return const Color(0xFFFF6B6B);
-      case QuizTag.special:   return const Color(0xFFFFD166);
-      case QuizTag.aptitude:  return const Color(0xFFC8FF57);
-    }
+  String _formatScheduledAt(DateTime dt) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    return '${months[dt.month - 1]} ${dt.day} • $hour12:$minute $period';
   }
 
+  Color _statusColor(bool isLive) =>
+      isLive ? const Color(0xFFFF6B6B) : const Color(0xFF6C8EFF);
+
+  String _statusLabel(bool isLive) => isLive ? 'LIVE NOW' : 'SCHEDULED';
+
   bool get _isImminent => _remaining.inMinutes < 15;
-  bool get _isStarting => _remaining.inSeconds <= 0;
+  bool get _isStarting => widget.quiz.isLive || _remaining.inSeconds <= 0;
 
   @override
   Widget build(BuildContext context) {
-    final tag = widget.quiz.tag;
-    final accent = _tagColor(tag);
+    final isLive = widget.quiz.isLive;
+    final accent = _statusColor(isLive);
     final urgencyColor =
         _isStarting || _isImminent ? const Color(0xFFFF6B6B) : accent;
 
@@ -539,7 +580,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      tag.label,
+                      _statusLabel(isLive),
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -603,7 +644,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
               const SizedBox(height: 4),
 
               Text(
-                widget.quiz.description,
+                _formatScheduledAt(widget.quiz.scheduledStartTime),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

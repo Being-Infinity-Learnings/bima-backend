@@ -15,9 +15,9 @@ const QuizPhase = Object.freeze({
 const RuntimeConfig = Object.freeze({
   // Temporary values for testing
 
-  LOBBY_DURATION_MS: 5000,
+  LOBBY_DURATION_MS: 30000,
 
-  LEADERBOARD_DURATION_MS: 3000,
+  LEADERBOARD_DURATION_MS: 10000,
 
   RESULTS_DURATION_MS: 5000,
 

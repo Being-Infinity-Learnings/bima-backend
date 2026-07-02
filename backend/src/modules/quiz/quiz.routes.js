@@ -142,10 +142,6 @@ router.post("/", auth, allowRoles("ADMIN", "AUTHOR"), controller.createQuiz);
  */
 router.get("/", auth, allowRoles("ADMIN", "AUTHOR"), controller.getQuizzes);
 
-router.get("/my", auth, controller.getMyQuizzes);
-
-router.get("/my/:quizId", auth, controller.getMyQuizById);
-
 /**
  * @swagger
  * /quiz/{id}:
@@ -214,6 +210,10 @@ router.get("/my/:quizId", auth, controller.getMyQuizById);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
+router.get("/my", auth, controller.getMyQuizzes);
+
+router.get("/my/:quizId", auth, controller.getMyQuizById);
+
 router.get("/:id", auth, allowRoles("ADMIN", "AUTHOR"), controller.getQuizById);
 
 /**
