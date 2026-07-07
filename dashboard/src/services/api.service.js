@@ -158,6 +158,13 @@ export const runtimeApi = {
   getState: (quizId) => request("GET", `/runtime/${quizId}/state`),
 };
 
+// ── Analytics API ───────────────────────────────────────────────────────────
+// Read-only — fetches analytics for completed quizzes from quiz submissions.
+export const analyticsApi = {
+  getCompletedQuizzes: () => request("GET", "/analytics/quizzes"),
+  getQuizAnalytics: (quizId) => request("GET", `/analytics/quizzes/${quizId}`),
+};
+
 // ── Quiz Composition API ────────────────────────────────────────────────────
 export const quizCompositionApi = {
   getQuestions: (quizId) =>
