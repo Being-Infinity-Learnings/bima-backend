@@ -5,7 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../auth/providers/auth_provider.dart';
 import '../../../config/app_config.dart';
-import '../../quiz/data/quiz_dummy_data.dart';
+import '../../../core/navigation/app_shell.dart';
+import '../../history/presentation/history_screen.dart' show formatHistoryDate;
 import '../../quiz/data/quiz_models.dart';
 import '../../quiz/providers/quiz_providers.dart';
 
@@ -17,12 +18,26 @@ final _nowProvider = StreamProvider<DateTime>((ref) {
   return Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now());
 });
 
+// History tab index in AppShell's bottom nav.
+const int _historyTabIndex = 1;
+
+// Profile tab index in AppShell's bottom nav.
+const int _profileTabIndex = 3;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
+
+  void _goToHistoryTab(WidgetRef ref) {
+    ref.read(selectedTabIndexProvider.notifier).state = _historyTabIndex;
+  }
+
+  void _goToProfileTab(WidgetRef ref) {
+    ref.read(selectedTabIndexProvider.notifier).state = _profileTabIndex;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -37,20 +52,18 @@ class HomeScreen extends ConsumerWidget {
     final greeting = hour < 12
         ? 'Good Morning'
         : hour < 17
-            ? 'Good Afternoon'
-            : 'Good Evening';
-    final emoji = hour < 12 ? '🌅' : hour < 17 ? '☀️' : '🌙';
-
-    // Stats derived from history
-    final results = demoHistoryResults;
-    final quizzesDone = results.length;
-    final bestRank = results.isEmpty
-        ? '-'
-        : '#${results.map((r) => r.rank).reduce((a, b) => a < b ? a : b)}';
+        ? 'Good Afternoon'
+        : 'Good Evening';
+    final greetingIcon = hour < 12
+        ? Icons.wb_twilight_rounded
+        : hour < 17
+        ? Icons.wb_sunny_rounded
+        : Icons.nightlight_round;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? AppConfig.backgroundDarkStart : AppConfig.surfaceColor,
+      backgroundColor: isDark
+          ? AppConfig.backgroundDarkStart
+          : AppConfig.surfaceColor,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -63,13 +76,13 @@ class HomeScreen extends ConsumerWidget {
           child: RefreshIndicator(
             onRefresh: () async {
               ref.invalidate(myQuizzesProvider);
+              ref.invalidate(latestHistoryResultProvider);
               await ref.read(myQuizzesProvider.future);
             },
             color: AppConfig.primaryColor,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 700),
@@ -79,103 +92,101 @@ class HomeScreen extends ConsumerWidget {
                       // ── Header ─────────────────────────────────────────
                       _Header(
                         isDark: isDark,
-                        greeting: '$greeting $emoji',
+                        greeting: greeting,
+                        greetingIcon: greetingIcon,
                         userName: user?.fullName ?? 'Student',
+                        onAvatarTap: () => _goToProfileTab(ref),
                       ),
 
-                      const SizedBox(height: 24),
-
-                      // ── Stats row ──────────────────────────────────────
-                      _StatsRow(
-                        isDark: isDark,
-                        quizzesDone: quizzesDone,
-                        bestRank: bestRank,
-                        streak: '${quizzesDone > 4 ? 7 : quizzesDone}d 🔥',
-                      ),
-
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 28),
 
                       // ── Upcoming quizzes ───────────────────────────────
-                      Builder(builder: (context) {
-                        final upcomingAsync = ref.watch(myQuizzesProvider);
+                      Builder(
+                        builder: (context) {
+                          final upcomingAsync = ref.watch(myQuizzesProvider);
 
-                        return upcomingAsync.when(
-                          loading: () => Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _SectionHeader(
-                                label: 'UPCOMING QUIZZES',
-                                isDark: isDark,
-                              ),
-                              const SizedBox(height: 14),
-                              const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 12),
-                                  child: CircularProgressIndicator(
-                                    color: AppConfig.primaryColor,
+                          return upcomingAsync.when(
+                            loading: () => Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _SectionHeader(
+                                  label: 'UPCOMING QUIZZES',
+                                  isDark: isDark,
+                                ),
+                                const SizedBox(height: 14),
+                                const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 12),
+                                    child: CircularProgressIndicator(
+                                      color: AppConfig.primaryColor,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          error: (err, __) => Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _SectionHeader(
-                                label: 'UPCOMING QUIZZES',
-                                isDark: isDark,
-                              ),
-                              const SizedBox(height: 14),
-                              _EmptyState(
-                                isDark: isDark,
-                                icon: Icons.wifi_off_rounded,
-                                message:
-                                    'Could not load quizzes.\nPull down to try again.',
-                              ),
-                            ],
-                          ),
-                          data: (quizzes) => Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _SectionHeader(
-                                label: 'UPCOMING QUIZZES',
-                                isDark: isDark,
-                                trailing: quizzes.isEmpty
-                                    ? null
-                                    : Text(
-                                        '${quizzes.length} scheduled',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: isDark
-                                              ? const Color(0xFF7A8499)
-                                              : const Color(0xFF9CA3AF),
-                                        ),
-                                      ),
-                              ),
-                              const SizedBox(height: 14),
-                              if (quizzes.isEmpty)
+                              ],
+                            ),
+                            error: (err, __) => Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _SectionHeader(
+                                  label: 'UPCOMING QUIZZES',
+                                  isDark: isDark,
+                                ),
+                                const SizedBox(height: 14),
                                 _EmptyState(
                                   isDark: isDark,
-                                  icon: Icons.event_note_outlined,
+                                  icon: Icons.wifi_off_rounded,
                                   message:
-                                      'No quizzes scheduled right now.\nCheck back later!',
-                                )
-                              else
-                                ...quizzes.map((quiz) => Padding(
-                                      padding:
-                                          const EdgeInsets.only(bottom: 12),
+                                      'Could not load quizzes.\nPull down to try again.',
+                                ),
+                              ],
+                            ),
+                            data: (quizzes) => Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _SectionHeader(
+                                  label: 'UPCOMING QUIZZES',
+                                  isDark: isDark,
+                                  trailing: quizzes.isEmpty
+                                      ? null
+                                      : Text(
+                                          '${quizzes.length} scheduled',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark
+                                                ? const Color(0xFF7A8499)
+                                                : const Color(0xFF9CA3AF),
+                                          ),
+                                        ),
+                                ),
+                                const SizedBox(height: 14),
+                                if (quizzes.isEmpty)
+                                  _EmptyState(
+                                    isDark: isDark,
+                                    icon: Icons.event_note_outlined,
+                                    message:
+                                        'No quizzes scheduled right now.\nCheck back later!',
+                                  )
+                                else
+                                  ...quizzes.map(
+                                    (quiz) => Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 12,
+                                      ),
                                       child: _UpcomingQuizCard(
                                         quiz: quiz,
                                         isDark: isDark,
-                                        onTap: () => context
-                                            .push('/quiz/${quiz.id}/waiting'),
+                                        onTap: () => context.push(
+                                          '/quiz/${quiz.id}/waiting',
+                                        ),
                                       ),
-                                    )),
-                            ],
-                          ),
-                        );
-                      }),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
 
                       const SizedBox(height: 32),
 
@@ -184,10 +195,7 @@ class HomeScreen extends ConsumerWidget {
                         label: 'RECENT ACTIVITY',
                         isDark: isDark,
                         trailing: GestureDetector(
-                          onTap: () {
-                            // Switch to history tab (index 1)
-                            // The AppShell handles this via tab switching
-                          },
+                          onTap: () => _goToHistoryTab(ref),
                           child: Text(
                             'View all',
                             style: TextStyle(
@@ -201,25 +209,42 @@ class HomeScreen extends ConsumerWidget {
 
                       const SizedBox(height: 14),
 
-                      if (demoHistoryResults.isEmpty)
-                        _EmptyState(
-                          isDark: isDark,
-                          icon: Icons.bar_chart_outlined,
-                          message: 'No quiz history yet.\nPlay your first quiz!',
-                        )
-                      else ...[
-                        _LastResultCard(
-                          isDark: isDark,
-                          result: demoHistoryResults.first,
-                        ),
-                        const SizedBox(height: 10),
-                        // Show 1 more result as a mini card
-                        if (demoHistoryResults.length > 1)
-                          _MiniHistoryCard(
-                            isDark: isDark,
-                            result: demoHistoryResults[1],
-                          ),
-                      ],
+                      Builder(
+                        builder: (context) {
+                          final latestAsync = ref.watch(
+                            latestHistoryResultProvider,
+                          );
+
+                          return latestAsync.when(
+                            loading: () => const Center(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 12),
+                                child: CircularProgressIndicator(
+                                  color: AppConfig.primaryColor,
+                                ),
+                              ),
+                            ),
+                            error: (err, __) => _EmptyState(
+                              isDark: isDark,
+                              icon: Icons.wifi_off_rounded,
+                              message:
+                                  'Could not load recent activity.\nPull down to try again.',
+                            ),
+                            data: (result) => result == null
+                                ? _EmptyState(
+                                    isDark: isDark,
+                                    icon: Icons.bar_chart_outlined,
+                                    message:
+                                        'No quiz history yet.\nPlay your first quiz!',
+                                  )
+                                : _LastResultCard(
+                                    isDark: isDark,
+                                    result: result,
+                                    onTap: () => _goToHistoryTab(ref),
+                                  ),
+                          );
+                        },
+                      ),
 
                       const SizedBox(height: 8),
                     ],
@@ -241,18 +266,21 @@ class HomeScreen extends ConsumerWidget {
 class _Header extends StatelessWidget {
   final bool isDark;
   final String greeting;
+  final IconData greetingIcon;
   final String userName;
+  final VoidCallback onAvatarTap;
 
   const _Header({
     required this.isDark,
     required this.greeting,
+    required this.greetingIcon,
     required this.userName,
+    required this.onAvatarTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final initial =
-        userName.isNotEmpty ? userName[0].toUpperCase() : 'S';
+    final initial = userName.isNotEmpty ? userName[0].toUpperCase() : 'S';
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -261,14 +289,26 @@ class _Header extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                greeting,
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                  color: isDark ? Colors.white : const Color(0xFF0C0E14),
-                ),
+              Row(
+                children: [
+                  Text(
+                    greeting,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.4,
+                      color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    greetingIcon,
+                    size: 22,
+                    color: isDark
+                        ? const Color(0xFFC8FF57)
+                        : const Color(0xFF0C0E14),
+                  ),
+                ],
               ),
               const SizedBox(height: 3),
               Text(
@@ -284,150 +324,40 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        // Avatar
-        Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const LinearGradient(
-              colors: [Color(0xFFC8FF57), Color(0xFF8AE600)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFC8FF57).withOpacity(0.3),
-                blurRadius: 14,
-                offset: const Offset(0, 4),
+        // Avatar — tap to jump to the Profile tab.
+        GestureDetector(
+          onTap: onAvatarTap,
+          child: Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [Color(0xFFC8FF57), Color(0xFF8AE600)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              initial,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0C0E14),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFC8FF57).withOpacity(0.3),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                initial,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0C0E14),
+                ),
               ),
             ),
           ),
         ),
       ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Stats Row
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _StatsRow extends StatelessWidget {
-  final bool isDark;
-  final int quizzesDone;
-  final String bestRank;
-  final String streak;
-
-  const _StatsRow({
-    required this.isDark,
-    required this.quizzesDone,
-    required this.bestRank,
-    required this.streak,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _StatChip(
-            isDark: isDark,
-            label: 'Played',
-            value: '$quizzesDone',
-            icon: Icons.check_circle_outline_rounded,
-            iconColor: const Color(0xFFC8FF57),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatChip(
-            isDark: isDark,
-            label: 'Best Rank',
-            value: bestRank,
-            icon: Icons.emoji_events_outlined,
-            iconColor: const Color(0xFFFFD166),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatChip(
-            isDark: isDark,
-            label: 'Streak',
-            value: streak,
-            icon: Icons.local_fire_department_outlined,
-            iconColor: const Color(0xFFFF6B6B),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  final bool isDark;
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color iconColor;
-
-  const _StatChip({
-    required this.isDark,
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.iconColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161B26) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark
-              ? const Color(0xFFFFFFFF).withOpacity(0.06)
-              : const Color(0xFF000000).withOpacity(0.06),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: iconColor),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: isDark ? Colors.white : const Color(0xFF0C0E14),
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: isDark
-                  ? const Color(0xFF7A8499)
-                  : const Color(0xFF6B7280),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -457,14 +387,10 @@ class _SectionHeader extends StatelessWidget {
             fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.4,
-            color:
-                isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
           ),
         ),
-        if (trailing != null) ...[
-          const Spacer(),
-          trailing!,
-        ],
+        if (trailing != null) ...[const Spacer(), trailing!],
       ],
     );
   }
@@ -528,8 +454,18 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
 
   String _formatScheduledAt(DateTime dt) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
     final minute = dt.minute.toString().padLeft(2, '0');
@@ -549,15 +485,19 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
   Widget build(BuildContext context) {
     final isLive = widget.quiz.isLive;
     final accent = _statusColor(isLive);
-    final urgencyColor =
-        _isStarting || _isImminent ? const Color(0xFFFF6B6B) : accent;
+    final urgencyColor = _isStarting || _isImminent
+        ? const Color(0xFFFF6B6B)
+        : accent;
 
     return GestureDetector(
       onTap: widget.onTap,
       child: Container(
         decoration: BoxDecoration(
           color: widget.isDark
-              ? Color.alphaBlend(accent.withOpacity(0.05), const Color(0xFF161B26))
+              ? Color.alphaBlend(
+                  accent.withOpacity(0.05),
+                  const Color(0xFF161B26),
+                )
               : Color.alphaBlend(accent.withOpacity(0.04), Colors.white),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
@@ -574,7 +514,9 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                   // Tag pill
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: accent.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(20),
@@ -593,13 +535,14 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                   // Countdown chip
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: urgencyColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                       border: _isImminent
-                          ? Border.all(
-                              color: urgencyColor.withOpacity(0.3))
+                          ? Border.all(color: urgencyColor.withOpacity(0.3))
                           : null,
                     ),
                     child: Row(
@@ -635,9 +578,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.3,
-                  color: widget.isDark
-                      ? Colors.white
-                      : const Color(0xFF0C0E14),
+                  color: widget.isDark ? Colors.white : const Color(0xFF0C0E14),
                 ),
               ),
 
@@ -682,7 +623,9 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                   // Enter lobby CTA
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 7),
+                      horizontal: 14,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
                       color: accent,
                       borderRadius: BorderRadius.circular(20),
@@ -707,205 +650,116 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Last Result Card
+// Last Result Card — the single most recently played (COMPLETED) quiz.
+// Tapping it takes the student to the History tab.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _LastResultCard extends StatelessWidget {
   final bool isDark;
-  final DemoHistoryResult result;
+  final HistoryResult result;
+  final VoidCallback onTap;
 
-  const _LastResultCard({required this.isDark, required this.result});
+  const _LastResultCard({
+    required this.isDark,
+    required this.result,
+    required this.onTap,
+  });
 
   String get _rankEmoji {
-    if (result.rank == 1) return '🥇';
-    if (result.rank == 2) return '🥈';
-    if (result.rank == 3) return '🥉';
+    final rank = result.rank;
+    if (rank == 1) return '🥇';
+    if (rank == 2) return '🥈';
+    if (rank == 3) return '🥉';
     return '🏆';
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1C2440), Color(0xFF141A30)],
-        ),
-        border: Border.all(
-          color: const Color(0xFFFFD166).withOpacity(0.2),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFFD166).withOpacity(0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1C2440), Color(0xFF141A30)],
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'LAST QUIZ RESULT',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.4,
-                      color: const Color(0xFFFFD166).withOpacity(0.7),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    result.title,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF7A8499),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Rank #${result.rank}',
-                    style: const TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -1,
-                      color: Color(0xFFFFD166),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'out of ${result.totalParticipants} participants · ${result.date}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF7A8499),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFFFD166).withOpacity(0.1),
-                border: Border.all(
-                    color: const Color(0xFFFFD166).withOpacity(0.2),
-                    width: 1.5),
-              ),
-              child: Center(
-                child: Text(_rankEmoji,
-                    style: const TextStyle(fontSize: 28)),
-              ),
+          border: Border.all(color: const Color(0xFFFFD166).withOpacity(0.2)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFFFD166).withOpacity(0.06),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Mini History Card
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _MiniHistoryCard extends StatelessWidget {
-  final bool isDark;
-  final DemoHistoryResult result;
-
-  const _MiniHistoryCard({required this.isDark, required this.result});
-
-  Color _rankColor(int rank) {
-    if (rank == 1) return const Color(0xFFFFD166);
-    if (rank <= 3) return const Color(0xFFC8FF57);
-    if (rank <= 10) return const Color(0xFF6C8EFF);
-    return const Color(0xFF7A8499);
-  }
-
-  String _rankLabel(int rank) {
-    if (rank == 1) return '🥇';
-    if (rank == 2) return '🥈';
-    if (rank == 3) return '🥉';
-    return '#$rank';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final rankColor = _rankColor(result.rank);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161B26) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark
-              ? const Color(0xFFFFFFFF).withOpacity(0.06)
-              : const Color(0xFF000000).withOpacity(0.06),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: rankColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
-              child: Text(
-                _rankLabel(result.rank),
-                style: TextStyle(
-                  fontSize: result.rank <= 3 ? 20 : 15,
-                  fontWeight: FontWeight.w800,
-                  color: rankColor,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'LAST QUIZ RESULT',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.4,
+                        color: const Color(0xFFFFD166).withOpacity(0.7),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      result.title,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF7A8499),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      result.rank == null ? '—' : 'Rank #${result.rank}',
+                      style: const TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1,
+                        color: Color(0xFFFFD166),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'out of ${result.totalParticipants} participants · '
+                      '${formatHistoryDate(result.completedAt)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF7A8499),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  result.title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : const Color(0xFF0C0E14),
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFFFD166).withOpacity(0.1),
+                  border: Border.all(
+                    color: const Color(0xFFFFD166).withOpacity(0.2),
+                    width: 1.5,
                   ),
                 ),
-                Text(
-                  result.date,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark
-                        ? const Color(0xFF7A8499)
-                        : const Color(0xFF9CA3AF),
-                  ),
+                child: Center(
+                  child: Text(_rankEmoji, style: const TextStyle(fontSize: 28)),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          Text(
-            '${result.score} pts',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: rankColor,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -942,11 +796,11 @@ class _EmptyState extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(icon,
-              size: 36,
-              color: isDark
-                  ? const Color(0xFF7A8499)
-                  : const Color(0xFF9CA3AF)),
+          Icon(
+            icon,
+            size: 36,
+            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+          ),
           const SizedBox(height: 12),
           Text(
             message,
@@ -954,9 +808,7 @@ class _EmptyState extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               height: 1.5,
-              color: isDark
-                  ? const Color(0xFF7A8499)
-                  : const Color(0xFF9CA3AF),
+              color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
             ),
           ),
         ],

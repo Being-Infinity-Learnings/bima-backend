@@ -25,6 +25,18 @@ final myQuizzesProvider = FutureProvider.autoDispose<List<MyQuizSummary>>((
   return ref.read(quizRepositoryProvider).getMyQuizzes();
 });
 
+/// Home screen "Recent Activity" card — just the single most recently
+/// completed quiz the student has a result for (or null if they haven't
+/// played any quiz yet).
+final latestHistoryResultProvider = FutureProvider.autoDispose<HistoryResult?>((
+  ref,
+) async {
+  final page = await ref
+      .read(quizRepositoryProvider)
+      .getMyHistory(page: 1, limit: 1);
+  return page.results.isEmpty ? null : page.results.first;
+});
+
 /// One-shot fetch of a single quiz's detail + runtime snapshot.
 /// The waiting screen re-reads this provider on a timer via `ref.refresh`.
 final myQuizDetailProvider = FutureProvider.autoDispose

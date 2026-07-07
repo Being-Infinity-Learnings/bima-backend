@@ -12,6 +12,12 @@ import '../../features/profile/presentation/profile_screen.dart';
 // visited the notifications tab. Exposed so the badge can read it.
 final _unreadCountProvider = StateProvider<int>((_) => 0);
 
+/// The currently selected bottom-nav tab (0=Home, 1=History, 2=Notifications,
+/// 3=Profile). Exposed so other screens (e.g. Home's "Recent Activity" card)
+/// can switch tabs — e.g. `ref.read(selectedTabIndexProvider.notifier).state
+/// = 1` to jump to the History tab — without needing a BuildContext route.
+final selectedTabIndexProvider = StateProvider<int>((_) => 0);
+
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
@@ -20,7 +26,6 @@ class AppShell extends ConsumerStatefulWidget {
 }
 
 class _AppShellState extends ConsumerState<AppShell> {
-  int _selectedIndex = 0;
   StreamSubscription<RemoteMessage>? _fgSub;
   StreamSubscription<RemoteMessage>? _tapSub;
 
@@ -32,6 +37,8 @@ class _AppShellState extends ConsumerState<AppShell> {
     NotificationsScreen(),
     ProfileScreen(),
   ];
+
+  int get _selectedIndex => ref.read(selectedTabIndexProvider);
 
   @override
   void initState() {
@@ -67,7 +74,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   void _selectTab(int index) {
-    setState(() => _selectedIndex = index);
+    ref.read(selectedTabIndexProvider.notifier).state = index;
     if (index == _notifTabIndex) {
       // Clear badge when user lands on the notifications tab.
       ref.read(_unreadCountProvider.notifier).state = 0;
@@ -77,12 +84,13 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   Widget build(BuildContext context) {
     final unread = ref.watch(_unreadCountProvider);
+    final selectedIndex = ref.watch(selectedTabIndexProvider);
 
     return Scaffold(
-      body: IndexedStack(index: _selectedIndex, children: _screens),
+      body: IndexedStack(index: selectedIndex, children: _screens),
 
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
+        selectedIndex: selectedIndex,
         onDestinationSelected: _selectTab,
         destinations: [
           const NavigationDestination(

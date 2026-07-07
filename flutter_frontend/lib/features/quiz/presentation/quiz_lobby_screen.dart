@@ -533,48 +533,14 @@ class _ParticipantCounter extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          'players in the lobby',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: AppConfig.mutedTextColor(isDark),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 28,
-          child: Stack(
-            children: List.generate(
-              6,
-              (i) => Positioned(
-                left: i * 20.0,
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppConfig.quizConfettiColors[i],
-                    border: Border.all(
-                      color: AppConfig.scaffoldColor(isDark),
-                      width: 2,
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      ['R', 'A', 'S', 'D', 'P', '+'][i],
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: AppConfig.bodyTextLight,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+          Text(
+            count == 1 ? 'player in the lobby' : 'players in the lobby',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: AppConfig.mutedTextColor(isDark),
             ),
           ),
-        ),
       ],
     );
   }
@@ -600,7 +566,7 @@ class _TipBox extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Answer faster to score more points. The first correct answer gets maximum speed bonus!',
+              'Answer faster to score more points! The quicker you answer, the higher your score.',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.5,

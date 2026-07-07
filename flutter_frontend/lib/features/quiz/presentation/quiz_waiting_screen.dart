@@ -5,6 +5,7 @@
 /// [QuizLobbyScreen], which is the screen that actually forms the socket
 /// connection.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,7 +24,8 @@ class QuizWaitingScreen extends ConsumerStatefulWidget {
   ConsumerState<QuizWaitingScreen> createState() => _QuizWaitingScreenState();
 }
 
-class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen> {
+class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen>
+    with TickerProviderStateMixin {
   static const _pollInterval = Duration(seconds: 4);
 
   MyQuizDetail? _quiz;
@@ -34,6 +36,10 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen> {
   Timer? _pollTimer;
   Timer? _clockTimer;
 
+  late final AnimationController _pulseController;
+  late final AnimationController _floatController;
+  late final AnimationController _ambientController;
+
   @override
   void initState() {
     super.initState();
@@ -41,12 +47,30 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen> {
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+
+    _ambientController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 8),
+    )..repeat();
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
     _clockTimer?.cancel();
+    _pulseController.dispose();
+    _floatController.dispose();
+    _ambientController.dispose();
     super.dispose();
   }
 
@@ -131,9 +155,7 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen> {
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 28),
                   child: _loading
-                      ? const CircularProgressIndicator(
-                          color: AppConfig.primaryColor,
-                        )
+                      ? _buildInitialLoading(isDark)
                       : _buildContent(isDark),
                 ),
               ),
@@ -142,6 +164,129 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildInitialLoading(bool isDark) {
+    // Even the very first load (before we have quiz details) gets the same
+    // breathing hero treatment instead of a bare spinner.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildHero(isDark),
+        const SizedBox(height: 24),
+        Text(
+          'Loading quiz…',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: AppConfig.mutedTextColor(isDark),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHero(bool isDark) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        _pulseController,
+        _floatController,
+        _ambientController,
+      ]),
+      builder: (context, _) {
+        final pulse = 0.85 + (_pulseController.value * 0.15); // 0.85–1.0
+        final float = math.sin(_floatController.value * math.pi) * 6; // 0..6
+        final t = _ambientController.value; // 0..1 loop
+
+        return Transform.translate(
+          offset: Offset(0, -float),
+          child: SizedBox(
+            width: 160,
+            height: 160,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Ambient drifting dots — purely decorative texture, no
+                // numeric meaning attached to their motion.
+                ..._buildAmbientDots(isDark, t),
+
+                // Soft outer glow that breathes
+                Opacity(
+                  opacity: 0.35 * pulse,
+                  child: Container(
+                    width: 132,
+                    height: 132,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppConfig.primaryColor.withOpacity(0.25),
+                    ),
+                  ),
+                ),
+                // Inner circle with icon
+                Container(
+                  width: 92,
+                  height: 92,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppConfig.cardColor(isDark),
+                    border: Border.all(
+                      color: AppConfig.primaryColor.withOpacity(0.3),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppConfig.primaryColor.withOpacity(0.15 * pulse),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.hourglass_top_rounded,
+                    size: 36,
+                    color: AppConfig.primaryColor.withOpacity(0.9),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// A handful of small dots drifting slowly around the hero on staggered
+  /// orbits. `t` is a 0..1 loop value; each dot gets a phase offset so they
+  /// don't move in lockstep. Kept subtle — this is texture, not a data viz.
+  List<Widget> _buildAmbientDots(bool isDark, double t) {
+    const dotCount = 5;
+    return List.generate(dotCount, (i) {
+      final phase = i / dotCount;
+      final angle = (t + phase) * 2 * math.pi;
+      final radius = 66.0 + (i.isEven ? 6 : -6);
+      final dx = math.cos(angle) * radius;
+      final dy = math.sin(angle) * radius;
+
+      // Fade each dot in/out as it passes behind vs. in front, purely for
+      // a bit of depth — cheap trick, not real 3D.
+      final depth = (math.sin(angle) + 1) / 2; // 0..1
+      final opacity = 0.15 + depth * 0.35;
+      final size = 5.0 + depth * 3.0;
+
+      return Transform.translate(
+        offset: Offset(dx, dy),
+        child: Opacity(
+          opacity: opacity,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppConfig.primaryColor,
+            ),
+          ),
+        ),
+      );
+    });
   }
 
   Widget _buildContent(bool isDark) {
@@ -154,25 +299,7 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 96,
-          height: 96,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppConfig.primaryColor.withOpacity(0.12),
-            border: Border.all(color: AppConfig.primaryColor.withOpacity(0.3)),
-          ),
-          child: const Center(
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                color: AppConfig.primaryColor,
-              ),
-            ),
-          ),
-        ),
+        _buildHero(isDark),
         const SizedBox(height: 28),
         Text(
           quiz?.title ?? 'Quiz',
@@ -184,9 +311,9 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen> {
             color: AppConfig.bodyTextColor(isDark),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Text(
-          'Waiting for the host to open the lobby…',
+          'The host hasn\u2019t opened the lobby yet',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 14,
@@ -194,63 +321,159 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen> {
             color: AppConfig.mutedTextColor(isDark),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 28),
         if (quiz != null) ...[
+          // Big countdown chip — the headline number people actually came
+          // here to watch.
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
             decoration: BoxDecoration(
               color: AppConfig.cardColor(isDark),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: AppConfig.subtleOverlay(isDark)),
             ),
             child: Column(
               children: [
                 Text(
-                  'SCHEDULED FOR',
+                  'STARTS IN',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: 1.0,
+                    letterSpacing: 1.2,
                     color: AppConfig.mutedTextColor(isDark),
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Text(
-                  '${quiz.scheduledStartTime.hour.toString().padLeft(2, '0')}:'
-                  '${quiz.scheduledStartTime.minute.toString().padLeft(2, '0')}'
-                  '  •  starts in ${_formatCountdown(remaining)}',
+                  _formatCountdown(remaining),
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppConfig.bodyTextColor(isDark),
+                    fontSize: 34,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
+                    color: AppConfig.primaryColor,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(height: 1, color: AppConfig.subtleOverlay(isDark)),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.schedule_rounded,
+                      size: 14,
+                      color: AppConfig.mutedTextColor(isDark),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Scheduled for '
+                      '${quiz.scheduledStartTime.hour.toString().padLeft(2, '0')}:'
+                      '${quiz.scheduledStartTime.minute.toString().padLeft(2, '0')}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppConfig.bodyTextColor(isDark),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Info pills row
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              _InfoPill(
+                icon: Icons.quiz_rounded,
+                label: '${quiz.questionCount} questions',
+                isDark: isDark,
+              ),
+              _InfoPill(
+                icon: Icons.meeting_room_rounded,
+                label: 'Lobby opens 10 min prior',
+                isDark: isDark,
+              ),
+            ],
+          ),
+        ],
+        if (_error != null) ...[
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppConfig.errorColor.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppConfig.errorColor.withOpacity(0.25)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.wifi_off_rounded,
+                  size: 16,
+                  color: AppConfig.errorColor,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppConfig.errorColor,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            '${quiz.questionCount} questions • the quiz begins as soon as the host starts it',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12,
-              color: AppConfig.mutedTextColor(isDark),
-            ),
-          ),
-        ],
-        if (_error != null) ...[
-          const SizedBox(height: 20),
-          Text(
-            _error!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppConfig.errorColor,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
         ],
       ],
+    );
+  }
+}
+
+class _InfoPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isDark;
+
+  const _InfoPill({
+    required this.icon,
+    required this.label,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppConfig.cardColor(isDark),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppConfig.subtleOverlay(isDark)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppConfig.primaryColor),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppConfig.bodyTextColor(isDark),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
