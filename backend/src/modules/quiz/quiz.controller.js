@@ -322,6 +322,31 @@ async function getMyQuizById(req, res) {
   }
 }
 
+async function getMyHistory(req, res) {
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+
+    const { results, pagination } = await quizService.getMyHistory(req.dbUser, {
+      page,
+      limit,
+    });
+
+    return res.json({
+      success: true,
+      data: results,
+      pagination,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
 module.exports = {
   createQuiz,
   getQuizzes,
@@ -335,4 +360,5 @@ module.exports = {
   removeGroupFromQuiz,
   getMyQuizzes,
   getMyQuizById,
+  getMyHistory,
 };

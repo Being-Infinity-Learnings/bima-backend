@@ -44,6 +44,18 @@ class QuizRepository {
     return MyQuizDetail.fromJson(response.data['data'] as Map<String, dynamic>);
   }
 
+  /// GET /quiz/my/history — paginated list of the student's own past
+  /// (COMPLETED) quiz results. Never includes question/answer content.
+  Future<HistoryPage> getMyHistory({int page = 1, int limit = 10}) async {
+    final response = await ApiClient.dio.get(
+      '/quiz/my/history',
+      queryParameters: {'page': page, 'limit': limit},
+      options: await _authOptions(),
+    );
+
+    return HistoryPage.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// Fetches a fresh ID token for the socket handshake.
   Future<String?> getSocketToken() => _idToken();
 }

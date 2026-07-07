@@ -139,6 +139,86 @@ class MyQuizDetail {
   bool get lobbyIsOpen => runtime != null && runtime!.lobbyIsOpen;
 }
 
+/// One row of the student's quiz history.
+/// Comes from `GET /quiz/my/history`. Deliberately contains ONLY
+/// summary/result data — no question or answer content.
+class HistoryResult {
+  final String quizId;
+  final String title;
+  final DateTime completedAt;
+  final int? rank;
+  final int totalParticipants;
+  final int score;
+  final int totalQuestions;
+
+  const HistoryResult({
+    required this.quizId,
+    required this.title,
+    required this.completedAt,
+    required this.rank,
+    required this.totalParticipants,
+    required this.score,
+    required this.totalQuestions,
+  });
+
+  factory HistoryResult.fromJson(Map<String, dynamic> json) {
+    return HistoryResult(
+      quizId: json['quizId'] as String,
+      title: json['title'] as String? ?? 'Untitled Quiz',
+      completedAt: DateTime.parse(json['completedAt'] as String).toLocal(),
+      rank: (json['rank'] as num?)?.toInt(),
+      totalParticipants: (json['totalParticipants'] as num?)?.toInt() ?? 0,
+      score: (json['score'] as num?)?.toInt() ?? 0,
+      totalQuestions: (json['totalQuestions'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Pagination metadata returned alongside a page of [HistoryResult]s.
+class HistoryPagination {
+  final int page;
+  final int limit;
+  final int total;
+  final bool hasMore;
+
+  const HistoryPagination({
+    required this.page,
+    required this.limit,
+    required this.total,
+    required this.hasMore,
+  });
+
+  factory HistoryPagination.fromJson(Map<String, dynamic> json) {
+    return HistoryPagination(
+      page: (json['page'] as num?)?.toInt() ?? 1,
+      limit: (json['limit'] as num?)?.toInt() ?? 10,
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      hasMore: json['hasMore'] as bool? ?? false,
+    );
+  }
+}
+
+/// A single page of quiz history results, as returned by
+/// `GET /quiz/my/history`.
+class HistoryPage {
+  final List<HistoryResult> results;
+  final HistoryPagination pagination;
+
+  const HistoryPage({required this.results, required this.pagination});
+
+  factory HistoryPage.fromJson(Map<String, dynamic> json) {
+    final data = json['data'] as List? ?? [];
+    return HistoryPage(
+      results: data
+          .map((e) => HistoryResult.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      pagination: HistoryPagination.fromJson(
+        json['pagination'] as Map<String, dynamic>? ?? const {},
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Socket.IO payloads
 // ─────────────────────────────────────────────────────────────────────────────

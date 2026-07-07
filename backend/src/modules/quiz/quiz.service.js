@@ -409,6 +409,91 @@ async function getMyQuizById(quizId, user) {
   };
 }
 
+/**
+ * Paginated quiz history for the current student — one row per COMPLETED
+ * quiz they submitted at least one answer to. Ordered by most recently
+ * completed first.
+ *
+ * Intentionally returns ONLY summary/result data (title, date, rank,
+ * participants, score, question count) — never question or answer content,
+ * since students should not be able to review question banks via history.
+ */
+async function getMyHistory(user, { page = 1, limit = 10 } = {}) {
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safeLimit =
+    Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 50) : 10;
+  const skip = (safePage - 1) * safeLimit;
+
+  const where = {
+    status: "COMPLETED",
+    submissions: {
+      some: { userId: user.id },
+    },
+  };
+
+  const [total, quizzes] = await Promise.all([
+    prisma.quiz.count({ where }),
+    prisma.quiz.findMany({
+      where,
+      orderBy: { completedAt: "desc" },
+      skip,
+      take: safeLimit,
+      select: {
+        id: true,
+        title: true,
+        completedAt: true,
+        scheduledStartTime: true,
+        _count: { select: { quizQuestions: true } },
+      },
+    }),
+  ]);
+
+  const results = await Promise.all(
+    quizzes.map(async (quiz) => {
+      // All submissions for this quiz — only userId + score are needed to
+      // compute the totals leaderboard, never question/answer content.
+      const submissions = await prisma.quizSubmission.findMany({
+        where: { quizId: quiz.id },
+        select: { userId: true, score: true },
+      });
+
+      const totalsByUser = new Map();
+      for (const sub of submissions) {
+        totalsByUser.set(
+          sub.userId,
+          (totalsByUser.get(sub.userId) ?? 0) + sub.score,
+        );
+      }
+
+      const ranked = Array.from(totalsByUser.entries())
+        .map(([userId, score]) => ({ userId, score }))
+        .sort((a, b) => b.score - a.score);
+
+      const myIndex = ranked.findIndex((r) => r.userId === user.id);
+
+      return {
+        quizId: quiz.id,
+        title: quiz.title,
+        completedAt: quiz.completedAt ?? quiz.scheduledStartTime,
+        rank: myIndex === -1 ? null : myIndex + 1,
+        totalParticipants: ranked.length,
+        score: myIndex === -1 ? 0 : ranked[myIndex].score,
+        totalQuestions: quiz._count.quizQuestions,
+      };
+    }),
+  );
+
+  return {
+    results,
+    pagination: {
+      page: safePage,
+      limit: safeLimit,
+      total,
+      hasMore: skip + quizzes.length < total,
+    },
+  };
+}
+
 module.exports = {
   createQuiz,
   getQuizzes,
@@ -422,4 +507,5 @@ module.exports = {
   removeGroupFromQuiz,
   getMyQuizzes,
   getMyQuizById,
+  getMyHistory,
 };

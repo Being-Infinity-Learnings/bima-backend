@@ -212,6 +212,38 @@ router.get("/", auth, allowRoles("ADMIN", "AUTHOR"), controller.getQuizzes);
  */
 router.get("/my", auth, controller.getMyQuizzes);
 
+/**
+ * @swagger
+ * /quiz/my/history:
+ *   get:
+ *     summary: Paginated quiz history for the current student
+ *     description: >
+ *       Returns one row per COMPLETED quiz the current student submitted at
+ *       least one answer to, most recently completed first. Only summary
+ *       result data is returned (title, date, rank, participants, score,
+ *       question count) — question/answer content is never included.
+ *     tags: [Quiz]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *     responses:
+ *       200:
+ *         description: Paginated history results
+ *       401:
+ *         description: Missing or invalid Bearer token
+ */
+router.get("/my/history", auth, controller.getMyHistory);
+
 router.get("/my/:quizId", auth, controller.getMyQuizById);
 
 router.get("/:id", auth, allowRoles("ADMIN", "AUTHOR"), controller.getQuizById);
