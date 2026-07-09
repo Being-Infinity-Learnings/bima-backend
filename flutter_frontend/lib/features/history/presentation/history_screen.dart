@@ -720,7 +720,7 @@ class _ResultDetailSheet extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Detailed question-by-question review is not available for students. Contact your admin for full analytics.',
+                    'Detailed question-by-question review is not available for students.',
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.5,
