@@ -54,7 +54,6 @@ async function getCompletedQuizzes() {
  * - Per-participant answer trail
  */
 async function getQuizAnalytics(quizId) {
-  // 1. Load quiz with questions in order
   const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },
     include: {
@@ -71,7 +70,11 @@ async function getQuizAnalytics(quizId) {
     },
   });
 
-  if (!quiz) throw new Error("Quiz not found");
+  if (!quiz) {
+    const err = new Error("Quiz not found");
+    err.statusCode = 404;
+    throw err;
+  }
 
   // 2. Load all submissions for this quiz with user info
   const submissions = await prisma.quizSubmission.findMany({
