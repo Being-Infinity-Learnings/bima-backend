@@ -5,13 +5,26 @@ const loader = require("./runtime.loader");
 const manager = require("./runtime.manager");
 const RuntimeEngine = require("./runtime.engine");
 
+// Map a thrown error to an HTTP response. Errors from runtime.errors.js
+// (NotFoundError, ConflictError, ValidationError) carry an explicit
+// statusCode. Anything else is an unexpected/unclassified failure and
+// is treated as a 500 rather than assumed to be the caller's fault.
+function sendError(res, err) {
+  const statusCode = err.statusCode || 500;
+
+  return res.status(statusCode).json({
+    success: false,
+    message: statusCode === 500 ? "Internal server error" : err.message,
+  });
+}
+
 // Initialize a runtime for a scheduled quiz.
 async function initialize(req, res) {
   try {
     const { quizId } = req.params;
 
     if (manager.exists(quizId)) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         message: "Runtime already initialized",
       });
@@ -35,11 +48,7 @@ async function initialize(req, res) {
       },
     });
   } catch (err) {
-    return res.status(400).json({
-      success: false,
-
-      message: err.message,
-    });
+    return sendError(res, err);
   }
 }
 
@@ -56,11 +65,7 @@ async function start(req, res) {
       message: "Runtime started",
     });
   } catch (err) {
-    return res.status(400).json({
-      success: false,
-
-      message: err.message,
-    });
+    return sendError(res, err);
   }
 }
 
@@ -80,10 +85,7 @@ async function submitAnswer(req, res) {
       data: result,
     });
   } catch (err) {
-    return res.status(400).json({
-      success: false,
-      message: err.message,
-    });
+    return sendError(res, err);
   }
 }
 
@@ -98,11 +100,7 @@ async function getRuntimeState(req, res) {
       data: engine.getRuntimeState(),
     });
   } catch (err) {
-    return res.status(400).json({
-      success: false,
-
-      message: err.message,
-    });
+    return sendError(res, err);
   }
 }
 

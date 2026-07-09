@@ -109,21 +109,37 @@ async function getQuizById(id) {
 
 /** Update an existing quiz */
 async function updateQuiz(id, data) {
+  const existingQuiz = await prisma.quiz.findUnique({
+    where: { id },
+    select: {
+      status: true,
+    },
+  });
+
+  if (!existingQuiz) {
+    throw new Error("Quiz not found");
+  }
+
+  // Only allow updates for DRAFT and SCHEDULED quizzes
+  if (existingQuiz.status !== "DRAFT" && existingQuiz.status !== "SCHEDULED") {
+    throw new Error(
+      "Quiz can only be edited when it is in DRAFT or SCHEDULED state",
+    );
+  }
+
   const updateData = {};
 
   if (data.title !== undefined) updateData.title = data.title;
-
   if (data.description !== undefined) updateData.description = data.description;
-
-  const coverImageUrl = await resolveCoverImageUrl(data);
-  if (coverImageUrl !== undefined) updateData.coverImageUrl = coverImageUrl;
-
-  if (data.visibility !== undefined) updateData.visibility = data.visibility;
-
+  if (data.coverImageUrl !== undefined) {
+    updateData.coverImageUrl = data.coverImageUrl;
+  }
+  if (data.visibility !== undefined) {
+    updateData.visibility = data.visibility;
+  }
   if (data.defaultTimer !== undefined) {
     updateData.defaultTimer = data.defaultTimer;
   }
-
   if (data.scheduledStartTime !== undefined) {
     updateData.scheduledStartTime = new Date(data.scheduledStartTime);
   }

@@ -3,6 +3,7 @@
 const prisma = require("../../config/prisma");
 
 const { QuizPhase } = require("./runtime.constants");
+const { NotFoundError, ValidationError } = require("./runtime.state");
 
 // Load quiz + questions and initialize runtime state for the engine.
 async function load(quizId) {
@@ -39,11 +40,11 @@ async function load(quizId) {
   });
 
   if (!quiz) {
-    throw new Error("Quiz not found");
+    throw new NotFoundError("Quiz not found");
   }
 
   if (quiz.status !== "SCHEDULED") {
-    throw new Error("Only scheduled quizzes can be initialized");
+    throw new ValidationError("Only scheduled quizzes can be initialized");
   }
 
   const runtime = {

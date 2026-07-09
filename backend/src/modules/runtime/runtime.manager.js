@@ -1,9 +1,17 @@
 // Purpose: Manage active runtime instances in memory. Provides helpers
 // to create, retrieve, and destroy runtime and engine pairs.
-const { activeQuizzes } = require("./runtime.state");
+const {
+  activeQuizzes,
+  NotFoundError,
+  ConflictError,
+} = require("./runtime.state");
 
 // Create a runtime entry and associate an engine instance with it.
 function create(runtime, engine) {
+  if (activeQuizzes.has(runtime.quiz.id)) {
+    throw new ConflictError("Runtime already initialized");
+  }
+
   activeQuizzes.set(runtime.quiz.id, {
     runtime,
     engine,
@@ -28,7 +36,7 @@ function requireRuntime(id) {
   const entry = activeQuizzes.get(id);
 
   if (!entry) {
-    throw new Error("Runtime not initialized");
+    throw new NotFoundError("Runtime not initialized");
   }
 
   return entry.runtime;
@@ -40,7 +48,7 @@ function requireEngine(id) {
   const entry = activeQuizzes.get(id);
 
   if (!entry) {
-    throw new Error("Runtime not initialized");
+    throw new NotFoundError("Runtime not initialized");
   }
 
   return entry.engine;
