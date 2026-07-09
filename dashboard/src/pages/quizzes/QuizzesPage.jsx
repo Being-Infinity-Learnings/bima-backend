@@ -35,6 +35,34 @@ import {
 } from "../../components/ui/index.jsx";
 import APP_CONFIG from "../../config/app.config.js";
 
+// The DateTimePicker works with naive "YYYY-MM-DDTHH:MM" strings (no timezone
+// info) representing the admin's LOCAL wall-clock time. The backend expects
+// real UTC ISO strings. These two helpers convert between the two so the
+// same instant is preserved regardless of what timezone the server runs in.
+function naiveLocalToUtcIso(naive) {
+  if (!naive) return null;
+  const [datePart, timePart] = naive.split("T");
+  const [y, m, d] = (datePart || "").split("-").map(Number);
+  const [hh, mm] = (timePart || "0:0").split(":").map(Number);
+  if (!y || !m || !d) return null;
+  // `new Date(y, m-1, d, hh, mm)` builds the Date using the BROWSER's local
+  // timezone, so .toISOString() correctly converts it to the equivalent UTC
+  // instant (with the right offset baked in).
+  return new Date(y, m - 1, d, hh || 0, mm || 0).toISOString();
+}
+
+function utcIsoToNaiveLocal(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n) => String(n).padStart(2, "0");
+  // Reads the Date's LOCAL components (browser timezone) and formats them
+  // back into the naive "YYYY-MM-DDTHH:MM" shape the picker expects.
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
+}
+
 const T = APP_CONFIG.theme;
 const LIMITS = APP_CONFIG.quiz?.limits ?? {
   questionText: 120,
@@ -1208,7 +1236,9 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
       setDescription(quiz?.description ?? "");
       setVisibility(quiz?.visibility ?? "PUBLIC");
       setDefaultTimer(String(quiz?.defaultTimer ?? 30));
-      setScheduledStartTime(quiz?.scheduledStartTime ?? null);
+      setScheduledStartTime(
+        utcIsoToNaiveLocal(quiz?.scheduledStartTime) ?? null,
+      );
       setCoverImageUrl(quiz?.coverImageUrl ?? null);
       setSelectedIds(new Set());
       setShowInlineCreate(false);
@@ -1262,7 +1292,7 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
         description: description.trim() || null,
         visibility,
         defaultTimer: timer,
-        scheduledStartTime,
+        scheduledStartTime: naiveLocalToUtcIso(scheduledStartTime),
         ...(isLocalImage(coverImageUrl)
           ? { coverImageBase64: coverImageUrl }
           : { coverImageUrl: coverImageUrl ?? null }),
