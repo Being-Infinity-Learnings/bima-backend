@@ -2,24 +2,27 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../data/quiz_dummy_data.dart';
+import '../data/quiz_models.dart';
+import '../providers/quiz_providers.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../../config/app_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-class QuizResultsScreen extends StatefulWidget {
+class QuizResultsScreen extends ConsumerStatefulWidget {
   final String quizId;
   const QuizResultsScreen({super.key, required this.quizId});
 
   @override
-  State<QuizResultsScreen> createState() => _QuizResultsScreenState();
+  ConsumerState<QuizResultsScreen> createState() => _QuizResultsScreenState();
 }
 
-class _QuizResultsScreenState extends State<QuizResultsScreen>
+class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
     with TickerProviderStateMixin {
   late AnimationController _headerCtrl;
   late AnimationController _thirdCtrl;
@@ -47,6 +50,8 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
   late Animation<double> _cardFade;
 
   final List<_Particle> _particles = [];
+
+  bool _sequenceStarted = false;
 
   @override
   void initState() {
@@ -139,8 +144,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
       parent: _cardCtrl,
       curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
     );
-
-    _runSequence();
   }
 
   Future<void> _runSequence() async {
@@ -171,6 +174,7 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
 
   @override
   void dispose() {
+    ref.read(quizRuntimeControllerProvider(widget.quizId).notifier).leaveQuiz();
     _headerCtrl.dispose();
     _thirdCtrl.dispose();
     _secondCtrl.dispose();
@@ -183,15 +187,76 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
     super.dispose();
   }
 
-  DemoLeaderboardEntry get _top1 => demoLeaderboardEntries[0];
-  DemoLeaderboardEntry get _top2 => demoLeaderboardEntries[1];
-  DemoLeaderboardEntry get _top3 => demoLeaderboardEntries[2];
-  DemoLeaderboardEntry get _yourEntry =>
-      demoLeaderboardEntries[demoUserRank - 1];
+  LeaderboardEntry _placeholder(int rank) => LeaderboardEntry(
+    rank: rank,
+    userId: '',
+    fullName: '—',
+    profileImage: null,
+    totalScore: 0,
+  );
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final quizState = ref.watch(quizRuntimeControllerProvider(widget.quizId));
+    final myId = ref.watch(authProvider).user?.id;
+    final myName = ref.watch(authProvider).user?.fullName ?? 'You';
+
+    if (quizState.connectionStatus != SocketConnectionStatus.connected &&
+        quizState.leaderboard.isEmpty &&
+        quizState.myFinalResult == null) {
+      return Scaffold(
+        backgroundColor: AppConfig.scaffoldColor(isDark),
+        body: const Center(
+          child: CircularProgressIndicator(color: AppConfig.primaryColor),
+        ),
+      );
+    }
+
+    final leaderboard = List<LeaderboardEntry>.from(quizState.leaderboard)
+      ..sort((a, b) => a.rank.compareTo(b.rank));
+
+    if (!_sequenceStarted &&
+        (leaderboard.isNotEmpty || quizState.myFinalResult != null)) {
+      _sequenceStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _runSequence());
+    }
+
+    final top1 = leaderboard.isNotEmpty ? leaderboard[0] : _placeholder(1);
+    final top2 = leaderboard.length > 1 ? leaderboard[1] : _placeholder(2);
+    final top3 = leaderboard.length > 2 ? leaderboard[2] : _placeholder(3);
+
+    // Prefer the entry from the leaderboard (covers the case where the
+    // student is inside the top-10); fall back to a synthetic entry built
+    // from the targeted `finalResults` event (covers being outside top-10).
+    LeaderboardEntry yourEntry;
+    LeaderboardEntry? inList;
+    if (myId != null) {
+      for (final e in leaderboard) {
+        if (e.userId == myId) {
+          inList = e;
+          break;
+        }
+      }
+    }
+    if (inList != null) {
+      yourEntry = inList;
+    } else if (quizState.myFinalResult != null) {
+      yourEntry = LeaderboardEntry(
+        rank: quizState.myFinalResult!.rank ?? leaderboard.length + 1,
+        userId: myId ?? '',
+        fullName: myName,
+        profileImage: null,
+        totalScore: quizState.myFinalResult!.totalScore,
+      );
+    } else {
+      yourEntry = _placeholder(leaderboard.length + 1);
+    }
+
+    final totalParticipants = math.max(
+      quizState.peakParticipantCount,
+      leaderboard.length,
+    );
 
     return Scaffold(
       backgroundColor: AppConfig.scaffoldColor(isDark),
@@ -259,7 +324,7 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '$demoTotalParticipants players competed',
+                            '$totalParticipants players competed',
                             style: TextStyle(
                               fontSize: 13,
                               color: AppConfig.mutedTextColor(isDark),
@@ -278,9 +343,9 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                   flex: 5,
                   child: ClipRect(
                     child: _AnimatedPodium(
-                      top1: _top1,
-                      top2: _top2,
-                      top3: _top3,
+                      top1: top1,
+                      top2: top2,
+                      top3: top3,
                       thirdRise: _thirdRise,
                       secondRise: _secondRise,
                       firstScale: _firstScale,
@@ -316,13 +381,15 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                               ),
                             ),
                             child: _YourResultCard(
-                              entry: _yourEntry,
+                              entry: yourEntry,
+                              totalParticipants: totalParticipants,
                               isDark: isDark,
                             ),
                           ),
                           const SizedBox(height: 20),
                           _FullLeaderboardSection(
-                            yourEntry: _yourEntry,
+                            entries: leaderboard,
+                            yourEntry: yourEntry,
                             isDark: isDark,
                           ),
                           const SizedBox(height: 24),
@@ -373,7 +440,7 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
 }
 
 class _AnimatedPodium extends StatelessWidget {
-  final DemoLeaderboardEntry top1, top2, top3;
+  final LeaderboardEntry top1, top2, top3;
   final Animation<double> thirdRise;
   final Animation<double> secondRise;
   final Animation<double> firstScale;
@@ -470,7 +537,7 @@ class _AnimatedPodium extends StatelessWidget {
 }
 
 class _PodiumColumn extends StatelessWidget {
-  final DemoLeaderboardEntry entry;
+  final LeaderboardEntry entry;
   final double podiumHeight;
   final double avatarSize;
   final String medal;
@@ -493,6 +560,7 @@ class _PodiumColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double colWidth = isWinner ? 102.0 : 88.0;
+    final initial = entry.fullName.isNotEmpty ? entry.fullName[0].toUpperCase() : '?';
 
     Widget avatar = Container(
       width: avatarSize,
@@ -507,7 +575,7 @@ class _PodiumColumn extends StatelessWidget {
       ),
       child: Center(
         child: Text(
-          entry.name[0],
+          initial,
           style: TextStyle(
             fontSize: isWinner ? 26 : 20,
             fontWeight: FontWeight.w900,
@@ -547,7 +615,7 @@ class _PodiumColumn extends StatelessWidget {
           avatar,
           const SizedBox(height: 6),
           Text(
-            entry.name,
+            entry.fullName,
             textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -559,7 +627,7 @@ class _PodiumColumn extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            '${entry.score} pts',
+            '${entry.totalScore} pts',
             style: TextStyle(
               fontSize: isWinner ? 12 : 10,
               fontWeight: FontWeight.w600,
@@ -605,9 +673,14 @@ class _PodiumColumn extends StatelessWidget {
 }
 
 class _YourResultCard extends StatelessWidget {
-  final DemoLeaderboardEntry entry;
+  final LeaderboardEntry entry;
+  final int totalParticipants;
   final bool isDark;
-  const _YourResultCard({required this.entry, required this.isDark});
+  const _YourResultCard({
+    required this.entry,
+    required this.totalParticipants,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -695,7 +768,7 @@ class _YourResultCard extends StatelessWidget {
               ),
               _divider(isDark),
               _ResultStat(
-                value: '${entry.score}',
+                value: '${entry.totalScore}',
                 label: 'Total Score',
                 color: AppConfig.primaryColor,
                 big: false,
@@ -703,7 +776,7 @@ class _YourResultCard extends StatelessWidget {
               ),
               _divider(isDark),
               _ResultStat(
-                value: '$demoTotalParticipants',
+                value: '$totalParticipants',
                 label: 'Players',
                 color: AppConfig.mutedTextColor(isDark),
                 big: false,
@@ -762,9 +835,11 @@ class _ResultStat extends StatelessWidget {
 }
 
 class _FullLeaderboardSection extends StatefulWidget {
-  final DemoLeaderboardEntry yourEntry;
+  final List<LeaderboardEntry> entries;
+  final LeaderboardEntry yourEntry;
   final bool isDark;
   const _FullLeaderboardSection({
+    required this.entries,
     required this.yourEntry,
     required this.isDark,
   });
@@ -780,11 +855,11 @@ class _FullLeaderboardSectionState extends State<_FullLeaderboardSection> {
   @override
   Widget build(BuildContext context) {
     final entries = _expanded
-        ? demoLeaderboardEntries
-        : demoLeaderboardEntries.take(5).toList();
+        ? widget.entries
+        : widget.entries.take(5).toList();
 
     final isYourEntryVisible = entries.any(
-      (e) => e.name == widget.yourEntry.name,
+      (e) => e.userId.isNotEmpty && e.userId == widget.yourEntry.userId,
     );
 
     return Column(
@@ -802,35 +877,36 @@ class _FullLeaderboardSectionState extends State<_FullLeaderboardSection> {
               ),
             ),
             const Spacer(),
-            GestureDetector(
-              onTap: () => setState(() => _expanded = !_expanded),
-              child: Row(
-                children: [
-                  Text(
-                    _expanded ? 'Show less' : 'Show all',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppConfig.primaryColor,
+            if (widget.entries.length > 5)
+              GestureDetector(
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Row(
+                  children: [
+                    Text(
+                      _expanded ? 'Show less' : 'Show all',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppConfig.primaryColor,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    _expanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: AppConfig.primaryColor,
-                    size: 18,
-                  ),
-                ],
+                    const SizedBox(width: 4),
+                    Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: AppConfig.primaryColor,
+                      size: 18,
+                    ),
+                  ],
+                ),
               ),
-            ),
           ],
         ),
         const SizedBox(height: 12),
-        ...entries.asMap().entries.map((kv) {
-          final entry = kv.value;
-          final isYou = entry.name == widget.yourEntry.name;
+        ...entries.map((entry) {
+          final isYou = entry.userId.isNotEmpty &&
+              entry.userId == widget.yourEntry.userId;
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: _LeaderRow(
@@ -851,7 +927,7 @@ class _FullLeaderboardSectionState extends State<_FullLeaderboardSection> {
 }
 
 class _LeaderRow extends StatelessWidget {
-  final DemoLeaderboardEntry entry;
+  final LeaderboardEntry entry;
   final bool isYou;
   final bool isDark;
 
@@ -873,7 +949,7 @@ class _LeaderRow extends StatelessWidget {
 
     final rowColor = isYou
         ? AppConfig.rankGold
-        : entry.rank <= 3
+        : entry.rank <= 3 && entry.rank >= 1
         ? [
             AppConfig.rankGold,
             AppConfig.rankSilver,
@@ -881,19 +957,21 @@ class _LeaderRow extends StatelessWidget {
           ][entry.rank - 1]
         : AppConfig.mutedTextColor(isDark);
 
+    final initial = entry.fullName.isNotEmpty ? entry.fullName[0].toUpperCase() : '?';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
         color: isYou
             ? AppConfig.rankGold.withOpacity(isDark ? 0.07 : 0.12)
-            : entry.rank <= 3
+            : entry.rank <= 3 && entry.rank >= 1
             ? rowColor.withOpacity(isDark ? 0.05 : 0.08)
             : AppConfig.cardColor(isDark),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isYou
               ? AppConfig.rankGold.withOpacity(0.25)
-              : entry.rank <= 3
+              : entry.rank <= 3 && entry.rank >= 1
               ? rowColor.withOpacity(0.15)
               : AppConfig.subtleOverlay(isDark),
         ),
@@ -933,7 +1011,7 @@ class _LeaderRow extends StatelessWidget {
             ),
             child: Center(
               child: Text(
-                entry.name[0],
+                initial,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
@@ -945,7 +1023,7 @@ class _LeaderRow extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              isYou ? '${entry.name} (You)' : entry.name,
+              isYou ? '${entry.fullName} (You)' : entry.fullName,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: isYou ? FontWeight.w800 : FontWeight.w500,
@@ -959,7 +1037,7 @@ class _LeaderRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${entry.score}',
+                '${entry.totalScore}',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w900,
@@ -984,7 +1062,7 @@ class _LeaderRow extends StatelessWidget {
 }
 
 class _YourRankDivider extends StatelessWidget {
-  final DemoLeaderboardEntry entry;
+  final LeaderboardEntry entry;
   final bool isDark;
   const _YourRankDivider({required this.entry, required this.isDark});
 

@@ -2,55 +2,33 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../data/quiz_dummy_data.dart';
+import '../data/quiz_models.dart';
+import '../providers/quiz_providers.dart';
 import '../../../config/app_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// State
+// How the reveal is synchronized with the server
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _QuizPlayState {
-  final int questionIndex;
-  final String? pendingAnswerId;
-  final String? submittedAnswerId;
-  final bool timerExpired;
-  final int secondsLeft;
-
-  const _QuizPlayState({
-    required this.questionIndex,
-    this.pendingAnswerId,
-    this.submittedAnswerId,
-    this.timerExpired = false,
-    required this.secondsLeft,
-  });
-
-  bool get hasSubmitted => submittedAnswerId != null;
-
-  _QuizPlayState copyWith({
-    int? questionIndex,
-    String? pendingAnswerId,
-    bool clearPending = false,
-    String? submittedAnswerId,
-    bool? timerExpired,
-    int? secondsLeft,
-  }) {
-    return _QuizPlayState(
-      questionIndex: questionIndex ?? this.questionIndex,
-      pendingAnswerId: clearPending
-          ? null
-          : (pendingAnswerId ?? this.pendingAnswerId),
-      submittedAnswerId: submittedAnswerId ?? this.submittedAnswerId,
-      timerExpired: timerExpired ?? this.timerExpired,
-      secondsLeft: secondsLeft ?? this.secondsLeft,
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Screen
-// ─────────────────────────────────────────────────────────────────────────────
+//
+// The countdown ring is predicted locally (server only broadcasts once per
+// phase change, not every tick). When the *local* clock hits zero we lock
+// the tiles (no more taps) and, if the student has an unsubmitted pick,
+// fire one best-effort `submitAnswer` — mirroring "locking in" whatever was
+// selected the instant time runs out. That may race the server's own
+// question-end and get rejected, which is fine: an unanswered question is
+// scored as incorrect either way.
+//
+// The green/red "reveal" starts the instant `questionResults` arrives for
+// the current question — the backend guarantees this fires for every
+// question, including the last one. This screen does NOT decide where to
+// go next or when: it just shows the reveal colors. `QuizPhaseSync` (see
+// quiz_phase_sync.dart), wrapping this route, is the only thing that
+// navigates, and it does so the moment the server actually flips the phase
+// to LEADERBOARD/RESULTS — which the backend always does exactly
+// `REVEAL_DELAY_MS` after `questionResults` was sent. That gives every
+// client the same ~2s reveal window without this screen needing to guess
+// or time anything itself.
 
 class QuizPlayScreen extends ConsumerStatefulWidget {
   final String quizId;
@@ -62,10 +40,17 @@ class QuizPlayScreen extends ConsumerStatefulWidget {
 
 class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     with TickerProviderStateMixin {
-  late DemoQuiz _quiz;
-  late _QuizPlayState _state;
-  Timer? _timer;
-  bool _navigatingToLeaderboard = false;
+  String? _trackedQuestionId;
+  QuizQuestionPayload? _cachedQuestion;
+  DateTime? _trackedPhaseEndsAt;
+
+  bool _locked = false;
+  bool _revealed = false;
+  bool _autoSubmitAttempted = false;
+
+  int _secondsLeft = 0;
+  int _totalSeconds = 0;
+  Timer? _secondsTimer;
 
   late AnimationController _questionSlideCtrl;
   late Animation<Offset> _questionSlide;
@@ -78,14 +63,6 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   @override
   void initState() {
     super.initState();
-    _quiz = demoUpcomingQuizzes.firstWhere(
-      (q) => q.id == widget.quizId,
-      orElse: () => demoUpcomingQuizzes.first,
-    );
-    _state = _QuizPlayState(
-      questionIndex: 0,
-      secondsLeft: _quiz.questions.first.timerSeconds,
-    );
 
     _questionSlideCtrl = AnimationController(
       vsync: this,
@@ -112,120 +89,167 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     _submitPulse = Tween<double>(begin: 1.0, end: 1.04).animate(
       CurvedAnimation(parent: _submitPulseCtrl, curve: Curves.easeInOut),
     );
-
-    _questionSlideCtrl.forward();
-    _startTimer();
-  }
-
-  void _startTimer() {
-    _timer?.cancel();
-    _navigatingToLeaderboard = false;
-    final q = _currentQuestion;
-    _timerCtrl.duration = Duration(seconds: q.timerSeconds);
-    _timerCtrl.forward(from: 0);
-
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      final left = _state.secondsLeft - 1;
-      if (left <= 0) {
-        _timer?.cancel();
-        setState(() {
-          _state = _state.copyWith(
-            timerExpired: true,
-            secondsLeft: 0,
-            submittedAnswerId:
-                _state.submittedAnswerId ?? _state.pendingAnswerId,
-          );
-        });
-        Future.delayed(const Duration(seconds: 2), () {
-          if (!mounted) return;
-          _goToLeaderboard();
-        });
-      } else {
-        setState(() => _state = _state.copyWith(secondsLeft: left));
-      }
-    });
-  }
-
-  DemoQuestion get _currentQuestion => _quiz.questions[_state.questionIndex];
-
-  void _onAnswerTapped(String id) {
-    if (_state.hasSubmitted || _state.timerExpired) return;
-    HapticFeedback.selectionClick();
-    setState(() {
-      if (_state.pendingAnswerId == id) {
-        _state = _state.copyWith(clearPending: true);
-      } else {
-        _state = _state.copyWith(pendingAnswerId: id);
-      }
-    });
-  }
-
-  void _onSubmitPressed() {
-    if (_state.pendingAnswerId == null) return;
-    if (_state.hasSubmitted || _state.timerExpired) return;
-    HapticFeedback.mediumImpact();
-    setState(() {
-      _state = _state.copyWith(submittedAnswerId: _state.pendingAnswerId);
-    });
-  }
-
-  void _goToLeaderboard() {
-    if (_navigatingToLeaderboard || !mounted) return;
-    _navigatingToLeaderboard = true;
-    _timer?.cancel();
-
-    final isLast = _state.questionIndex >= _quiz.questions.length - 1;
-
-    if (isLast) {
-      context.pushReplacement('/quiz/${widget.quizId}/results');
-      return;
-    }
-
-    final correctId = _currentQuestion.answers
-        .firstWhere((a) => a.isCorrect)
-        .id;
-
-    context
-        .push(
-          '/quiz/${widget.quizId}/leaderboard',
-          extra: {
-            'questionIndex': _state.questionIndex,
-            'isLast': false,
-            'submittedAnswerId': _state.submittedAnswerId,
-            'correctAnswerId': correctId,
-          },
-        )
-        .then((_) {
-          if (!mounted) return;
-          _advanceQuestion();
-        });
-  }
-
-  void _advanceQuestion() {
-    final next = _state.questionIndex + 1;
-    if (next >= _quiz.questions.length) {
-      context.pushReplacement('/quiz/${widget.quizId}/results');
-      return;
-    }
-    _questionSlideCtrl.reset();
-    setState(() {
-      _state = _QuizPlayState(
-        questionIndex: next,
-        secondsLeft: _quiz.questions[next].timerSeconds,
-      );
-    });
-    _questionSlideCtrl.forward();
-    _startTimer();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _secondsTimer?.cancel();
     _questionSlideCtrl.dispose();
     _timerCtrl.dispose();
     _submitPulseCtrl.dispose();
     super.dispose();
+  }
+
+  QuizRuntimeController get _controller =>
+      ref.read(quizRuntimeControllerProvider(widget.quizId).notifier);
+
+  /// Server-clock-corrected "now" — see [QuizRuntimeState.estimatedServerNow].
+  /// Always use this (not raw `DateTime.now()`) when comparing against
+  /// `phaseEndsAt`, so a device with a skewed system clock still counts
+  /// down in lockstep with when the server actually ends the question.
+  DateTime _serverNow() => ref
+      .read(quizRuntimeControllerProvider(widget.quizId))
+      .estimatedServerNow();
+
+  /// Resets all per-question local state whenever a new question comes in
+  /// from the server, and (re)starts the local countdown clock.
+  void _syncQuestion(
+    QuizQuestionPayload question,
+    DateTime? phaseEndsAt,
+    int? remainingMs,
+  ) {
+    final sameQuestion = _trackedQuestionId == question.id;
+    final sameDeadline = _trackedPhaseEndsAt == phaseEndsAt;
+    if (sameQuestion) {
+      // Ignore every socket update once reveal has started.
+      if (_revealed) {
+        return;
+      }
+
+      // Same question + same deadline = nothing changed.
+      if (sameDeadline) {
+        return;
+      }
+
+      // Same question but different deadline.
+      // Ignore tiny deadline corrections (<500 ms)
+      if (phaseEndsAt != null &&
+          _trackedPhaseEndsAt != null &&
+          (phaseEndsAt.difference(_trackedPhaseEndsAt!).inMilliseconds).abs() <
+              500) {
+        return;
+      }
+    }
+
+    _trackedQuestionId = question.id;
+    _trackedPhaseEndsAt = phaseEndsAt;
+    _cachedQuestion = question;
+
+    _locked = false;
+    _revealed = false;
+    _autoSubmitAttempted = false;
+
+    final totalMs = question.durationMs ?? remainingMs ?? 20000;
+    final leftMs =
+        phaseEndsAt?.difference(_serverNow()).inMilliseconds ??
+        remainingMs ??
+        totalMs;
+
+    _totalSeconds = (totalMs / 1000).ceil().clamp(1, 999999).toInt();
+    _secondsLeft = (leftMs / 1000).ceil().clamp(0, _totalSeconds).toInt();
+
+    final elapsedFraction = totalMs <= 0
+        ? 0.0
+        : (1.0 - (leftMs / totalMs)).clamp(0.0, 1.0).toDouble();
+    _timerCtrl.duration = Duration(milliseconds: totalMs);
+    _timerCtrl.value = elapsedFraction;
+    if (leftMs > 0) {
+      _timerCtrl.animateTo(
+        1.0,
+        duration: Duration(milliseconds: leftMs),
+        curve: Curves.linear,
+      );
+    } else {
+      _timerCtrl.value = 1.0;
+    }
+
+    _questionSlideCtrl.reset();
+    _questionSlideCtrl.forward();
+
+    _secondsTimer?.cancel();
+    _secondsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final endsAt = _trackedPhaseEndsAt;
+      final msLeft =
+          endsAt?.difference(_serverNow()).inMilliseconds ??
+          _secondsLeft * 1000;
+      final nextSeconds = (msLeft / 1000)
+          .ceil()
+          .clamp(0, _totalSeconds)
+          .toInt();
+      if (nextSeconds <= 0) {
+        _secondsTimer?.cancel();
+        setState(() => _secondsLeft = 0);
+        _onLocalTimeUp();
+      } else {
+        setState(() => _secondsLeft = nextSeconds);
+      }
+    });
+  }
+
+  /// Local countdown reached zero. Lock the UI and best-effort submit
+  /// whatever was selected — the server remains the source of truth.
+  void _onLocalTimeUp() {
+    if (!mounted) return;
+    if (_locked) return;
+    setState(() => _locked = true);
+
+    final state = ref.read(quizRuntimeControllerProvider(widget.quizId));
+    if (!_autoSubmitAttempted &&
+        state.selectedOptionId != null &&
+        state.submissionStatus == SubmissionStatus.none) {
+      _autoSubmitAttempted = true;
+      _controller.submitSelectedAnswer();
+    }
+  }
+
+  /// Called whenever the controller's state changes. Starts the reveal the
+  /// moment the real question result has arrived. Doesn't navigate anywhere
+  /// — `QuizPhaseSync` (wrapping this route) takes care of moving on once
+  /// the server actually advances the phase.
+  void _maybeReveal(QuizRuntimeState state) {
+    if (!mounted || _revealed) return;
+    if (state.myQuestionResult == null) return;
+
+    _secondsTimer?.cancel();
+
+    setState(() {
+      _locked = true;
+      _revealed = true;
+    });
+
+    HapticFeedback.mediumImpact();
+  }
+
+  void _onAnswerTapped(String id) {
+    if (_locked) return;
+    final state = ref.read(quizRuntimeControllerProvider(widget.quizId));
+    if (state.submissionStatus != SubmissionStatus.none) return;
+
+    HapticFeedback.selectionClick();
+    if (state.selectedOptionId == id) {
+      _controller.clearSelection();
+    } else {
+      _controller.selectOption(id);
+    }
+  }
+
+  void _onSubmitPressed() {
+    final state = ref.read(quizRuntimeControllerProvider(widget.quizId));
+    if (state.selectedOptionId == null) return;
+    if (_locked || state.submissionStatus != SubmissionStatus.none) return;
+    HapticFeedback.mediumImpact();
+    _controller.submitSelectedAnswer();
   }
 
   static const _answerShapes = ['▲', '◆', '●', '■', '★', '♥'];
@@ -233,12 +257,43 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final q = _currentQuestion;
-    final totalQ = _quiz.questions.length;
-    final idx = _state.questionIndex;
-    final hasImage = q.imageUrl != null && q.imageUrl!.isNotEmpty;
+    final quizState = ref.watch(quizRuntimeControllerProvider(widget.quizId));
+    final quizDetail = ref.watch(myQuizDetailProvider(widget.quizId));
 
-    final submitActive = _state.pendingAnswerId != null && !_state.hasSubmitted;
+    ref.listen<QuizRuntimeState>(
+      quizRuntimeControllerProvider(widget.quizId),
+      (previous, next) => _maybeReveal(next),
+    );
+
+    final runtime = quizState.runtime;
+    final question = runtime?.question ?? _cachedQuestion;
+
+    if (quizState.connectionStatus != SocketConnectionStatus.connected ||
+        question == null) {
+      return Scaffold(
+        backgroundColor: AppConfig.scaffoldColor(isDark),
+        body: const Center(
+          child: CircularProgressIndicator(color: AppConfig.primaryColor),
+        ),
+      );
+    }
+
+    // Sync local per-question state (idempotent — only acts on a new id).
+    if (!_revealed && quizState.phase == QuizPhase.question) {
+      _syncQuestion(question, runtime?.phaseEndsAt, runtime?.remainingTimeMs);
+    }
+    final totalQ = quizDetail.value?.questionCount ?? 0;
+    final idx = runtime?.questionIndex ?? 0;
+    final hasImage =
+        question.questionImage != null && question.questionImage!.isNotEmpty;
+
+    final hasSubmitted =
+        quizState.submissionStatus == SubmissionStatus.submitted ||
+        quizState.submissionStatus == SubmissionStatus.pending;
+    final submitActive =
+        quizState.selectedOptionId != null && !hasSubmitted && !_locked;
+    final correctOptionIds =
+        quizState.myQuestionResult?.correctOptionIds ?? const [];
 
     return Scaffold(
       backgroundColor: AppConfig.scaffoldColor(isDark),
@@ -247,10 +302,10 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
           children: [
             _HeaderBar(
               current: idx + 1,
-              total: totalQ,
-              secondsLeft: _state.secondsLeft,
-              totalSeconds: q.timerSeconds,
-              isSubmitted: _state.hasSubmitted,
+              total: totalQ > 0 ? totalQ : (idx + 1),
+              secondsLeft: _secondsLeft,
+              totalSeconds: _totalSeconds,
+              isSubmitted: hasSubmitted,
               timerCtrl: _timerCtrl,
               isDark: isDark,
             ),
@@ -265,7 +320,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
                     child: Column(
                       children: [
                         _QuestionCard(
-                          question: q,
+                          question: question,
                           hasImage: hasImage,
                           isDark: isDark,
                         ),
@@ -273,10 +328,11 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
                         const SizedBox(height: 12),
 
                         _AnswerGrid(
-                          answers: q.answers,
-                          pendingId: _state.pendingAnswerId,
-                          submittedId: _state.submittedAnswerId,
-                          timerExpired: _state.timerExpired,
+                          options: question.options,
+                          selectedId: quizState.selectedOptionId,
+                          locked: _locked,
+                          revealed: _revealed,
+                          correctOptionIds: correctOptionIds,
                           onTap: _onAnswerTapped,
                           colors: AppConfig.quizAnswerColors,
                           shapes: _answerShapes,
@@ -293,8 +349,8 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
 
             _SubmitBar(
               isActive: submitActive,
-              isSubmitted: _state.hasSubmitted,
-              timerExpired: _state.timerExpired,
+              isSubmitted: hasSubmitted,
+              timerExpired: _locked,
               pulseAnim: _submitPulse,
               onSubmit: _onSubmitPressed,
               isDark: isDark,
@@ -305,6 +361,10 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Header
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _HeaderBar extends StatelessWidget {
   final int current;
@@ -358,7 +418,7 @@ class _HeaderBar extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: current / total,
+                    value: total > 0 ? current / total : 0,
                     minHeight: 5,
                     backgroundColor: AppConfig.subtleOverlay(isDark),
                     valueColor: const AlwaysStoppedAnimation<Color>(
@@ -518,8 +578,12 @@ class _SubmittedPill extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Question card
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _QuestionCard extends StatelessWidget {
-  final DemoQuestion question;
+  final QuizQuestionPayload question;
   final bool hasImage;
   final bool isDark;
 
@@ -554,7 +618,7 @@ class _QuestionCard extends StatelessWidget {
             AspectRatio(
               aspectRatio: 16 / 9,
               child: Image.network(
-                question.imageUrl!,
+                question.questionImage!,
                 fit: BoxFit.cover,
                 loadingBuilder: (_, child, loadingProgress) {
                   if (loadingProgress == null) return child;
@@ -589,7 +653,7 @@ class _QuestionCard extends StatelessWidget {
           Padding(
             padding: EdgeInsets.fromLTRB(24, hasImage ? 32 : 32, 24, 32),
             child: Text(
-              question.text,
+              question.questionText,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: hasImage ? 17 : 20,
@@ -606,21 +670,27 @@ class _QuestionCard extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Answers
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _AnswerGrid extends StatelessWidget {
-  final List<DemoAnswer> answers;
-  final String? pendingId;
-  final String? submittedId;
-  final bool timerExpired;
+  final List<QuizOptionPayload> options;
+  final String? selectedId;
+  final bool locked;
+  final bool revealed;
+  final List<String> correctOptionIds;
   final void Function(String id) onTap;
   final List<Color> colors;
   final List<String> shapes;
   final bool isDark;
 
   const _AnswerGrid({
-    required this.answers,
-    required this.pendingId,
-    required this.submittedId,
-    required this.timerExpired,
+    required this.options,
+    required this.selectedId,
+    required this.locked,
+    required this.revealed,
+    required this.correctOptionIds,
     required this.onTap,
     required this.colors,
     required this.shapes,
@@ -629,27 +699,31 @@ class _AnswerGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final crossAxisCount = answers.length <= 2 ? 1 : 2;
+    final crossAxisCount = options.length <= 2 ? 1 : 2;
     final rows = <Widget>[];
-    for (var i = 0; i < answers.length; i += crossAxisCount) {
+    for (var i = 0; i < options.length; i += crossAxisCount) {
       final rowWidgets = <Widget>[];
-      for (var j = i; j < i + crossAxisCount && j < answers.length; j++) {
+      for (var j = i; j < i + crossAxisCount && j < options.length; j++) {
+        final option = options[j];
         rowWidgets.add(
           Expanded(
             child: _AnswerTile(
-              answer: answers[j],
+              option: option,
               baseColor: colors[j % colors.length],
               shape: shapes[j % shapes.length],
-              pendingId: pendingId,
-              submittedId: submittedId,
-              timerExpired: timerExpired,
+              selectedId: selectedId,
+              locked: locked,
+              revealed: revealed,
+              isCorrect: correctOptionIds.contains(option.id),
               onTap: onTap,
-              revealStaggerIndex: answers[j].isCorrect ? answers.length : j,
+              revealStaggerIndex: correctOptionIds.contains(option.id)
+                  ? options.length
+                  : j,
               isDark: isDark,
             ),
           ),
         );
-        if (j + 1 < i + crossAxisCount && j + 1 < answers.length) {
+        if (j + 1 < i + crossAxisCount && j + 1 < options.length) {
           rowWidgets.add(const SizedBox(width: 10));
         }
       }
@@ -661,7 +735,7 @@ class _AnswerGrid extends StatelessWidget {
           ),
         ),
       );
-      if (i + crossAxisCount < answers.length) {
+      if (i + crossAxisCount < options.length) {
         rows.add(const SizedBox(height: 10));
       }
     }
@@ -674,23 +748,25 @@ class _AnswerGrid extends StatelessWidget {
 }
 
 class _AnswerTile extends StatefulWidget {
-  final DemoAnswer answer;
+  final QuizOptionPayload option;
   final Color baseColor;
   final String shape;
-  final String? pendingId;
-  final String? submittedId;
-  final bool timerExpired;
+  final String? selectedId;
+  final bool locked;
+  final bool revealed;
+  final bool isCorrect;
   final void Function(String id) onTap;
   final int revealStaggerIndex;
   final bool isDark;
 
   const _AnswerTile({
-    required this.answer,
+    required this.option,
     required this.baseColor,
     required this.shape,
-    required this.pendingId,
-    required this.submittedId,
-    required this.timerExpired,
+    required this.selectedId,
+    required this.locked,
+    required this.revealed,
+    required this.isCorrect,
     required this.onTap,
     required this.revealStaggerIndex,
     required this.isDark,
@@ -705,7 +781,7 @@ class _AnswerTileState extends State<_AnswerTile>
   late AnimationController _revealCtrl;
   late Animation<double> _scaleAnim;
   late Animation<double> _glowAnim;
-  bool _revealed = false;
+  bool _revealedOnce = false;
   late AnimationController _pendingCtrl;
 
   @override
@@ -719,13 +795,13 @@ class _AnswerTileState extends State<_AnswerTile>
       TweenSequenceItem(
         tween: Tween(
           begin: 1.0,
-          end: widget.answer.isCorrect ? 1.10 : 0.96,
+          end: widget.isCorrect ? 1.10 : 0.96,
         ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 40,
       ),
       TweenSequenceItem(
         tween: Tween(
-          begin: widget.answer.isCorrect ? 1.10 : 0.96,
+          begin: widget.isCorrect ? 1.10 : 0.96,
           end: 1.0,
         ).chain(CurveTween(curve: Curves.elasticOut)),
         weight: 60,
@@ -736,7 +812,7 @@ class _AnswerTileState extends State<_AnswerTile>
 
     _pendingCtrl = AnimationController(
       vsync: this,
-      value: widget.pendingId == widget.answer.id ? 1.0 : 0.0,
+      value: widget.selectedId == widget.option.id ? 1.0 : 0.0,
       duration: const Duration(milliseconds: 90),
       reverseDuration: const Duration(milliseconds: 70),
     );
@@ -745,16 +821,16 @@ class _AnswerTileState extends State<_AnswerTile>
   @override
   void didUpdateWidget(_AnswerTile old) {
     super.didUpdateWidget(old);
-    if (widget.timerExpired && !old.timerExpired && !_revealed) {
-      _revealed = true;
+    if (widget.revealed && !old.revealed && !_revealedOnce) {
+      _revealedOnce = true;
       final delay = Duration(milliseconds: widget.revealStaggerIndex * 80);
       Future.delayed(delay, () {
         if (mounted) _revealCtrl.forward(from: 0);
       });
     }
 
-    final wasPending = old.pendingId == widget.answer.id;
-    final isPending = widget.pendingId == widget.answer.id;
+    final wasPending = old.selectedId == widget.option.id;
+    final isPending = widget.selectedId == widget.option.id;
     if (isPending != wasPending) {
       if (isPending) {
         _pendingCtrl.forward();
@@ -773,13 +849,13 @@ class _AnswerTileState extends State<_AnswerTile>
 
   @override
   Widget build(BuildContext context) {
-    final answer = widget.answer;
+    final option = widget.option;
     final baseColor = widget.baseColor;
     final isDark = widget.isDark;
 
-    final isSubmitted = widget.submittedId == answer.id;
-    final isCorrect = answer.isCorrect;
-    final locked = widget.submittedId != null || widget.timerExpired;
+    final isSelected = widget.selectedId == option.id;
+    final isCorrect = widget.isCorrect;
+    final locked = widget.locked;
 
     Color tileColor;
     Color textColor;
@@ -790,7 +866,7 @@ class _AnswerTileState extends State<_AnswerTile>
     IconData? trailingIcon;
     Color? trailingIconColor;
 
-    if (widget.timerExpired) {
+    if (widget.revealed) {
       if (isCorrect) {
         tileColor = AppConfig.successColor;
         bgColor = AppConfig.successColor.withOpacity(isDark ? 0.18 : 0.25);
@@ -800,7 +876,7 @@ class _AnswerTileState extends State<_AnswerTile>
         tileOpacity = 1.0;
         trailingIcon = Icons.check_circle_rounded;
         trailingIconColor = AppConfig.successColor;
-      } else if (isSubmitted && !isCorrect) {
+      } else if (isSelected && !isCorrect) {
         tileColor = AppConfig.errorColor;
         bgColor = AppConfig.errorColor.withOpacity(isDark ? 0.12 : 0.2);
         textColor = AppConfig.errorColor;
@@ -819,31 +895,39 @@ class _AnswerTileState extends State<_AnswerTile>
         trailingIcon = null;
         trailingIconColor = null;
       }
+    } else if (locked) {
+      // Locked (timer hit zero / already submitted) but the server hasn't
+      // confirmed correctness yet — neutral dimmed state, no colors.
+      tileColor = baseColor;
+      bgColor = baseColor.withOpacity(isDark ? 0.06 : 0.1);
+      textColor = baseColor.withOpacity(0.6);
+      borderColor = baseColor.withOpacity(isDark ? 0.12 : 0.2);
+      borderWidth = isSelected ? 1.5 : 1.0;
+      tileOpacity = 1.0;
+      trailingIcon = null;
+      trailingIconColor = null;
     } else {
       tileColor = baseColor;
       textColor = isDark ? baseColor : baseColor.withOpacity(0.9);
       bgColor = baseColor.withOpacity(isDark ? 0.13 : 0.18);
       borderColor = baseColor.withOpacity(isDark ? 0.25 : 0.4);
       borderWidth = 1.0;
-      tileOpacity =
-          (isSubmitted &&
-              widget.submittedId != null &&
-              widget.pendingId != answer.id)
+      tileOpacity = (isSelected == false && widget.selectedId != null)
           ? 0.55
           : 1.0;
       trailingIcon = null;
       trailingIconColor = null;
     }
 
-    final showGlow = widget.timerExpired && isCorrect;
+    final showGlow = widget.revealed && isCorrect;
     final contrastText = isDark ? const Color(0xFF0C0E14) : Colors.white;
 
     return AnimatedBuilder(
       animation: Listenable.merge([_revealCtrl, _pendingCtrl]),
       builder: (_, child) {
-        final scale = _revealed ? _scaleAnim.value : 1.0;
+        final scale = _revealedOnce ? _scaleAnim.value : 1.0;
         final glowOpacity = showGlow ? (_glowAnim.value * 0.45) : 0.0;
-        final t = widget.timerExpired ? 0.0 : _pendingCtrl.value;
+        final t = (locked || widget.revealed) ? 0.0 : _pendingCtrl.value;
 
         final effectiveBg = t == 0.0
             ? bgColor
@@ -858,7 +942,7 @@ class _AnswerTileState extends State<_AnswerTile>
         final effectiveTileColor = t == 0.0
             ? tileColor
             : Color.lerp(tileColor, contrastText, t)!;
-        final pendingGlowOpacity = widget.timerExpired ? 0.0 : t * 0.22;
+        final pendingGlowOpacity = (locked || widget.revealed) ? 0.0 : t * 0.22;
 
         return Transform.scale(
           scale: scale,
@@ -866,10 +950,10 @@ class _AnswerTileState extends State<_AnswerTile>
             duration: const Duration(milliseconds: 350),
             opacity: tileOpacity,
             child: GestureDetector(
-              onTap: locked ? null : () => widget.onTap(answer.id),
+              onTap: locked ? null : () => widget.onTap(option.id),
               child: Container(
                 constraints: BoxConstraints(
-                  minHeight: widget.answer.text.length > 30 ? 100 : 90,
+                  minHeight: option.optionText.length > 30 ? 100 : 90,
                 ),
                 decoration: BoxDecoration(
                   color: effectiveBg,
@@ -908,14 +992,38 @@ class _AnswerTileState extends State<_AnswerTile>
                       ),
                     ),
                     Expanded(
-                      child: Text(
-                        answer.text,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: effectiveTextColor,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if ((option.optionImage ?? '').isNotEmpty) ...[
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: AspectRatio(
+                                  aspectRatio: 16 / 9,
+                                  child: Image.network(
+                                    option.optionImage!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        const SizedBox.shrink(),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            Text(
+                              option.optionText,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: effectiveTextColor,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -923,7 +1031,7 @@ class _AnswerTileState extends State<_AnswerTile>
                       Padding(
                         padding: const EdgeInsets.only(right: 12),
                         child: AnimatedScale(
-                          scale: _revealed ? 1.0 : 0.0,
+                          scale: _revealedOnce ? 1.0 : 0.0,
                           duration: const Duration(milliseconds: 300),
                           curve: Curves.elasticOut,
                           child: Icon(
@@ -970,7 +1078,7 @@ class _SubmitBar extends StatelessWidget {
     Color fgColor = const Color(0xFF0C0E14);
     bool tappable = false;
 
-    if (timerExpired) {
+    if (timerExpired && !isSubmitted) {
       label = 'Time\'s up!';
       bgColor = AppConfig.emptyButtonColor(isDark);
       fgColor = AppConfig.mutedTextColor(isDark);

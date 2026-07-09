@@ -3,8 +3,9 @@
 // Shows summary metrics, upcoming items, and quick action links.
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { adminApi, groupsApi } from "../../services/api.service.js";
+import { adminApi, groupsApi, quizApi } from "../../services/api.service.js";
 import { Card, Badge, Spinner } from "../../components/ui/index.jsx";
+import { useNavigate } from "react-router-dom";
 import APP_CONFIG from "../../config/app.config.js";
 
 const T = APP_CONFIG.theme;
@@ -57,24 +58,24 @@ function MetricCard({ value, label, accent, loading = false, helper = "" }) {
   );
 }
 
-const MOCK_UPCOMING = [
-  {
-    title: "Data Structures - Trees",
-    time: "Tonight, 9:00 PM",
-    status: "upcoming",
-  },
-  { title: "OS Fundamentals", time: "Tomorrow, 9:00 PM", status: "upcoming" },
-];
+
 
 export default function DashboardPage() {
   const { profile, role } = useAuth();
+  const navigate = useNavigate();
   const [metrics, setMetrics] = useState({
     totalUsers: "-",
     pendingUsers: "-",
     groups: "-",
+    scheduledQuizzes: "-",
+    completedQuizzes: "-",
   });
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [metricsError, setMetricsError] = useState("");
+
+  const [upcomingQuizzes, setUpcomingQuizzes] = useState([]);
+  const [upcomingLoading, setUpcomingLoading] = useState(true);
+  const [upcomingError, setUpcomingError] = useState("");
 
   // Load dashboard metrics from the backend depending on the current role.
   // Admins see total and pending users, while authors see group counts only.
@@ -84,13 +85,22 @@ export default function DashboardPage() {
 
     try {
       const groupsPromise = groupsApi.getAll();
+      const allQuizzesPromise = quizApi.getAll();
 
       if (role === "ADMIN") {
-        const [allUsers, pendingUsers, groups] = await Promise.all([
+        const [allUsers, pendingUsers, groups, allQuizzes] = await Promise.all([
           adminApi.getAllUsers(),
           adminApi.getPendingUsers(),
           groupsPromise,
+          allQuizzesPromise,
         ]);
+
+        const scheduledQuizzes = allQuizzes.filter(
+          (q) => q.status === "SCHEDULED",
+        );
+        const completedQuizzes = allQuizzes.filter(
+          (q) => q.status === "COMPLETED",
+        );
 
         setMetrics({
           totalUsers: String(Array.isArray(allUsers) ? allUsers.length : 0),
@@ -98,14 +108,28 @@ export default function DashboardPage() {
             Array.isArray(pendingUsers) ? pendingUsers.length : 0,
           ),
           groups: String(Array.isArray(groups) ? groups.length : 0),
+          scheduledQuizzes: String(scheduledQuizzes.length),
+          completedQuizzes: String(completedQuizzes.length),
         });
       } else {
-        const groups = await groupsPromise;
+        const [groups, allQuizzes] = await Promise.all([
+          groupsPromise,
+          allQuizzesPromise,
+        ]);
+
+        const scheduledQuizzes = allQuizzes.filter(
+          (q) => q.status === "SCHEDULED",
+        );
+        const completedQuizzes = allQuizzes.filter(
+          (q) => q.status === "COMPLETED",
+        );
 
         setMetrics({
           totalUsers: "-",
           pendingUsers: "-",
           groups: String(Array.isArray(groups) ? groups.length : 0),
+          scheduledQuizzes: String(scheduledQuizzes.length),
+          completedQuizzes: String(completedQuizzes.length),
         });
       }
     } catch (err) {
@@ -114,6 +138,8 @@ export default function DashboardPage() {
         totalUsers: "-",
         pendingUsers: "-",
         groups: "-",
+        scheduledQuizzes: "-",
+        completedQuizzes: "-",
       });
       setMetricsError(err?.message || "Failed to load dashboard metrics.");
     } finally {
@@ -121,9 +147,35 @@ export default function DashboardPage() {
     }
   }, [role]);
 
+  const loadUpcomingQuizzes = useCallback(async () => {
+    setUpcomingLoading(true);
+    setUpcomingError("");
+
+    try {
+      const allQuizzes = await quizApi.getAll();
+      const upcoming = allQuizzes.filter((q) => q.status === "SCHEDULED");
+
+      // Sort by scheduled start time, earliest first
+      upcoming.sort((a, b) => {
+        return (
+          new Date(a.scheduledStartTime).getTime() -
+          new Date(b.scheduledStartTime).getTime()
+        );
+      });
+
+      setUpcomingQuizzes(upcoming.slice(0, 2)); // Show top 2 upcoming
+    } catch (err) {
+      console.error("Failed to load upcoming quizzes", err);
+      setUpcomingError(err?.message || "Failed to load upcoming quizzes.");
+    } finally {
+      setUpcomingLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadMetrics();
-  }, [loadMetrics]);
+    loadUpcomingQuizzes();
+  }, [loadMetrics, loadUpcomingQuizzes]);
 
   const hour = new Date().getHours();
   const greeting =
@@ -188,7 +240,12 @@ export default function DashboardPage() {
           accent="#0d9488"
           loading={metricsLoading}
         />
-        <MetricCard value="—" label="Quizzes Scheduled" accent="#ec4899" />
+        <MetricCard
+          value={metrics.scheduledQuizzes}
+          label="Quizzes Scheduled"
+          accent="#ec4899"
+          loading={metricsLoading}
+        />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
@@ -204,47 +261,60 @@ export default function DashboardPage() {
           >
             Upcoming Quizzes
           </h2>
-          {MOCK_UPCOMING.map((q, i) => (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "10px 0",
-                borderBottom:
-                  i < MOCK_UPCOMING.length - 1
-                    ? `1px solid ${T.cardBorder}`
-                    : "none",
-              }}
-            >
-              <div>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: T.textPrimary,
-                  }}
-                >
-                  {q.title}
-                </div>
-                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
-                  {q.time}
-                </div>
-              </div>
-              <Badge label={q.status} />
+          {upcomingLoading ? (
+            <div style={{ display: "flex", justifyContent: "center", padding: 20 }}>
+              <Spinner size={26} />
             </div>
-          ))}
-          <p
-            style={{
-              fontSize: 12,
-              color: T.textMuted,
-              marginTop: 14,
-              fontStyle: "italic",
-            }}
-          >
-            Connect quiz APIs when those backend routes are ready.
-          </p>
+          ) : upcomingError ? (
+            <p style={{ color: T.danger?.text, fontSize: 13 }}>
+              {upcomingError}
+            </p>
+          ) : upcomingQuizzes.length === 0 ? (
+            <p style={{ color: T.textMuted, fontSize: 13 }}>
+              No upcoming quizzes.
+            </p>
+          ) : (
+            upcomingQuizzes.map((q, i) => (
+              <a
+                key={i}
+                onClick={() => navigate(`/quizzes?quizId=${q._id}`)}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "10px 0",
+                  borderBottom:
+                    i < upcomingQuizzes.length - 1
+                      ? `1px solid ${T.cardBorder}`
+                      : "none",
+                  textDecoration: "none",
+                  cursor: "pointer",
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: T.textPrimary,
+                    }}
+                  >
+                    {q.title}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: T.textMuted,
+                      marginTop: 2,
+                    }}
+                  >
+                    {new Date(q.scheduledStartTime).toLocaleString()}
+                  </div>
+                </div>
+                <Badge label={q.status} />
+              </a>
+            ))
+          )}
         </Card>
 
         <Card style={{ padding: 24 }}>

@@ -1,6 +1,7 @@
 const prisma = require("../../config/prisma");
 const validationService = require("./quiz-validation.service");
 const imageService = require("../upload/image.service");
+const runtimeManager = require("../runtime/runtime.manager");
 
 /**
  * Resolves the coverImageUrl for a quiz create/update payload.
@@ -108,21 +109,37 @@ async function getQuizById(id) {
 
 /** Update an existing quiz */
 async function updateQuiz(id, data) {
+  const existingQuiz = await prisma.quiz.findUnique({
+    where: { id },
+    select: {
+      status: true,
+    },
+  });
+
+  if (!existingQuiz) {
+    throw new Error("Quiz not found");
+  }
+
+  // Only allow updates for DRAFT and SCHEDULED quizzes
+  if (existingQuiz.status !== "DRAFT" && existingQuiz.status !== "SCHEDULED") {
+    throw new Error(
+      "Quiz can only be edited when it is in DRAFT or SCHEDULED state",
+    );
+  }
+
   const updateData = {};
 
   if (data.title !== undefined) updateData.title = data.title;
-
   if (data.description !== undefined) updateData.description = data.description;
-
-  const coverImageUrl = await resolveCoverImageUrl(data);
-  if (coverImageUrl !== undefined) updateData.coverImageUrl = coverImageUrl;
-
-  if (data.visibility !== undefined) updateData.visibility = data.visibility;
-
+  if (data.coverImageUrl !== undefined) {
+    updateData.coverImageUrl = data.coverImageUrl;
+  }
+  if (data.visibility !== undefined) {
+    updateData.visibility = data.visibility;
+  }
   if (data.defaultTimer !== undefined) {
     updateData.defaultTimer = data.defaultTimer;
   }
-
   if (data.scheduledStartTime !== undefined) {
     updateData.scheduledStartTime = new Date(data.scheduledStartTime);
   }
@@ -282,6 +299,217 @@ async function removeGroupFromQuiz(quizId, groupId) {
   });
 }
 
+/** Get quizzes that the user can access */
+async function getMyQuizzes(user) {
+  return prisma.quiz.findMany({
+    where: {
+      status: {
+        in: ["SCHEDULED", "LIVE"],
+      },
+
+      OR: [
+        {
+          visibility: "PUBLIC",
+        },
+
+        {
+          visibility: "RESTRICTED",
+
+          allowedGroups: {
+            some: {
+              groupId: {
+                in: user.groupMemberships.map(
+                  (membership) => membership.groupId,
+                ),
+              },
+            },
+          },
+        },
+      ],
+    },
+
+    select: {
+      id: true,
+
+      title: true,
+
+      coverImageUrl: true,
+
+      scheduledStartTime: true,
+
+      status: true,
+
+      visibility: true,
+
+      _count: {
+        select: {
+          quizQuestions: true,
+        },
+      },
+    },
+
+    orderBy: {
+      scheduledStartTime: "asc",
+    },
+  });
+}
+
+async function getMyQuizById(quizId, user) {
+  const quiz = await prisma.quiz.findFirst({
+    where: {
+      id: quizId,
+
+      status: {
+        in: ["SCHEDULED", "LIVE"],
+      },
+
+      OR: [
+        {
+          visibility: "PUBLIC",
+        },
+
+        {
+          visibility: "RESTRICTED",
+
+          allowedGroups: {
+            some: {
+              groupId: {
+                in: user.groupMemberships.map(
+                  (membership) => membership.groupId,
+                ),
+              },
+            },
+          },
+        },
+      ],
+    },
+
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      coverImageUrl: true,
+      visibility: true,
+      scheduledStartTime: true,
+      defaultTimer: true,
+      status: true,
+
+      _count: {
+        select: {
+          quizQuestions: true,
+        },
+      },
+    },
+  });
+
+  if (!quiz) {
+    throw new Error("Quiz not found");
+  }
+
+  const runtime = runtimeManager.getRuntime(quiz.id);
+
+  return {
+    ...quiz,
+
+    runtime: runtime
+      ? {
+          phase: runtime.phase,
+
+          remainingTime: runtime.phaseEndsAt
+            ? Math.max(runtime.phaseEndsAt.getTime() - Date.now(), 0)
+            : null,
+          phaseStartedAt: runtime.phaseStartedAt?.toISOString() ?? null,
+          phaseEndsAt: runtime.phaseEndsAt?.toISOString() ?? null,
+        }
+      : null,
+  };
+}
+
+/**
+ * Paginated quiz history for the current student — one row per COMPLETED
+ * quiz they submitted at least one answer to. Ordered by most recently
+ * completed first.
+ *
+ * Intentionally returns ONLY summary/result data (title, date, rank,
+ * participants, score, question count) — never question or answer content,
+ * since students should not be able to review question banks via history.
+ */
+async function getMyHistory(user, { page = 1, limit = 10 } = {}) {
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safeLimit =
+    Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 50) : 10;
+  const skip = (safePage - 1) * safeLimit;
+
+  const where = {
+    status: "COMPLETED",
+    submissions: {
+      some: { userId: user.id },
+    },
+  };
+
+  const [total, quizzes] = await Promise.all([
+    prisma.quiz.count({ where }),
+    prisma.quiz.findMany({
+      where,
+      orderBy: { completedAt: "desc" },
+      skip,
+      take: safeLimit,
+      select: {
+        id: true,
+        title: true,
+        completedAt: true,
+        scheduledStartTime: true,
+        _count: { select: { quizQuestions: true } },
+      },
+    }),
+  ]);
+
+  const results = await Promise.all(
+    quizzes.map(async (quiz) => {
+      // All submissions for this quiz — only userId + score are needed to
+      // compute the totals leaderboard, never question/answer content.
+      const submissions = await prisma.quizSubmission.findMany({
+        where: { quizId: quiz.id },
+        select: { userId: true, score: true },
+      });
+
+      const totalsByUser = new Map();
+      for (const sub of submissions) {
+        totalsByUser.set(
+          sub.userId,
+          (totalsByUser.get(sub.userId) ?? 0) + sub.score,
+        );
+      }
+
+      const ranked = Array.from(totalsByUser.entries())
+        .map(([userId, score]) => ({ userId, score }))
+        .sort((a, b) => b.score - a.score);
+
+      const myIndex = ranked.findIndex((r) => r.userId === user.id);
+
+      return {
+        quizId: quiz.id,
+        title: quiz.title,
+        completedAt: quiz.completedAt ?? quiz.scheduledStartTime,
+        rank: myIndex === -1 ? null : myIndex + 1,
+        totalParticipants: ranked.length,
+        score: myIndex === -1 ? 0 : ranked[myIndex].score,
+        totalQuestions: quiz._count.quizQuestions,
+      };
+    }),
+  );
+
+  return {
+    results,
+    pagination: {
+      page: safePage,
+      limit: safeLimit,
+      total,
+      hasMore: skip + quizzes.length < total,
+    },
+  };
+}
+
 module.exports = {
   createQuiz,
   getQuizzes,
@@ -293,4 +521,7 @@ module.exports = {
   addGroupsToQuiz,
   getQuizGroups,
   removeGroupFromQuiz,
+  getMyQuizzes,
+  getMyQuizById,
+  getMyHistory,
 };

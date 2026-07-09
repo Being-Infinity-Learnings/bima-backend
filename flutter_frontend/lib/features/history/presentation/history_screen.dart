@@ -1,31 +1,90 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/app_config.dart';
-import '../../quiz/data/quiz_dummy_data.dart';
+import '../../quiz/data/quiz_models.dart';
+import '../../quiz/data/quiz_repository.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-class HistoryScreen extends StatelessWidget {
+const int _pageSize = 10;
+
+class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
+
+  @override
+  State<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends State<HistoryScreen> {
+  final QuizRepository _repository = QuizRepository();
+
+  final List<HistoryResult> _results = [];
+  int _page = 0;
+  int _total = 0;
+  bool _hasMore = true;
+  bool _isLoadingFirstPage = true;
+  bool _isLoadingMore = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPage();
+  }
+
+  Future<void> _loadPage() async {
+    final isFirstPage = _page == 0;
+    setState(() {
+      if (isFirstPage) {
+        _isLoadingFirstPage = true;
+      } else {
+        _isLoadingMore = true;
+      }
+      _error = null;
+    });
+
+    try {
+      final nextPage = _page + 1;
+      final result = await _repository.getMyHistory(
+        page: nextPage,
+        limit: _pageSize,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _results.addAll(result.results);
+        _page = nextPage;
+        _total = result.pagination.total;
+        _hasMore = result.pagination.hasMore;
+        _isLoadingFirstPage = false;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load your quiz history. Please try again.';
+        _isLoadingFirstPage = false;
+        _isLoadingMore = false;
+      });
+    }
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _results.clear();
+      _page = 0;
+      _total = 0;
+      _hasMore = true;
+    });
+    await _loadPage();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
-    final results = demoHistoryResults;
-    final bestRank = results.isEmpty
-        ? 0
-        : results.map((r) => r.rank).reduce((a, b) => a < b ? a : b);
-    final avgRank = results.isEmpty
-        ? 0
-        : (results.map((r) => r.rank).reduce((a, b) => a + b) / results.length)
-              .round();
-    final totalScore = results.isEmpty
-        ? 0
-        : results.map((r) => r.score).reduce((a, b) => a + b);
 
     return Scaffold(
       backgroundColor: AppConfig.scaffoldColor(isDark),
@@ -58,7 +117,9 @@ class HistoryScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${results.length} quiz${results.length == 1 ? '' : 'zes'} played',
+                      _isLoadingFirstPage
+                          ? 'Loading...'
+                          : '$_total quiz${_total == 1 ? '' : 'zes'} played',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -73,20 +134,6 @@ class HistoryScreen extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              // ── Summary bar ────────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _SummaryBar(
-                  isDark: isDark,
-                  quizzesPlayed: results.length,
-                  bestRank: bestRank,
-                  avgRank: avgRank,
-                  totalScore: totalScore,
-                ),
-              ),
-
-              const SizedBox(height: 28),
-
               // ── Section label ──────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -96,45 +143,7 @@ class HistoryScreen extends StatelessWidget {
               const SizedBox(height: 14),
 
               // ── Results list ───────────────────────────────────────────
-              Expanded(
-                child: results.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.bar_chart_outlined,
-                              size: 48,
-                              color: isDark
-                                  ? const Color(0xFF7A8499)
-                                  : const Color(0xFF9CA3AF),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No quiz history yet.\nPlay your first quiz!',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 15,
-                                height: 1.5,
-                                color: isDark
-                                    ? const Color(0xFF7A8499)
-                                    : const Color(0xFF9CA3AF),
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-                        itemCount: results.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) => _ResultCard(
-                          isDark: isDark,
-                          result: results[i],
-                          onTap: () => _showDetail(context, isDark, results[i]),
-                        ),
-                      ),
-              ),
+              Expanded(child: _buildBody(isDark)),
             ],
           ),
         ),
@@ -142,11 +151,48 @@ class HistoryScreen extends StatelessWidget {
     );
   }
 
-  void _showDetail(
-    BuildContext context,
-    bool isDark,
-    DemoHistoryResult result,
-  ) {
+  Widget _buildBody(bool isDark) {
+    if (_isLoadingFirstPage) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null && _results.isEmpty) {
+      return _ErrorState(isDark: isDark, message: _error!, onRetry: _refresh);
+    }
+
+    if (_results.isEmpty) {
+      return _EmptyState(isDark: isDark);
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+        itemCount: _results.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (context, i) {
+          if (i == _results.length) {
+            return _LoadMoreFooter(
+              isDark: isDark,
+              hasMore: _hasMore,
+              isLoading: _isLoadingMore,
+              error: _results.isNotEmpty ? _error : null,
+              onPressed: _loadPage,
+            );
+          }
+
+          final result = _results[i];
+          return _ResultCard(
+            isDark: isDark,
+            result: result,
+            onTap: () => _showDetail(context, isDark, result),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showDetail(BuildContext context, bool isDark, HistoryResult result) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -157,98 +203,31 @@ class HistoryScreen extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Summary Bar
+// Empty / Error states
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _SummaryBar extends StatelessWidget {
+class _EmptyState extends StatelessWidget {
   final bool isDark;
-  final int quizzesPlayed;
-  final int bestRank;
-  final int avgRank;
-  final int totalScore;
-
-  const _SummaryBar({
-    required this.isDark,
-    required this.quizzesPlayed,
-    required this.bestRank,
-    required this.avgRank,
-    required this.totalScore,
-  });
+  const _EmptyState({required this.isDark});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161B26) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark
-              ? const Color(0xFFFFFFFF).withOpacity(0.06)
-              : const Color(0xFF000000).withOpacity(0.06),
-        ),
-      ),
-      child: Row(
-        children: [
-          _SummaryCell(
-            isDark: isDark,
-            label: 'Played',
-            value: '$quizzesPlayed',
-            color: const Color(0xFFC8FF57),
-          ),
-          _VerticalDivider(isDark: isDark),
-          _SummaryCell(
-            isDark: isDark,
-            label: 'Best Rank',
-            value: '#$bestRank',
-            color: const Color(0xFFFFD166),
-          ),
-          _VerticalDivider(isDark: isDark),
-          _SummaryCell(
-            isDark: isDark,
-            label: 'Avg Rank',
-            value: '#$avgRank',
-            color: const Color(0xFF6C8EFF),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SummaryCell extends StatelessWidget {
-  final bool isDark;
-  final String label;
-  final String value;
-  final Color color;
-
-  const _SummaryCell({
-    required this.isDark,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
+    return Center(
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-              color: color,
-            ),
+          Icon(
+            Icons.bar_chart_outlined,
+            size: 48,
+            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 16),
           Text(
-            label,
+            'No quiz history yet.\nPlay your first quiz!',
+            textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+              fontSize: 15,
+              height: 1.5,
               color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
             ),
           ),
@@ -258,18 +237,125 @@ class _SummaryCell extends StatelessWidget {
   }
 }
 
-class _VerticalDivider extends StatelessWidget {
+class _ErrorState extends StatelessWidget {
   final bool isDark;
-  const _VerticalDivider({required this.isDark});
+  final String message;
+  final VoidCallback onRetry;
+
+  const _ErrorState({
+    required this.isDark,
+    required this.message,
+    required this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 1,
-      height: 36,
-      color: isDark
-          ? const Color(0xFFFFFFFF).withOpacity(0.07)
-          : const Color(0xFF000000).withOpacity(0.07),
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline_rounded,
+            size: 48,
+            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.5,
+                color: isDark
+                    ? const Color(0xFF7A8499)
+                    : const Color(0xFF9CA3AF),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextButton(onPressed: onRetry, child: const Text('Retry')),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Load-more footer
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LoadMoreFooter extends StatelessWidget {
+  final bool isDark;
+  final bool hasMore;
+  final bool isLoading;
+  final String? error;
+  final VoidCallback onPressed;
+
+  const _LoadMoreFooter({
+    required this.isDark,
+    required this.hasMore,
+    required this.isLoading,
+    required this.error,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!hasMore) return const SizedBox.shrink();
+
+    if (isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2.4),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        children: [
+          if (error != null) ...[
+            Text(
+              error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark
+                    ? const Color(0xFF7A8499)
+                    : const Color(0xFF9CA3AF),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          OutlinedButton(
+            onPressed: onPressed,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: isDark ? Colors.white : const Color(0xFF0C0E14),
+              side: BorderSide(
+                color: isDark
+                    ? const Color(0xFFFFFFFF).withOpacity(0.12)
+                    : const Color(0xFF000000).withOpacity(0.12),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: const Text(
+              'Load more',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -280,7 +366,7 @@ class _VerticalDivider extends StatelessWidget {
 
 class _ResultCard extends StatelessWidget {
   final bool isDark;
-  final DemoHistoryResult result;
+  final HistoryResult result;
   final VoidCallback onTap;
 
   const _ResultCard({
@@ -290,36 +376,25 @@ class _ResultCard extends StatelessWidget {
   });
 
   Color get _rankColor {
-    if (result.rank == 1) return const Color(0xFFFFD166);
-    if (result.rank <= 3) return const Color(0xFFC8FF57);
-    if (result.rank <= 10) return const Color(0xFF6C8EFF);
+    final rank = result.rank;
+    if (rank == null) return const Color(0xFF7A8499);
+    if (rank == 1) return const Color(0xFFFFD166);
+    if (rank <= 3) return const Color(0xFFC8FF57);
+    if (rank <= 10) return const Color(0xFF6C8EFF);
     return const Color(0xFF7A8499);
   }
 
-  Color get _tagColor {
-    switch (result.tag) {
-      case QuizTag.challenge:
-        return const Color(0xFFFF6B6B);
-      case QuizTag.special:
-        return const Color(0xFFFFD166);
-      case QuizTag.aptitude:
-        return const Color(0xFFC8FF57);
-      default:
-        return const Color(0xFF6C8EFF);
-    }
-  }
-
   String get _rankLabel {
-    if (result.rank == 1) return '🥇';
-    if (result.rank == 2) return '🥈';
-    if (result.rank == 3) return '🥉';
-    return '#${result.rank}';
+    final rank = result.rank;
+    if (rank == null) return '—';
+    if (rank == 1) return '🥇';
+    if (rank == 2) return '🥈';
+    if (rank == 3) return '🥉';
+    return '#$rank';
   }
 
   @override
   Widget build(BuildContext context) {
-    final tagColor = _tagColor;
-
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -352,7 +427,7 @@ class _ResultCard extends StatelessWidget {
                   child: Text(
                     _rankLabel,
                     style: TextStyle(
-                      fontSize: result.rank <= 3 ? 22 : 16,
+                      fontSize: (result.rank ?? 99) <= 3 ? 22 : 16,
                       fontWeight: FontWeight.w800,
                       color: _rankColor,
                     ),
@@ -366,41 +441,14 @@ class _ResultCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            result.title,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.2,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF0C0E14),
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: tagColor.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            result.tag.label,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: tagColor,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ),
-                      ],
+                    Text(
+                      result.title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                        color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                      ),
                     ),
 
                     const SizedBox(height: 6),
@@ -416,7 +464,7 @@ class _ResultCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          result.date,
+                          formatHistoryDate(result.completedAt),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
@@ -453,7 +501,7 @@ class _ResultCard extends StatelessWidget {
                     _ScoreBar(
                       isDark: isDark,
                       score: result.score,
-                      maxScore: result.totalQuestions * 100,
+                      maxScore: (result.totalQuestions * 100).clamp(1, 1 << 30),
                       rankColor: _rankColor,
                     ),
                   ],
@@ -545,14 +593,16 @@ class _ScoreBar extends StatelessWidget {
 
 class _ResultDetailSheet extends StatelessWidget {
   final bool isDark;
-  final DemoHistoryResult result;
+  final HistoryResult result;
 
   const _ResultDetailSheet({required this.isDark, required this.result});
 
   Color get _rankColor {
-    if (result.rank == 1) return const Color(0xFFFFD166);
-    if (result.rank <= 3) return const Color(0xFFC8FF57);
-    if (result.rank <= 10) return const Color(0xFF6C8EFF);
+    final rank = result.rank;
+    if (rank == null) return const Color(0xFF7A8499);
+    if (rank == 1) return const Color(0xFFFFD166);
+    if (rank <= 3) return const Color(0xFFC8FF57);
+    if (rank <= 10) return const Color(0xFF6C8EFF);
     return const Color(0xFF7A8499);
   }
 
@@ -599,7 +649,7 @@ class _ResultDetailSheet extends StatelessWidget {
           const SizedBox(height: 4),
 
           Text(
-            result.date,
+            formatHistoryDate(result.completedAt),
             style: TextStyle(
               fontSize: 14,
               color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
@@ -614,7 +664,7 @@ class _ResultDetailSheet extends StatelessWidget {
               _DetailStat(
                 isDark: isDark,
                 label: 'Your Rank',
-                value: '#${result.rank}',
+                value: result.rank == null ? '—' : '#${result.rank}',
                 color: rankColor,
               ),
               const SizedBox(width: 12),
@@ -670,7 +720,7 @@ class _ResultDetailSheet extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Detailed question-by-question review is not available for students. Contact your admin for full analytics.',
+                    'Detailed question-by-question review is not available for students.',
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.5,
@@ -762,4 +812,39 @@ class _SectionLabel extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Date formatting helper (no intl dependency needed)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const List<String> _monthAbbrev = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+String formatHistoryDate(DateTime dateTime) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final date = DateTime(dateTime.year, dateTime.month, dateTime.day);
+  final diffDays = today.difference(date).inDays;
+
+  final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
+  final minute = dateTime.minute.toString().padLeft(2, '0');
+  final period = dateTime.hour >= 12 ? 'PM' : 'AM';
+  final time = '$hour:$minute $period';
+
+  if (diffDays == 0) return 'Today, $time';
+  if (diffDays == 1) return 'Yesterday, $time';
+  return '${dateTime.day} ${_monthAbbrev[dateTime.month - 1]}, $time';
 }

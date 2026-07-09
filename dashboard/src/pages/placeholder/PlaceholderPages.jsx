@@ -64,14 +64,4 @@ function ComingSoon({ title, section, description }) {
   );
 }
 
-export function AnalyticsPage() {
-  return (
-    <ComingSoon
-      title="Analytics"
-      section="Performance & Reporting"
-      description="Full leaderboard history, session analytics, attendance-equivalent reporting, and per-quiz participant data — all preserved across sessions."
-    />
-  );
-}
-
 export { default as NotificationsPage } from "../notifications/NotificationsPage.jsx";

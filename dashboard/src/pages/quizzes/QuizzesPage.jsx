@@ -14,12 +14,14 @@ import {
   CalendarClock,
   ArrowRight,
   AlertCircle,
+  FlaskConical, // TEST-ONLY: used by the "Test Runtime" button, remove import if button is removed
 } from "lucide-react";
 import {
   quizApi,
   questionApi,
   quizCompositionApi,
   groupsApi,
+  runtimeApi, // TEST-ONLY: used by the "Test Runtime" button, remove import if button is removed
 } from "../../services/api.service.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import {
@@ -2189,6 +2191,7 @@ function QuizDetailModal({ open, onClose, quiz, onQuizUpdated, role }) {
   const [showGroups, setShowGroups] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [testRuntimeLoading, setTestRuntimeLoading] = useState(false); // TEST-ONLY: remove with the "Test Runtime" button
   const [viewQuestion, setViewQuestion] = useState(null);
   const dragIndexRef = useRef(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
@@ -2286,6 +2289,29 @@ function QuizDetailModal({ open, onClose, quiz, onQuizUpdated, role }) {
       toast(err.message || "Action failed.", "error");
     } finally {
       setPublishLoading(false);
+    }
+  }
+
+  // ── TEST-ONLY: manually initialize + start the quiz runtime ──────────────
+  // Hits the backend's /runtime routes directly, bypassing the normal
+  // scheduled LIVE flow, purely so the runtime can be exercised from the
+  // dashboard during testing. Delete this whole function to remove.
+  async function handleTestRuntime() {
+    setTestRuntimeLoading(true);
+    try {
+      try {
+        await runtimeApi.initialize(quiz.id);
+      } catch (err) {
+        // If it's already initialized (e.g. from a previous test run),
+        // that's fine — just proceed to start it.
+        if (!/already initialized/i.test(err.message || "")) throw err;
+      }
+      await runtimeApi.start(quiz.id);
+      toast("Runtime initialized & started (test).", "success");
+    } catch (err) {
+      toast(err.message || "Runtime test failed.", "error");
+    } finally {
+      setTestRuntimeLoading(false);
     }
   }
 
@@ -2421,6 +2447,34 @@ function QuizDetailModal({ open, onClose, quiz, onQuizUpdated, role }) {
             >
               {status === "LIVE" ? "Live — read only" : "Completed"}
             </span>
+          )}
+          {/* ── TEST-ONLY: "Test Runtime" button ─────────────────────────
+              Calls POST /runtime/:quizId/initialize then /start directly.
+              To remove: delete this button block, the handleTestRuntime
+              function above, the testRuntimeLoading state, the FlaskConical
+              import, the runtimeApi import, and (optionally) the runtimeApi
+              block in api.service.js. Nothing else depends on any of it. */}
+          {role === "ADMIN" && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleTestRuntime}
+              disabled={testRuntimeLoading}
+              title="Dev only: initialize + start this quiz's runtime directly"
+              style={{
+                border: `1.5px dashed ${T.warning.dot}`,
+                color: T.warning.text,
+              }}
+            >
+              {testRuntimeLoading ? (
+                <Spinner size={13} />
+              ) : (
+                <>
+                  <FlaskConical size={14} style={{ marginRight: 5 }} />
+                  Test Runtime
+                </>
+              )}
+            </Button>
           )}
         </div>
       </div>

@@ -4,3 +4,7 @@ node_modules
 
 /config/serviceAccountKey.json
 /config/firebaseWebConfig.json
+
+scripts/testSocket.js
+
+

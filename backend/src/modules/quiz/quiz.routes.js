@@ -144,9 +144,245 @@ router.get("/", auth, allowRoles("ADMIN", "AUTHOR"), controller.getQuizzes);
 
 /**
  * @swagger
+ * /quiz/my:
+ *   get:
+ *     summary: Retrieve quizzes available to the current user
+ *     description: >
+ *       Returns quizzes that the authenticated user can access based on quiz
+ *       visibility and their group memberships. Only quizzes in SCHEDULED or
+ *       LIVE state are returned.
+ *     tags: [Quiz]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of quizzes the current user can access
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/QuizzesResponse'
+ *             example:
+ *               success: true
+ *               data:
+ *                 - id: "d1e2f3a4-0000-0000-0000-000000000001"
+ *                   title: "General Knowledge Quiz"
+ *                   coverImageUrl: null
+ *                   scheduledStartTime: "2026-07-01T10:00:00.000Z"
+ *                   status: "LIVE"
+ *                   visibility: "PUBLIC"
+ *                   _count:
+ *                     quizQuestions: 10
+ *       401:
+ *         description: Missing or invalid Bearer token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Unexpected server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get("/my", auth, controller.getMyQuizzes);
+
+/**
+ * @swagger
+ * /quiz/my/history:
+ *   get:
+ *     summary: Get paginated quiz history for the current student
+ *     description: >
+ *       Returns one row per COMPLETED quiz the current student submitted at
+ *       least one answer to, ordered by most recently completed first. Only
+ *       summary result data is returned (title, completion date, score,
+ *       participant count, and question count) — question or answer content is
+ *       never included.
+ *     tags: [Quiz]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 50
+ *           default: 10
+ *         description: Number of records to return per page
+ *     responses:
+ *       200:
+ *         description: Paginated history results with metadata
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         format: uuid
+ *                       title:
+ *                         type: string
+ *                       completedAt:
+ *                         type: string
+ *                         format: date-time
+ *                       scheduledStartTime:
+ *                         type: string
+ *                         format: date-time
+ *                       _count:
+ *                         type: object
+ *                         properties:
+ *                           quizQuestions:
+ *                             type: integer
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *       401:
+ *         description: Missing or invalid Bearer token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Unexpected server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get("/my/history", auth, controller.getMyHistory);
+
+/**
+ * @swagger
+ * /quiz/my/{quizId}:
+ *   get:
+ *     summary: Retrieve a quiz available to the current user by ID
+ *     description: >
+ *       Returns the quiz details for the authenticated user if the quiz is
+ *       visible to them and is currently SCHEDULED or LIVE. Includes runtime
+ *       information such as the current phase and remaining time when available.
+ *     tags: [Quiz]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: quizId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: UUID of the quiz to retrieve
+ *         example: "d1e2f3a4-0000-0000-0000-000000000001"
+ *     responses:
+ *       200:
+ *         description: Quiz details returned successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     title:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *                       nullable: true
+ *                     coverImageUrl:
+ *                       type: string
+ *                       nullable: true
+ *                     visibility:
+ *                       type: string
+ *                     scheduledStartTime:
+ *                       type: string
+ *                       format: date-time
+ *                     defaultTimer:
+ *                       type: integer
+ *                     status:
+ *                       type: string
+ *                     _count:
+ *                       type: object
+ *                       properties:
+ *                         quizQuestions:
+ *                           type: integer
+ *                     runtime:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         phase:
+ *                           type: string
+ *                         remainingTime:
+ *                           type: integer
+ *                           nullable: true
+ *                         phaseStartedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           nullable: true
+ *                         phaseEndsAt:
+ *                           type: string
+ *                           format: date-time
+ *                           nullable: true
+ *       401:
+ *         description: Missing or invalid Bearer token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Quiz not found or not accessible to the current user
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Unexpected server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get("/my/:quizId", auth, controller.getMyQuizById);
+
+/**
+ * @swagger
  * /quiz/{id}:
  *   get:
  *     summary: Retrieve a quiz by ID
+ *     description: >
+ *       Returns the full quiz details for an existing quiz. This endpoint is
+ *       intended for ADMIN or AUTHOR users managing quiz content.
  *     tags: [Quiz]
  *     security:
  *       - bearerAuth: []
@@ -182,6 +418,12 @@ router.get("/", auth, allowRoles("ADMIN", "AUTHOR"), controller.getQuizzes);
  *                 createdById: "3d0dbd70-4104-4a0f-995a-4e9e4e2e3d8b"
  *                 createdAt: "2026-06-24T08:00:00.000Z"
  *                 updatedAt: "2026-06-25T09:00:00.000Z"
+ *       400:
+ *         description: Quiz ID is missing or malformed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       401:
  *         description: Missing or invalid Bearer token
  *         content:

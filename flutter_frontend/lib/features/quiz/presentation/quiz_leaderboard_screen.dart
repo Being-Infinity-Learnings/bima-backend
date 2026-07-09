@@ -1,53 +1,119 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/quiz_dummy_data.dart';
+import '../data/quiz_models.dart';
+import '../providers/quiz_providers.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../../config/app_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// Only ever reached between questions (the backend skips straight to RESULTS
+// after the final question), so "isLast" is always false here in practice —
+// kept as a flag anyway in case that ever changes.
 
-class QuizLeaderboardScreen extends StatefulWidget {
+class QuizLeaderboardScreen extends ConsumerStatefulWidget {
   final String quizId;
-  final Map<String, dynamic>? extra;
-
-  const QuizLeaderboardScreen({super.key, required this.quizId, this.extra});
+  const QuizLeaderboardScreen({super.key, required this.quizId});
 
   @override
-  State<QuizLeaderboardScreen> createState() => _QuizLeaderboardScreenState();
+  ConsumerState<QuizLeaderboardScreen> createState() =>
+      _QuizLeaderboardScreenState();
 }
 
-class _QuizLeaderboardScreenState extends State<QuizLeaderboardScreen>
+class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
     with TickerProviderStateMixin {
   late AnimationController _entranceCtrl;
-  late List<Animation<double>> _rowAnims;
+  List<Animation<double>> _rowAnims = [];
   late AnimationController _countdownRingCtrl;
 
-  Timer? _autoAdvance;
-  late int _secondsLeft;
+  Timer? _localTicker;
+  int _secondsLeft = 0;
+  int _totalSeconds = 0;
+  bool _clockInitialized = false;
 
-  bool get _isLast => widget.extra?['isLast'] == true;
-  String? get _submittedId => widget.extra?['submittedAnswerId'] as String?;
-  String? get _correctId => widget.extra?['correctAnswerId'] as String?;
-  bool get _wasCorrect => _submittedId != null && _submittedId == _correctId;
-  bool get _didNotAnswer => _submittedId == null;
+  Timer? _leaderboardTimer;
+  int? _leaderboardEndsAtMs;
+  String? _leaderboardSyncKey;
+  bool _leaderboardFinished = false;
+
+  /// Server-clock-corrected "now" — see [QuizRuntimeState.estimatedServerNow].
+  /// Always use this (not raw `DateTime.now()`) when comparing against
+  /// `phaseEndsAt`, so a device with a skewed system clock still counts
+  /// down in lockstep with when the server actually advances the phase.
+  DateTime _serverNow() => ref
+      .read(quizRuntimeControllerProvider(widget.quizId))
+      .estimatedServerNow();
 
   @override
   void initState() {
     super.initState();
-    _secondsLeft = demoLeaderboardDisplaySeconds;
-
     _entranceCtrl = AnimationController(
       vsync: this,
-      duration: Duration(
-        milliseconds: 300 + demoLeaderboardEntries.length * 55,
-      ),
+      duration: const Duration(milliseconds: 400),
     );
-    _rowAnims = List.generate(demoLeaderboardEntries.length, (i) {
-      final start = (i / demoLeaderboardEntries.length) * 0.65;
-      final end = ((i + 1) / demoLeaderboardEntries.length) * 0.65 + 0.35;
+    _countdownRingCtrl = AnimationController(vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _localTicker?.cancel();
+    _entranceCtrl.dispose();
+    _countdownRingCtrl.dispose();
+    _leaderboardTimer?.cancel();
+    super.dispose();
+  }
+
+  /// (Re)starts the local countdown from the server's authoritative
+  /// `phaseEndsAt`. Keyed off `phaseEndsAt` itself (not a one-shot flag) so
+  /// that a reconnect mid-leaderboard — which re-delivers a fresh
+  /// `runtimeUpdated` with a recomputed `remainingTime` — correctly resyncs
+  /// the clock instead of quietly keeping whatever the client's ticker
+  /// happened to have counted down to locally.
+  void _initClock(DateTime? phaseEndsAt, int? remainingMs) {
+    final syncKey = phaseEndsAt?.toIso8601String() ?? 'no-deadline';
+    if (_clockInitialized && _leaderboardSyncKey == syncKey) return;
+    _clockInitialized = true;
+    _leaderboardSyncKey = syncKey;
+
+    final leftMs =
+        phaseEndsAt?.difference(_serverNow()).inMilliseconds ??
+        remainingMs ??
+        5000;
+    final total = (leftMs / 1000).ceil();
+    _totalSeconds = total > 0 ? total : 1;
+    _secondsLeft = leftMs > 0 ? _totalSeconds : 0;
+
+    _countdownRingCtrl.duration = Duration(seconds: _totalSeconds);
+    _countdownRingCtrl
+      ..reset()
+      ..forward();
+
+    _localTicker?.cancel();
+    _localTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final msLeft =
+          phaseEndsAt?.difference(_serverNow()).inMilliseconds ??
+          (_secondsLeft - 1) * 1000;
+      final left = (msLeft / 1000).ceil().clamp(0, _totalSeconds);
+      if (left <= 0) {
+        _localTicker?.cancel();
+        if (mounted) setState(() => _secondsLeft = 0);
+      } else {
+        setState(() => _secondsLeft = left);
+      }
+    });
+  }
+
+  void _buildRowAnimsIfNeeded(int count) {
+    if (_rowAnims.length == count) return;
+    _entranceCtrl.duration = Duration(milliseconds: 300 + count * 55);
+    _rowAnims = List.generate(count, (i) {
+      final start = count == 0 ? 0.0 : (i / count) * 0.65;
+      final end = count == 0 ? 1.0 : ((i + 1) / count) * 0.65 + 0.35;
       return Tween<double>(begin: 0, end: 1).animate(
         CurvedAnimation(
           parent: _entranceCtrl,
@@ -59,40 +125,37 @@ class _QuizLeaderboardScreenState extends State<QuizLeaderboardScreen>
         ),
       );
     });
-
-    _countdownRingCtrl = AnimationController(
-      vsync: this,
-      duration: Duration(seconds: demoLeaderboardDisplaySeconds),
-    )..forward();
-
-    _entranceCtrl.forward();
-    _startAutoAdvance();
-  }
-
-  void _startAutoAdvance() {
-    _autoAdvance = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      final left = _secondsLeft - 1;
-      if (left <= 0) {
-        _autoAdvance?.cancel();
-        if (mounted) context.pop();
-      } else {
-        setState(() => _secondsLeft = left);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _autoAdvance?.cancel();
-    _entranceCtrl.dispose();
-    _countdownRingCtrl.dispose();
-    super.dispose();
+    _entranceCtrl.forward(from: 0);
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final quizState = ref.watch(quizRuntimeControllerProvider(widget.quizId));
+    final myId = ref.watch(authProvider).user?.id;
+
+    if (quizState.connectionStatus != SocketConnectionStatus.connected) {
+      return Scaffold(
+        backgroundColor: AppConfig.scaffoldColor(isDark),
+        body: const Center(
+          child: CircularProgressIndicator(color: AppConfig.primaryColor),
+        ),
+      );
+    }
+
+    _initClock(
+      quizState.runtime?.phaseEndsAt,
+      quizState.runtime?.remainingTimeMs,
+    );
+
+    final leaderboard = List<LeaderboardEntry>.from(quizState.leaderboard)
+      ..sort((a, b) => a.rank.compareTo(b.rank));
+    _buildRowAnimsIfNeeded(leaderboard.length);
+
+    final result = quizState.myQuestionResult;
+    final wasCorrect = result?.correct ?? false;
+    final didNotAnswer = quizState.selectedOptionId == null;
+    const isLast = false;
 
     return Scaffold(
       backgroundColor: AppConfig.scaffoldColor(isDark),
@@ -101,9 +164,9 @@ class _QuizLeaderboardScreenState extends State<QuizLeaderboardScreen>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _TopBar(
-              isLast: _isLast,
+              isLast: isLast,
               secondsLeft: _secondsLeft,
-              totalSeconds: demoLeaderboardDisplaySeconds,
+              totalSeconds: _totalSeconds,
               countdownCtrl: _countdownRingCtrl,
               isDark: isDark,
             ),
@@ -113,8 +176,9 @@ class _QuizLeaderboardScreenState extends State<QuizLeaderboardScreen>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: _AnswerResultBanner(
-                wasCorrect: _wasCorrect,
-                didNotAnswer: _didNotAnswer,
+                wasCorrect: wasCorrect,
+                didNotAnswer: didNotAnswer,
+                score: result?.score ?? 0,
                 isDark: isDark,
               ),
             ),
@@ -123,7 +187,11 @@ class _QuizLeaderboardScreenState extends State<QuizLeaderboardScreen>
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _YourRankCallout(rank: demoUserRank, isDark: isDark),
+              child: _YourRankCallout(
+                rank: result?.rank,
+                total: leaderboard.length,
+                isDark: isDark,
+              ),
             ),
 
             const SizedBox(height: 14),
@@ -144,36 +212,48 @@ class _QuizLeaderboardScreenState extends State<QuizLeaderboardScreen>
             const SizedBox(height: 10),
 
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                itemCount: demoLeaderboardEntries.length,
-                itemBuilder: (_, i) {
-                  final entry = demoLeaderboardEntries[i];
-                  final isYou = entry.name == 'You';
-                  return AnimatedBuilder(
-                    animation: _rowAnims[i],
-                    builder: (_, child) => Opacity(
-                      opacity: _rowAnims[i].value,
-                      child: Transform.translate(
-                        offset: Offset(0, 18 * (1 - _rowAnims[i].value)),
-                        child: child,
+              child: leaderboard.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Waiting for scores…',
+                        style: TextStyle(
+                          color: AppConfig.mutedTextColor(isDark),
+                        ),
                       ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                      itemCount: leaderboard.length,
+                      itemBuilder: (_, i) {
+                        final entry = leaderboard[i];
+                        final isYou = myId != null && entry.userId == myId;
+                        final anim = i < _rowAnims.length
+                            ? _rowAnims[i]
+                            : const AlwaysStoppedAnimation(1.0);
+                        return AnimatedBuilder(
+                          animation: anim,
+                          builder: (_, child) => Opacity(
+                            opacity: anim.value,
+                            child: Transform.translate(
+                              offset: Offset(0, 18 * (1 - anim.value)),
+                              child: child,
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _LeaderboardRow(
+                              entry: entry,
+                              isYou: isYou,
+                              isDark: isDark,
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _LeaderboardRow(
-                        entry: entry,
-                        isYou: isYou,
-                        isDark: isDark,
-                      ),
-                    ),
-                  );
-                },
-              ),
             ),
 
             _AutoAdvanceHint(
-              isLast: _isLast,
+              isLast: isLast,
               secondsLeft: _secondsLeft,
               isDark: isDark,
             ),
@@ -276,11 +356,13 @@ class _TopBar extends StatelessWidget {
 class _AnswerResultBanner extends StatelessWidget {
   final bool wasCorrect;
   final bool didNotAnswer;
+  final int score;
   final bool isDark;
 
   const _AnswerResultBanner({
     required this.wasCorrect,
     required this.didNotAnswer,
+    required this.score,
     required this.isDark,
   });
 
@@ -299,7 +381,7 @@ class _AnswerResultBanner extends StatelessWidget {
     } else if (wasCorrect) {
       color = AppConfig.successColor;
       icon = Icons.check_circle_rounded;
-      headline = 'Correct! +860 pts';
+      headline = 'Correct! +$score pts';
       sub = 'Speed bonus applied — great timing!';
     } else {
       color = AppConfig.errorColor;
@@ -349,9 +431,14 @@ class _AnswerResultBanner extends StatelessWidget {
 }
 
 class _YourRankCallout extends StatelessWidget {
-  final int rank;
+  final int? rank;
+  final int total;
   final bool isDark;
-  const _YourRankCallout({required this.rank, required this.isDark});
+  const _YourRankCallout({
+    required this.rank,
+    required this.total,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -384,7 +471,7 @@ class _YourRankCallout extends StatelessWidget {
           ),
           const Spacer(),
           Text(
-            '#$rank',
+            rank != null ? '#$rank' : '-',
             style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w900,
@@ -393,7 +480,7 @@ class _YourRankCallout extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            'of $demoTotalParticipants',
+            'of $total',
             style: TextStyle(
               fontSize: 13,
               color: AppConfig.mutedTextColor(isDark),
@@ -406,7 +493,7 @@ class _YourRankCallout extends StatelessWidget {
 }
 
 class _LeaderboardRow extends StatelessWidget {
-  final DemoLeaderboardEntry entry;
+  final LeaderboardEntry entry;
   final bool isYou;
   final bool isDark;
 
@@ -433,6 +520,10 @@ class _LeaderboardRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rankC = _rankColor(isDark);
+    final initial = entry.fullName.isNotEmpty
+        ? entry.fullName[0].toUpperCase()
+        : '?';
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
@@ -479,7 +570,7 @@ class _LeaderboardRow extends StatelessWidget {
             ),
             child: Center(
               child: Text(
-                entry.name[0],
+                initial,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -492,37 +583,22 @@ class _LeaderboardRow extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.name,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: isYou ? FontWeight.w800 : FontWeight.w600,
-                    color: isYou
-                        ? AppConfig.rankGold
-                        : AppConfig.bodyTextColor(isDark),
-                  ),
-                ),
-                if (entry.label != null && entry.label!.isNotEmpty) ...[
-                  const SizedBox(height: 1),
-                  Text(
-                    entry.label!,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppConfig.mutedTextColor(isDark),
-                    ),
-                  ),
-                ],
-              ],
+            child: Text(
+              isYou ? '${entry.fullName} (You)' : entry.fullName,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: isYou ? FontWeight.w800 : FontWeight.w600,
+                color: isYou
+                    ? AppConfig.rankGold
+                    : AppConfig.bodyTextColor(isDark),
+              ),
             ),
           ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${entry.score}',
+                '${entry.totalScore}',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,

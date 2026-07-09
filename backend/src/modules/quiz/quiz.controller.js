@@ -287,6 +287,66 @@ async function removeGroupFromQuiz(req, res) {
   }
 }
 
+/** Get quizzes that the user can access */
+async function getMyQuizzes(req, res) {
+  try {
+    const quizzes = await quizService.getMyQuizzes(req.dbUser);
+
+    return res.json({
+      success: true,
+      data: quizzes,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
+async function getMyQuizById(req, res) {
+  try {
+    const quiz = await quizService.getMyQuizById(req.params.quizId, req.dbUser);
+
+    return res.json({
+      success: true,
+      data: quiz,
+    });
+  } catch (error) {
+    return res.status(404).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
+async function getMyHistory(req, res) {
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+
+    const { results, pagination } = await quizService.getMyHistory(req.dbUser, {
+      page,
+      limit,
+    });
+
+    return res.json({
+      success: true,
+      data: results,
+      pagination,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
 module.exports = {
   createQuiz,
   getQuizzes,
@@ -298,4 +358,7 @@ module.exports = {
   addGroupsToQuiz,
   getQuizGroups,
   removeGroupFromQuiz,
+  getMyQuizzes,
+  getMyQuizById,
+  getMyHistory,
 };

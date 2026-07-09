@@ -147,6 +147,24 @@ export const questionApi = {
 // inside the question/quiz create or update request body — the backend
 // uploads to S3 at that point. See ImageUploader in QuizzesPage.jsx.
 
+// ── Runtime API (TEST ONLY — see "Test Runtime" button in QuizzesPage.jsx) ──
+// Wraps the backend's /runtime routes so the quiz runtime can be manually
+// initialized/started from the dashboard without going through the actual
+// scheduled LIVE flow. Safe to delete this whole block when the test button
+// is removed — nothing else in the dashboard imports runtimeApi.
+export const runtimeApi = {
+  initialize: (quizId) => request("POST", `/runtime/${quizId}/initialize`),
+  start: (quizId) => request("POST", `/runtime/${quizId}/start`),
+  getState: (quizId) => request("GET", `/runtime/${quizId}/state`),
+};
+
+// ── Analytics API ───────────────────────────────────────────────────────────
+// Read-only — fetches analytics for completed quizzes from quiz submissions.
+export const analyticsApi = {
+  getCompletedQuizzes: () => request("GET", "/analytics/quizzes"),
+  getQuizAnalytics: (quizId) => request("GET", `/analytics/quizzes/${quizId}`),
+};
+
 // ── Quiz Composition API ────────────────────────────────────────────────────
 export const quizCompositionApi = {
   getQuestions: (quizId) =>
