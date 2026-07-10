@@ -1021,8 +1021,6 @@ class _AnswerTileState extends State<_AnswerTile>
                             ],
                             Text(
                               option.optionText,
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,

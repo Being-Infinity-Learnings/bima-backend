@@ -28,8 +28,35 @@ const int _profileTabIndex = 3;
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  Timer? _autoRefreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // The Home tab is kept alive inside AppShell's IndexedStack, so its
+    // autoDispose providers never naturally refetch when the user returns
+    // from a quiz. Poll every 10s so "Upcoming Quizzes" / "Recent Activity"
+    // stay in sync (e.g. a just-completed quiz disappearing from the list).
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted) return;
+      ref.invalidate(myQuizzesProvider);
+      ref.invalidate(latestHistoryResultProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    super.dispose();
+  }
 
   void _goToHistoryTab(WidgetRef ref) {
     ref.read(selectedTabIndexProvider.notifier).state = _historyTabIndex;
@@ -40,7 +67,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final user = ref.watch(authProvider).user;

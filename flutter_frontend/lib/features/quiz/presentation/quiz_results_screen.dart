@@ -195,6 +195,15 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
     totalScore: 0,
   );
 
+  // Force the Home tab's quiz list / recent activity to refetch immediately
+  // (rather than waiting for its 10s poll) so this just-completed quiz
+  // doesn't linger in "Upcoming Quizzes" for even a moment after we land back.
+  void _backToHome(BuildContext context) {
+    ref.invalidate(myQuizzesProvider);
+    ref.invalidate(latestHistoryResultProvider);
+    context.go('/home');
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -408,7 +417,7 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () => context.go('/home'),
+                        onPressed: () => _backToHome(context),
                         icon: const Icon(Icons.home_rounded, size: 20),
                         label: const Text(
                           'Back to Home',
@@ -560,7 +569,9 @@ class _PodiumColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double colWidth = isWinner ? 102.0 : 88.0;
-    final initial = entry.fullName.isNotEmpty ? entry.fullName[0].toUpperCase() : '?';
+    final initial = entry.fullName.isNotEmpty
+        ? entry.fullName[0].toUpperCase()
+        : '?';
 
     Widget avatar = Container(
       width: avatarSize,
@@ -905,7 +916,8 @@ class _FullLeaderboardSectionState extends State<_FullLeaderboardSection> {
         ),
         const SizedBox(height: 12),
         ...entries.map((entry) {
-          final isYou = entry.userId.isNotEmpty &&
+          final isYou =
+              entry.userId.isNotEmpty &&
               entry.userId == widget.yourEntry.userId;
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -957,7 +969,9 @@ class _LeaderRow extends StatelessWidget {
           ][entry.rank - 1]
         : AppConfig.mutedTextColor(isDark);
 
-    final initial = entry.fullName.isNotEmpty ? entry.fullName[0].toUpperCase() : '?';
+    final initial = entry.fullName.isNotEmpty
+        ? entry.fullName[0].toUpperCase()
+        : '?';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
