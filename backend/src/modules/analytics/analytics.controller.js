@@ -24,7 +24,7 @@ async function getQuizAnalytics(req, res) {
     return res.json({ success: true, data });
   } catch (error) {
     console.error(error);
-    const status = error.message === "Quiz not found" ? 404 : 500;
+    const status = error.statusCode || 500;
     return res.status(status).json({ success: false, message: error.message });
   }
 }
