@@ -313,7 +313,7 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen>
         ),
         const SizedBox(height: 8),
         Text(
-          'The host hasn\u2019t opened the lobby yet',
+          'The lobby hasn\u2019t opened yet',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 14,
