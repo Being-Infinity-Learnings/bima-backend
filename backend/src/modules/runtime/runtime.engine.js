@@ -257,7 +257,43 @@ class RuntimeEngine {
 
     this.runtime.submissions.set(userId, submission);
 
+    // If every registered participant has now answered this question,
+    // don't make the rest of the room wait out the clock: skip straight
+    // to finishing the question (reveal -> leaderboard/results) instead
+    // of waiting for the timer to expire naturally.
+    this.maybeFinishQuestionEarly();
+
     return;
+  }
+
+  // Check whether all registered participants have submitted an answer
+  // for the current question and, if so, jump straight to finishQuestion()
+  // instead of waiting for the remaining time to elapse. Reuses
+  // scheduleNext() so it safely cancels the pending timer-expiry callback
+  // and replaces it with an immediate one, keeping finishQuestion() as the
+  // single source of truth for what happens next.
+  maybeFinishQuestionEarly() {
+    if (this.runtime.phase !== QuizPhase.QUESTION) {
+      return;
+    }
+
+    const totalParticipants = this.runtime.leaderboard.size;
+
+    if (totalParticipants === 0) {
+      return;
+    }
+
+    const everyoneAnswered = this.runtime.submissions.size >= totalParticipants;
+
+    if (!everyoneAnswered) {
+      return;
+    }
+
+    console.log(
+      `[Runtime] All ${totalParticipants} participants answered - advancing early`,
+    );
+
+    this.scheduleNext(() => this.finishQuestion(), 0);
   }
 
   // Validate that submissions are currently accepted and not duplicated.
