@@ -131,13 +131,23 @@ class RuntimeEngine {
   // Called when a question's timer expires. Builds question results,
   // broadcasts immediate per-user reveal payloads then schedules the
   // transition to leaderboard or results after REVEAL_DELAY_MS.
-  finishQuestion() {
+  async finishQuestion() {
+    const isLastQuestion = this.isLastQuestion();
+
+    if (isLastQuestion) {
+      // Computes scores for every participant, ranks them, adds the
+      // top-10 finishing bonus, updates the leaderboard, and only then
+      // persists the final question's submissions to the DB.
+      await this.finalizeLastQuestion();
+    } else {
+      // Participants who never submitted an answer still owe the full
+      // question duration to their aggregate-time tie-breaker.
+      this.applyNonSubmittersAggregate();
+    }
+
     const questionResults = this.buildQuestionResults();
 
     this.runtime.lastQuestionResults = questionResults;
-
-    const isLastQuestion =
-      this.runtime.currentQuestionIndex === this.runtime.questions.length - 1;
 
     socketBroadcast.broadcastQuestionResults(questionResults);
 
@@ -148,6 +158,69 @@ class RuntimeEngine {
         this.enterLeaderboard();
       }
     }, RuntimeConfig.REVEAL_DELAY_MS);
+  }
+
+  // For every registered participant who did not submit an answer to the
+  // current (non-final) question, credit the full question duration to
+  // their aggregate-time tie-breaker (no score change).
+  applyNonSubmittersAggregate() {
+    for (const userId of this.runtime.leaderboard.keys()) {
+      if (!this.runtime.submissions.has(userId)) {
+        this.updateLeaderboard(userId, 0, this.runtime.currentDurationMs);
+      }
+    }
+  }
+
+  // Finalize the last question: apply every buffered submission's score
+  // and aggregate time to the leaderboard, rank participants, award the
+  // top-10 finishing bonus (10 pts for 1st ... 1 pt for 10th) on top of
+  // their final-question score, and only then persist the (possibly
+  // bonus-adjusted) submissions to the DB.
+  async finalizeLastQuestion() {
+    const durationMs = this.runtime.currentDurationMs;
+
+    for (const userId of this.runtime.leaderboard.keys()) {
+      const submission = this.runtime.submissions.get(userId);
+
+      if (submission) {
+        this.updateLeaderboard(
+          userId,
+          submission.score,
+          submission.correct ? submission.elapsedMs : durationMs,
+        );
+      } else {
+        // Never submitted an answer to the final question.
+        this.updateLeaderboard(userId, 0, durationMs);
+      }
+    }
+
+    const FINISHING_BONUS = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
+    const ranked = this.getLeaderboard();
+
+    for (let i = 0; i < Math.min(FINISHING_BONUS.length, ranked.length); i++) {
+      const { userId } = ranked[i];
+      const bonus = FINISHING_BONUS[i];
+
+      const submission = this.runtime.submissions.get(userId);
+
+      // A user with no submission for the final question never actually
+      // answered it — don't give them a finishing bonus, even if their
+      // overall score happened to land them in the top 10.
+      if (!submission) {
+        continue;
+      }
+
+      const leaderboardEntry = this.runtime.leaderboard.get(userId);
+      leaderboardEntry.score += bonus;
+      this.runtime.leaderboard.set(userId, leaderboardEntry);
+
+      submission.score += bonus;
+    }
+
+    for (const submission of this.runtime.submissions.values()) {
+      await this.persistSubmission(submission);
+    }
   }
 
   // Enter leaderboard phase, broadcast leaderboard, and schedule next
@@ -251,11 +324,26 @@ class RuntimeEngine {
       score,
     });
 
-    await this.persistSubmission(submission);
+    if (this.isLastQuestion()) {
+      // The last question needs the top-10 finishing bonus applied before
+      // anything is written to the DB or reflected on the leaderboard, and
+      // that bonus can only be computed once every submission for this
+      // question is known. So for the last question we just buffer the
+      // submission here; finalizeLastQuestion() (called from
+      // finishQuestion()) is what computes scores, ranks everyone, adds
+      // the bonus, updates the leaderboard, and persists everything.
+      this.runtime.submissions.set(userId, submission);
+    } else {
+      await this.persistSubmission(submission);
 
-    const totalScore = this.updateLeaderboard(userId, score);
+      this.updateLeaderboard(
+        userId,
+        score,
+        correct ? elapsedMs : this.runtime.currentDurationMs,
+      );
 
-    this.runtime.submissions.set(userId, submission);
+      this.runtime.submissions.set(userId, submission);
+    }
 
     // If every registered participant has now answered this question,
     // don't make the rest of the room wait out the clock: skip straight
@@ -264,6 +352,13 @@ class RuntimeEngine {
     this.maybeFinishQuestionEarly();
 
     return;
+  }
+
+  // Whether the current question is the final question of the quiz.
+  isLastQuestion() {
+    return (
+      this.runtime.currentQuestionIndex === this.runtime.questions.length - 1
+    );
   }
 
   // Check whether all registered participants have submitted an answer
@@ -331,13 +426,20 @@ class RuntimeEngine {
     }
   }
 
-  // Update in-memory leaderboard with a user's incremental score.
-  updateLeaderboard(userId, score) {
+  // Update in-memory leaderboard with a user's incremental score and the
+  // amount of time to add to their aggregate-time tie-breaker. Callers
+  // pass `elapsedMs` for correct answers and the full question duration
+  // for incorrect/unanswered ones (per the tie-break rule).
+  updateLeaderboard(userId, score, aggregateTimeDeltaMs = 0) {
     let entry = this.runtime.leaderboard.get(userId);
 
     if (!entry) {
       entry = {
         score: 0,
+
+        aggregateTimeMs: 0,
+
+        joinedAt: new Date(),
 
         fullName: "",
 
@@ -346,6 +448,8 @@ class RuntimeEngine {
     }
 
     entry.score += score;
+
+    entry.aggregateTimeMs += aggregateTimeDeltaMs;
 
     this.runtime.leaderboard.set(userId, entry);
 
@@ -360,6 +464,10 @@ class RuntimeEngine {
 
     this.runtime.leaderboard.set(user.id, {
       score: 0,
+
+      aggregateTimeMs: 0,
+
+      joinedAt: new Date(),
 
       fullName: user.fullName,
 
@@ -526,6 +634,10 @@ class RuntimeEngine {
   }
 
   // Return a sorted array representation of the in-memory leaderboard.
+  // Sort order (all ascending in "better" direction):
+  //   1. totalScore, descending (higher score wins)
+  //   2. aggregateTimeMs, ascending (less time spent on correct answers wins)
+  //   3. joinedAt, ascending (earlier join wins)
   getLeaderboard() {
     return [...this.runtime.leaderboard.entries()]
       .map(([userId, entry]) => ({
@@ -536,8 +648,22 @@ class RuntimeEngine {
         profileImage: entry.profileImage,
 
         totalScore: entry.score,
+
+        aggregateTimeMs: entry.aggregateTimeMs,
+
+        joinedAt: entry.joinedAt,
       }))
-      .sort((a, b) => b.totalScore - a.totalScore)
+      .sort((a, b) => {
+        if (b.totalScore !== a.totalScore) {
+          return b.totalScore - a.totalScore;
+        }
+
+        if (a.aggregateTimeMs !== b.aggregateTimeMs) {
+          return a.aggregateTimeMs - b.aggregateTimeMs;
+        }
+
+        return a.joinedAt.getTime() - b.joinedAt.getTime();
+      })
       .map((entry, index) => ({
         rank: index + 1,
 

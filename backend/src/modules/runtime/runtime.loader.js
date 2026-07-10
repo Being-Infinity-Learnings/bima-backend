@@ -75,6 +75,14 @@ async function load(quizId) {
     currentDurationMs: null,
 
     // Live Data
+    // Leaderboard entries look like:
+    //   { score, aggregateTimeMs, joinedAt, fullName, profileImage }
+    // score: sum of per-question scores (incl. any final-question bonus).
+    // aggregateTimeMs: sum of elapsed time for correctly-answered questions,
+    //   plus the full question duration for every incorrect/unanswered
+    //   question. Lower is better; used as the 1st tie-breaker.
+    // joinedAt: when the participant joined the quiz; used as the 2nd
+    //   tie-breaker (earlier is better).
     leaderboard: new Map(),
 
     submissions: new Map(),
