@@ -23,11 +23,18 @@
 // (not yet active) job on demand — e.g. when a question finishes early
 // because everyone already answered.
 const { Queue } = require("bullmq");
-const connection = require("../../config/redis");
+const redis = require("../../config/redis");
 
 const QUEUE_NAME = "quiz-phase";
 
-const quizPhaseQueue = new Queue(QUEUE_NAME, { connection });
+// Dedicated connection for the Queue itself (see config/redis.js for
+// why BullMQ must not share the app's main Redis connection). Plain
+// GET/SET/DEL calls below (pendingJobKey tracking) still go through the
+// regular shared `redis` connection, since those are ordinary app
+// commands, not BullMQ internals.
+const quizPhaseQueue = new Queue(QUEUE_NAME, {
+  connection: redis.createBullConnection(),
+});
 
 function pendingJobKey(quizId) {
   return `quiz:${quizId}:pending-phase-job`;
@@ -52,7 +59,7 @@ async function schedulePhaseAction(quizId, action, delayMs) {
     },
   );
 
-  await connection.set(pendingJobKey(quizId), job.id);
+  await redis.set(pendingJobKey(quizId), job.id);
 }
 
 // Remove the job currently tracked as "pending" for this quiz, if any.
@@ -64,7 +71,7 @@ async function schedulePhaseAction(quizId, action, delayMs) {
 // there's nothing stale left behind either way.
 async function cancelPhaseAction(quizId) {
   const key = pendingJobKey(quizId);
-  const existingJobId = await connection.get(key);
+  const existingJobId = await redis.get(key);
 
   if (existingJobId) {
     const job = await quizPhaseQueue.getJob(existingJobId);
@@ -80,7 +87,7 @@ async function cancelPhaseAction(quizId) {
     }
   }
 
-  await connection.del(key);
+  await redis.del(key);
 }
 
 module.exports = {

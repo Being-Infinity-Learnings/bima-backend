@@ -4,11 +4,15 @@
 // A deterministic jobId per quiz lets "reschedule" and "cancel" be
 // implemented as remove-then-add / remove, from ANY app instance.
 const { Queue } = require("bullmq");
-const connection = require("../../config/redis");
+const redis = require("../../config/redis");
 
 const QUEUE_NAME = "quiz-start";
 
-const quizStartQueue = new Queue(QUEUE_NAME, { connection });
+// Dedicated connection for this queue — do not share the app's main
+// Redis connection with BullMQ (see config/redis.js for why).
+const quizStartQueue = new Queue(QUEUE_NAME, {
+  connection: redis.createBullConnection(),
+});
 
 function jobId(quizId) {
   return `quiz-start-${quizId}`;

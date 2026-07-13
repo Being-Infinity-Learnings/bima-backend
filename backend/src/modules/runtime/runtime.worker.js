@@ -11,10 +11,11 @@
 // consuming jobs. It's safe to run in the same process as the HTTP/socket
 // server, or split into a dedicated worker process/deployment.
 const { Worker } = require("bullmq");
-const connection = require("../../config/redis");
+const redis = require("../../config/redis");
 
 const loader = require("./runtime.loader");
 const manager = require("./runtime.manager");
+const store = require("./runtime.store");
 const RuntimeEngine = require("./runtime.engine");
 
 const QUIZ_START_QUEUE = "quiz-start";
@@ -49,7 +50,7 @@ const quizStartWorker = new Worker(
 
     await manager.withEngine(quizId, (engine) => engine.start());
   },
-  { connection },
+  { connection: redis.createBullConnection() },
 );
 
 quizStartWorker.on("failed", (job, err) => {
@@ -67,9 +68,22 @@ const quizPhaseWorker = new Worker(
       throw new Error(`Unknown runtime action: ${action}`);
     }
 
-    await manager.withEngine(quizId, (engine) => engine[action]());
+    // Two phase jobs for the SAME quiz can legitimately both be picked
+    // up around the same moment — e.g. the natural timer-expiry job is
+    // already active/locked (and thus un-cancelable, see
+    // quiz-phase.queue.js) at the exact instant maybeFinishQuestionEarly()
+    // schedules an immediate follow-up job. Without a lock here, both
+    // would run engine[action]() concurrently against the same
+    // load-mutate-save state, which can double-advance the phase or
+    // double-apply the finishing bonus. The same lock submitAnswer()
+    // already uses (see quiz.socket.js) serializes this too, so only one
+    // mutation touches this quiz's state at a time no matter which path
+    // it came from.
+    await store.withLock(quizId, () =>
+      manager.withEngine(quizId, (engine) => engine[action]()),
+    );
   },
-  { connection },
+  { connection: redis.createBullConnection() },
 );
 
 quizPhaseWorker.on("failed", (job, err) => {
