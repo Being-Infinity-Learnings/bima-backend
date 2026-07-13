@@ -28,7 +28,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   final List<HistoryResult> _results = [];
   int _page = 0;
   int _total = 0;
-  bool _hasMore = true;
+  bool _hasMore = true;  
   bool _isLoadingFirstPage = true;
   bool _isLoadingMore = false;
   String? _error;

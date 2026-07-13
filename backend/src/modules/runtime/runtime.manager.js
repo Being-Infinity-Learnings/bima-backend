@@ -32,7 +32,7 @@ async function create(initialState) {
 // Load a quiz's core state from Redis and wrap it in a RuntimeEngine, or
 // throw if no runtime is initialized for this quiz.
 async function loadEngine(quizId) {
-  const state = await store.loadState(quizId);S
+  const state = await store.loadState(quizId);
 
   if (!state) {
     throw new NotFoundError("Runtime not initialized");

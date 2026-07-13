@@ -19,7 +19,7 @@ const store = require("./runtime.store");
 
 const { QuizPhase, RuntimeConfig } = require("./runtime.constants");
 
-const { socketBroadcast } = require("../socket");
+const socketBroadcast = require("../socket/socket.broadcast");
 
 const calculateScore = require("./runtime.scoring");
 
