@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../config/app_config.dart';
 import '../../../core/navigation/app_shell.dart';
+import '../../../core/navigation/route_observer.dart';
 import '../../history/presentation/history_screen.dart' show formatHistoryDate;
 import '../../quiz/data/quiz_models.dart';
 import '../../quiz/providers/quiz_providers.dart';
@@ -17,6 +18,9 @@ import '../../quiz/providers/quiz_providers.dart';
 final _nowProvider = StreamProvider<DateTime>((ref) {
   return Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now());
 });
+
+// Home tab index in AppShell's bottom nav.
+const int _homeTabIndex = 0;
 
 // History tab index in AppShell's bottom nav.
 const int _historyTabIndex = 1;
@@ -35,26 +39,100 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
   Timer? _autoRefreshTimer;
+  ProviderSubscription<int>? _tabListener;
+
+  // AppShell (and therefore this widget, kept alive inside its
+  // IndexedStack) is its own top-level route. Pushing a quiz screen
+  // (/quiz/:id/waiting, /lobby, /play, ...) pushes a NEW route on top of
+  // it rather than replacing it — AppShell/HomeScreen stay mounted the
+  // whole time, just hidden. Without tracking that, a Timer started here
+  // would keep firing API calls for as long as the app runs, including
+  // the entire time someone is actively attending a quiz.
+  bool _isTopRoute = true;
+
+  void _refreshNow() {
+    ref.invalidate(myQuizzesProvider);
+    ref.invalidate(latestHistoryResultProvider);
+  }
+
+  // Start/stop the 10s poll based on current visibility. Only polls while
+  // the Home tab is selected AND Home's route is the topmost visible one
+  // — i.e. never while another tab is showing, and never while the user
+  // is off in the quiz flow.
+  void _syncPolling() {
+    final isHomeTabSelected =
+        ref.read(selectedTabIndexProvider) == _homeTabIndex;
+    final shouldPoll = isHomeTabSelected && _isTopRoute;
+
+    if (shouldPoll) {
+      _autoRefreshTimer ??= Timer.periodic(const Duration(seconds: 10), (_) {
+        if (!mounted) return;
+        _refreshNow();
+      });
+    } else {
+      _autoRefreshTimer?.cancel();
+      _autoRefreshTimer = null;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    // The Home tab is kept alive inside AppShell's IndexedStack, so its
-    // autoDispose providers never naturally refetch when the user returns
-    // from a quiz. Poll every 10s so "Upcoming Quizzes" / "Recent Activity"
-    // stay in sync (e.g. a just-completed quiz disappearing from the list).
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+
+    // The Home tab is kept alive inside AppShell's IndexedStack, so
+    // switching tabs doesn't dispose/recreate this widget. Watch tab
+    // selection ourselves: refresh once the instant the user actually
+    // lands back on Home, and start/stop the poll accordingly.
+    Future.microtask(() {
       if (!mounted) return;
-      ref.invalidate(myQuizzesProvider);
-      ref.invalidate(latestHistoryResultProvider);
+      _tabListener = ref.listenManual<int>(selectedTabIndexProvider, (
+        previous,
+        next,
+      ) {
+        final enteredHome = next == _homeTabIndex && previous != _homeTabIndex;
+        _syncPolling();
+        if (enteredHome) {
+          _refreshNow();
+        }
+      });
+      _syncPolling();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  // A quiz screen (or anything else) was pushed on top of Home's route —
+  // Home is now hidden. Stop polling.
+  @override
+  void didPushNext() {
+    _isTopRoute = false;
+    _syncPolling();
+  }
+
+  // The screen that was covering Home got popped — e.g. the user finished
+  // or left a quiz and is back looking at Home. Refresh immediately and
+  // resume polling.
+  @override
+  void didPopNext() {
+    _isTopRoute = true;
+    _syncPolling();
+    _refreshNow();
   }
 
   @override
   void dispose() {
     _autoRefreshTimer?.cancel();
+    _tabListener?.close();
+    routeObserver.unsubscribe(this);
     super.dispose();
   }
 
