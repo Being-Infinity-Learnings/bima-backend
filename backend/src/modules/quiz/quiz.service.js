@@ -2,6 +2,11 @@ const prisma = require("../../config/prisma");
 const validationService = require("./quiz-validation.service");
 const imageService = require("../upload/image.service");
 const runtimeManager = require("../runtime/runtime.manager");
+const { RuntimeConfig } = require("../runtime/runtime.constants");
+const {
+  scheduleQuizStart,
+  cancelQuizStart,
+} = require("../runtime/quiz-start.queue");
 
 /**
  * Resolves the coverImageUrl for a quiz create/update payload.
@@ -113,6 +118,7 @@ async function updateQuiz(id, data) {
     where: { id },
     select: {
       status: true,
+      scheduledStartTime: true,
     },
   });
 
@@ -144,14 +150,37 @@ async function updateQuiz(id, data) {
     updateData.scheduledStartTime = new Date(data.scheduledStartTime);
   }
 
-  return prisma.quiz.update({
+  const updated = await prisma.quiz.update({
     where: { id },
     data: updateData,
   });
+
+  // A DRAFT quiz has no BullMQ start job to touch. A SCHEDULED quiz does
+  // — if its scheduledStartTime just changed, reschedule (cancel + add)
+  // so it still starts at (new scheduledStartTime - lobby time).
+  const startTimeChanged =
+    data.scheduledStartTime !== undefined &&
+    new Date(data.scheduledStartTime).getTime() !==
+      existingQuiz.scheduledStartTime.getTime();
+
+  if (existingQuiz.status === "SCHEDULED" && startTimeChanged) {
+    await scheduleQuizStart(
+      id,
+      updated.scheduledStartTime,
+      RuntimeConfig.LOBBY_DURATION_MS,
+    );
+  }
+
+  return updated;
 }
 
 /** Delete a quiz */
 async function deleteQuiz(id) {
+  // Clean up any pending start job and any (unlikely, but possible)
+  // already-initialized runtime before removing the quiz row itself.
+  await cancelQuizStart(id);
+  await runtimeManager.destroy(id);
+
   return prisma.quiz.delete({
     where: {
       id,
@@ -177,7 +206,7 @@ async function publishQuiz(id) {
     throw new Error("Only draft quizzes can be published");
   }
 
-  return prisma.quiz.update({
+  const updated = await prisma.quiz.update({
     where: {
       id,
     },
@@ -186,6 +215,17 @@ async function publishQuiz(id) {
       status: "SCHEDULED",
     },
   });
+
+  // Scheduling a quiz schedules the BullMQ job that will initialize the
+  // runtime and start it automatically at
+  // (scheduledStartTime - LOBBY_DURATION_MS).
+  await scheduleQuizStart(
+    id,
+    updated.scheduledStartTime,
+    RuntimeConfig.LOBBY_DURATION_MS,
+  );
+
+  return updated;
 }
 
 /** Unpublish a quiz */
@@ -204,7 +244,7 @@ async function unpublishQuiz(id) {
     throw new Error("Only scheduled quizzes can be unpublished");
   }
 
-  return prisma.quiz.update({
+  const updated = await prisma.quiz.update({
     where: {
       id,
     },
@@ -213,6 +253,13 @@ async function unpublishQuiz(id) {
       status: "DRAFT",
     },
   });
+
+  // Moving back to draft deletes both the scheduled start job and any
+  // runtime that may have already been initialized for it.
+  await cancelQuizStart(id);
+  await runtimeManager.destroy(id);
+
+  return updated;
 }
 
 /** Add groups to a quiz */
@@ -406,7 +453,7 @@ async function getMyQuizById(quizId, user) {
     throw new Error("Quiz not found");
   }
 
-  const runtime = runtimeManager.getRuntime(quiz.id);
+  const runtime = await runtimeManager.getRuntimeSnapshot(quiz.id);
 
   return {
     ...quiz,

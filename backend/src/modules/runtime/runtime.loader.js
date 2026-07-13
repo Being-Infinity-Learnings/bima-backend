@@ -1,11 +1,14 @@
-// Purpose: Load quiz data from the database and construct an initial
-// in-memory runtime object ready for the runtime engine.
+// Purpose: Load quiz data from the database and construct the initial
+// runtime "core state" object (phase/timing/current-question/results).
+// Leaderboard, submissions and connected-users are NOT part of this
+// object anymore — they live directly in Redis (see runtime.store.js)
+// and are read/written independently of this core state blob.
 const prisma = require("../../config/prisma");
 
 const { QuizPhase } = require("./runtime.constants");
 const { NotFoundError, ValidationError } = require("./runtime.state");
 
-// Load quiz + questions and initialize runtime state for the engine.
+// Load quiz + questions and build the initial core runtime state.
 async function load(quizId) {
   const quiz = await prisma.quiz.findUnique({
     where: {
@@ -48,8 +51,9 @@ async function load(quizId) {
   }
 
   const runtime = {
-    // Static Quiz Data
-
+    // Static Quiz Data (cached here so we don't re-query the DB on every
+    // phase transition/job — this is fine to duplicate into Redis since
+    // it's read-heavy and only set once at initialization).
     quiz,
 
     questions: quiz.quizQuestions.map((mapping) => ({
@@ -59,7 +63,6 @@ async function load(quizId) {
     })),
 
     // Runtime State
-
     phase: QuizPhase.WAITING,
 
     currentQuestionIndex: -1,
@@ -70,30 +73,15 @@ async function load(quizId) {
 
     phaseEndsAt: null,
 
-    timeoutHandle: null,
-
     currentDurationMs: null,
 
-    // Live Data
-    // Leaderboard entries look like:
-    //   { score, aggregateTimeMs, joinedAt, fullName, profileImage }
-    // score: sum of per-question scores (incl. any final-question bonus).
-    // aggregateTimeMs: sum of elapsed time for correctly-answered questions,
-    //   plus the full question duration for every incorrect/unanswered
-    //   question. Lower is better; used as the 1st tie-breaker.
-    // joinedAt: when the participant joined the quiz; used as the 2nd
-    //   tie-breaker (earlier is better).
-    leaderboard: new Map(),
-
-    submissions: new Map(),
-
-    connectedUsers: new Set(),
-
+    // Per-question reveal payload and final results, stored as plain
+    // objects ({userId: payload}) since JSON can't represent a Map.
     lastQuestionResults: null,
 
     finalResults: null,
-    // Metadata
 
+    // Metadata
     initializedAt: new Date(),
 
     startedAt: null,

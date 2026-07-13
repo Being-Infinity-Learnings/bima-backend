@@ -1,7 +1,10 @@
-// Purpose: In-memory store for active quiz runtimes, plus the custom
-// error types used across the runtime module. Kept in one place so
-// manager/loader/controller can share them without an extra file.
-const activeQuizzes = new Map();
+// Purpose: Custom error types used across the runtime module.
+//
+// NOTE: this file previously also held the in-memory `activeQuizzes` Map
+// that stored all active runtimes in process memory. That Map has been
+// removed — runtime state now lives in Redis (see runtime.store.js) so it
+// is shared across every app instance and survives process restarts,
+// which is required for horizontal scaling.
 
 // Base error carrying an explicit HTTP status code.
 class RuntimeError extends Error {
@@ -12,7 +15,7 @@ class RuntimeError extends Error {
   }
 }
 
-// 404 - referenced runtime/quiz does not exist in memory or DB
+// 404 - referenced runtime/quiz does not exist in Redis or DB
 class NotFoundError extends RuntimeError {
   constructor(message = "Not found") {
     super(message, 404);
@@ -34,8 +37,6 @@ class ValidationError extends RuntimeError {
 }
 
 module.exports = {
-  activeQuizzes,
-
   RuntimeError,
   NotFoundError,
   ConflictError,

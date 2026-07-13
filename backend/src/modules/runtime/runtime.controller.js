@@ -3,9 +3,9 @@
 // actions.
 const loader = require("./runtime.loader");
 const manager = require("./runtime.manager");
-const RuntimeEngine = require("./runtime.engine");
+const { cancelQuizStart } = require("./quiz-start.queue");
 
-// Map a thrown error to an HTTP response. Errors from runtime.errors.js
+// Map a thrown error to an HTTP response. Errors from runtime.state.js
 // (NotFoundError, ConflictError, ValidationError) carry an explicit
 // statusCode. Anything else is an unexpected/unclassified failure and
 // is treated as a 500 rather than assumed to be the caller's fault.
@@ -18,23 +18,26 @@ function sendError(res, err) {
   });
 }
 
-// Initialize a runtime for a scheduled quiz.
+// Initialize a runtime for a scheduled quiz (debug/admin only — in normal
+// operation this happens automatically via the quiz-start BullMQ job).
 async function initialize(req, res) {
   try {
     const { quizId } = req.params;
 
-    if (manager.exists(quizId)) {
+    if (await manager.exists(quizId)) {
       return res.status(409).json({
         success: false,
         message: "Runtime already initialized",
       });
     }
 
-    const runtime = await loader.load(quizId);
+    const initialState = await loader.load(quizId);
 
-    const engine = new RuntimeEngine(runtime);
+    await manager.create(initialState);
 
-    manager.create(runtime, engine);
+    // A manual initialize should also cancel the automatic BullMQ start
+    // job, since we don't want both racing to start the same quiz.
+    await cancelQuizStart(quizId);
 
     return res.json({
       success: true,
@@ -42,9 +45,9 @@ async function initialize(req, res) {
       data: {
         quizId,
 
-        questionCount: runtime.questions.length,
+        questionCount: initialState.questions.length,
 
-        phase: runtime.phase,
+        phase: initialState.phase,
       },
     });
   } catch (err) {
@@ -55,9 +58,9 @@ async function initialize(req, res) {
 // Start an initialized runtime (mark quiz LIVE and begin the engine).
 async function start(req, res) {
   try {
-    const engine = manager.requireEngine(req.params.quizId);
+    const { quizId } = req.params;
 
-    await engine.start();
+    await manager.withEngine(quizId, (engine) => engine.start());
 
     return res.json({
       success: true,
@@ -72,13 +75,15 @@ async function start(req, res) {
 // Debug: submit an answer via HTTP to the runtime engine.
 async function submitAnswer(req, res) {
   try {
-    const engine = manager.requireEngine(req.params.quizId);
+    const { quizId } = req.params;
 
-    const result = await engine.submitAnswer({
-      userId: req.user.id,
-      questionId: req.body.questionId,
-      selectedOptionIds: req.body.selectedOptionIds,
-    });
+    const result = await manager.withEngine(quizId, (engine) =>
+      engine.submitAnswer({
+        userId: req.user.id,
+        questionId: req.body.questionId,
+        selectedOptionIds: req.body.selectedOptionIds,
+      }),
+    );
 
     return res.json({
       success: true,
@@ -92,12 +97,14 @@ async function submitAnswer(req, res) {
 // Debug: fetch the current runtime state for inspecting behavior.
 async function getRuntimeState(req, res) {
   try {
-    const engine = manager.requireEngine(req.params.quizId);
+    const { quizId } = req.params;
+
+    const engine = await manager.loadEngine(quizId);
 
     return res.json({
       success: true,
 
-      data: engine.getRuntimeState(),
+      data: await engine.getRuntimeState(),
     });
   } catch (err) {
     return sendError(res, err);

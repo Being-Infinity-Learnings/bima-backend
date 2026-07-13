@@ -1,8 +1,13 @@
-// Purpose: Keep a reference to the Socket.IO server instance and map
-// of connected sockets by user id for targeted emits.
+// Purpose: Keep a reference to the Socket.IO server instance.
+//
+// NOTE: the local `Map<userId, socket>` this module used to hold for
+// per-user targeting has been removed. It only worked for sockets
+// connected to the SAME process, which breaks the moment you run more
+// than one instance. Per-user targeting is now done via Socket.IO rooms
+// (every socket joins `user:{userId}` on connect — see socket.server.js)
+// combined with the Redis adapter, which makes `io.to(room).emit(...)`
+// reach the right socket regardless of which instance it's connected to.
 let io = null;
-
-const sockets = new Map();
 
 // Set the Socket.IO server instance.
 function setIO(instance) {
@@ -18,25 +23,7 @@ function getIO() {
   return io;
 }
 
-// Register a connected socket for a user id.
-function registerSocket(userId, socket) {
-  sockets.set(userId, socket);
-}
-
-// Unregister a user's socket (on disconnect).
-function unregisterSocket(userId) {
-  sockets.delete(userId);
-}
-
-// Return the socket instance for a given user id, or undefined.
-function getSocket(userId) {
-  return sockets.get(userId);
-}
-
 module.exports = {
   setIO,
   getIO,
-  registerSocket,
-  unregisterSocket,
-  getSocket,
 };

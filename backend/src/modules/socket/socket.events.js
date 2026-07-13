@@ -2,7 +2,7 @@
 // connects, including quiz-related events and graceful disconnect
 // handling.
 const registerQuizEvents = require("./quiz.socket");
-const socketManager = require("./socket.manager");
+const manager = require("../runtime/runtime.manager");
 
 // Register per-socket event handlers and attach disconnect logic.
 function registerEvents(io, socket) {
@@ -12,23 +12,22 @@ function registerEvents(io, socket) {
 
   registerQuizEvents(io, socket);
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     const quizId = socket.data.quizId;
 
     if (quizId) {
       try {
-        const runtimeManager = require("../runtime/runtime.manager");
-        const runtime = runtimeManager.requireRuntime(quizId);
-        const engine = runtimeManager.requireEngine(quizId);
+        const engine = await manager.loadEngine(quizId);
 
-        runtime.connectedUsers.delete(socket.dbUser.id);
+        await engine.removeConnectedUser(socket.dbUser.id);
 
         // Broadcast updated lobby count
-        engine.broadcastRuntimeState();
-      } catch (_) {}
+        await engine.broadcastRuntimeState();
+      } catch (_) {
+        // Runtime may already be gone (quiz completed/unpublished) —
+        // nothing to clean up in that case.
+      }
     }
-
-    socketManager.unregisterSocket(socket.dbUser.id);
 
     console.log(`[Socket] Disconnected: ${socket.dbUser.fullName}`);
   });

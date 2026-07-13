@@ -1,50 +1,47 @@
 // Purpose: Register quiz-specific socket event handlers (join, submit)
 // and perform runtime user validation.
-const runtimeManager = require("../runtime/runtime.manager");
-const socketManager = require("./socket.manager");
+const manager = require("../runtime/runtime.manager");
+const store = require("../runtime/runtime.store");
 const { QuizPhase } = require("../runtime/runtime.constants");
 
 // Register handlers for quiz-related socket events.
 function registerQuizEvents(io, socket) {
-  socket.on("joinQuiz", ({ quizId }) => {
+  socket.on("joinQuiz", async ({ quizId }) => {
     try {
-      const runtime = runtimeManager.requireRuntime(quizId);
+      const engine = await manager.loadEngine(quizId);
 
-      const engine = runtimeManager.requireEngine(quizId);
-
-      validateUser(runtime, socket.dbUser);
+      validateUser(engine.runtime, socket.dbUser);
 
       socket.join(`quiz:${quizId}`);
-      socketManager.registerSocket(socket.dbUser.id, socket);
 
       socket.data.quizId = quizId;
 
-      runtime.connectedUsers.add(socket.dbUser.id);
+      await engine.addConnectedUser(socket.dbUser.id);
+
+      if (!(await engine.isParticipantRegistered(socket.dbUser.id))) {
+        await engine.registerParticipant(socket.dbUser);
+      }
 
       // Notify everyone in the lobby about updated participant count
-      engine.broadcastRuntimeState();
-
-      if (!engine.isParticipantRegistered(socket.dbUser.id)) {
-        engine.registerParticipant(socket.dbUser);
-      }
+      await engine.broadcastRuntimeState();
 
       socket.emit("quizJoined", {
         success: true,
-        data: engine.getRuntimeState(),
+        data: await engine.getRuntimeState(),
       });
 
       if (
-        runtime.phase === "LEADERBOARD" ||
-        runtime.phase === QuizPhase.RESULTS
+        engine.runtime.phase === "LEADERBOARD" ||
+        engine.runtime.phase === QuizPhase.RESULTS
       ) {
         socket.emit("leaderboardUpdated", {
           success: true,
-          data: engine.buildLeaderboardPayload(),
+          data: await engine.buildLeaderboardPayload(),
         });
 
         const questionResults =
-          runtime.lastQuestionResults?.get(socket.dbUser.id) ??
-          engine.buildQuestionResults().get(socket.dbUser.id);
+          engine.runtime.lastQuestionResults?.[socket.dbUser.id] ??
+          (await engine.buildQuestionResults())[socket.dbUser.id];
 
         socket.emit("questionResults", {
           success: true,
@@ -52,8 +49,8 @@ function registerQuizEvents(io, socket) {
         });
       }
 
-      if (runtime.phase === QuizPhase.RESULTS) {
-        const result = runtime.finalResults.get(socket.dbUser.id);
+      if (engine.runtime.phase === QuizPhase.RESULTS) {
+        const result = engine.runtime.finalResults?.[socket.dbUser.id];
 
         socket.emit("finalResults", {
           success: true,
@@ -79,15 +76,21 @@ function registerQuizEvents(io, socket) {
         throw new Error("You are not connected to a quiz.");
       }
 
-      const engine = runtimeManager.requireEngine(quizId);
+      // Guard against two submissions for the same quiz racing on
+      // different app instances at the same time (e.g. right at the
+      // "everyone answered, finish early" boundary) — see
+      // runtime.store.withLock.
+      await store.withLock(quizId, () =>
+        manager.withEngine(quizId, (engine) =>
+          engine.submitAnswer({
+            userId: socket.dbUser.id,
 
-      const result = await engine.submitAnswer({
-        userId: socket.dbUser.id,
+            questionId,
 
-        questionId,
-
-        selectedOptionIds,
-      });
+            selectedOptionIds,
+          }),
+        ),
+      );
 
       socket.emit("answerSubmitted", {
         success: true,

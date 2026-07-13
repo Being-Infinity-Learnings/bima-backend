@@ -1,6 +1,10 @@
 // Purpose: Helpers to broadcast runtime-related events to quiz rooms
-// or individual users using the socket manager/IO instance.
-const { getIO, getSocket } = require("./socket.manager");
+// or individual users. Both room types (`quiz:{id}` and `user:{id}`)
+// work cluster-wide because of the Redis adapter installed in
+// socket.server.js — io.to(...)/io.in(...) publish over Redis pub/sub so
+// every instance's connected sockets receive the event, not just the
+// instance that called emit.
+const { getIO } = require("./socket.manager");
 
 // Emit the canonical runtime state to the quiz room.
 function broadcastRuntimeState(quizId, runtimeState) {
@@ -25,16 +29,14 @@ function broadcastLeaderboard(quizId, payload) {
   });
 }
 
-// Emit per-user question results to each connected socket.
+// Emit per-user question results. Targets each user's personal room
+// (`user:{userId}`) instead of a process-local socket lookup, so it
+// reaches the user regardless of which instance their socket is on.
 function broadcastQuestionResults(results) {
+  const io = getIO();
+
   for (const [userId, payload] of results) {
-    const socket = getSocket(userId);
-
-    if (!socket) {
-      continue;
-    }
-
-    socket.emit("questionResults", {
+    io.to(`user:${userId}`).emit("questionResults", {
       success: true,
 
       data: payload,
@@ -42,16 +44,12 @@ function broadcastQuestionResults(results) {
   }
 }
 
-// Emit final results to each connected user.
+// Emit final results to each connected user, same room-based targeting.
 function broadcastFinalResults(results) {
+  const io = getIO();
+
   for (const [userId, payload] of results) {
-    const socket = getSocket(userId);
-
-    if (!socket) {
-      continue;
-    }
-
-    socket.emit("finalResults", {
+    io.to(`user:${userId}`).emit("finalResults", {
       success: true,
       data: payload,
     });
