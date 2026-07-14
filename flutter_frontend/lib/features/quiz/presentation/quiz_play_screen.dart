@@ -700,49 +700,54 @@ class _AnswerGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final crossAxisCount = options.length <= 2 ? 1 : 2;
-    final rows = <Widget>[];
-    for (var i = 0; i < options.length; i += crossAxisCount) {
-      final rowWidgets = <Widget>[];
-      for (var j = i; j < i + crossAxisCount && j < options.length; j++) {
-        final option = options[j];
-        rowWidgets.add(
-          Expanded(
-            child: _AnswerTile(
-              option: option,
-              baseColor: colors[j % colors.length],
-              shape: shapes[j % shapes.length],
-              selectedId: selectedId,
-              locked: locked,
-              revealed: revealed,
-              isCorrect: correctOptionIds.contains(option.id),
-              onTap: onTap,
-              revealStaggerIndex: correctOptionIds.contains(option.id)
-                  ? options.length
-                  : j,
-              isDark: isDark,
-            ),
-          ),
-        );
-        if (j + 1 < i + crossAxisCount && j + 1 < options.length) {
-          rowWidgets.add(const SizedBox(width: 10));
-        }
+
+    // Group tiles by column (instead of by row) so that every tile in the
+    // grid — not just the two sharing a row — can be wrapped in a single
+    // IntrinsicHeight. This makes all tiles grow to match whichever answer
+    // has the longest text, keeping the whole grid visually consistent
+    // instead of only equalizing pairs.
+    final columnChildren = List.generate(crossAxisCount, (_) => <Widget>[]);
+
+    for (var i = 0; i < options.length; i++) {
+      final option = options[i];
+      final col = i % crossAxisCount;
+      if (columnChildren[col].isNotEmpty) {
+        columnChildren[col].add(const SizedBox(height: 10));
       }
-      rows.add(
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: rowWidgets,
+      columnChildren[col].add(
+        Expanded(
+          child: _AnswerTile(
+            option: option,
+            baseColor: colors[i % colors.length],
+            shape: shapes[i % shapes.length],
+            selectedId: selectedId,
+            locked: locked,
+            revealed: revealed,
+            isCorrect: correctOptionIds.contains(option.id),
+            onTap: onTap,
+            revealStaggerIndex: correctOptionIds.contains(option.id)
+                ? options.length
+                : i,
+            isDark: isDark,
           ),
         ),
       );
-      if (i + crossAxisCount < options.length) {
-        rows.add(const SizedBox(height: 10));
-      }
+    }
+
+    final rowWidgets = <Widget>[];
+    for (var c = 0; c < crossAxisCount; c++) {
+      if (c > 0) rowWidgets.add(const SizedBox(width: 10));
+      rowWidgets.add(Expanded(child: Column(children: columnChildren[c])));
     }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(children: rows),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: rowWidgets,
+        ),
+      ),
     );
   }
 }
@@ -952,9 +957,7 @@ class _AnswerTileState extends State<_AnswerTile>
             child: GestureDetector(
               onTap: locked ? null : () => widget.onTap(option.id),
               child: Container(
-                constraints: BoxConstraints(
-                  minHeight: option.optionText.length > 30 ? 100 : 90,
-                ),
+                constraints: const BoxConstraints(minHeight: 92),
                 decoration: BoxDecoration(
                   color: effectiveBg,
                   borderRadius: BorderRadius.circular(16),
@@ -981,7 +984,7 @@ class _AnswerTileState extends State<_AnswerTile>
                 child: Row(
                   children: [
                     Container(
-                      width: 46,
+                      width: 36,
                       alignment: Alignment.center,
                       child: Text(
                         widget.shape,
@@ -993,7 +996,10 @@ class _AnswerTileState extends State<_AnswerTile>
                     ),
                     Expanded(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 2,
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -1015,12 +1021,11 @@ class _AnswerTileState extends State<_AnswerTile>
                             ],
                             Text(
                               option.optionText,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
                                 color: effectiveTextColor,
+                                height: 1.2,
                               ),
                             ),
                           ],
@@ -1029,7 +1034,7 @@ class _AnswerTileState extends State<_AnswerTile>
                     ),
                     if (trailingIcon != null)
                       Padding(
-                        padding: const EdgeInsets.only(right: 12),
+                        padding: const EdgeInsets.only(right: 10),
                         child: AnimatedScale(
                           scale: _revealedOnce ? 1.0 : 0.0,
                           duration: const Duration(milliseconds: 300),
@@ -1042,7 +1047,7 @@ class _AnswerTileState extends State<_AnswerTile>
                         ),
                       )
                     else
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                   ],
                 ),
               ),

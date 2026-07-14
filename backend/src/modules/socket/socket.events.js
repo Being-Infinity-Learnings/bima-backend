@@ -17,14 +17,19 @@ function registerEvents(io, socket) {
 
     if (quizId) {
       try {
-        const runtime = require("../runtime/runtime.manager").requireRuntime(
-          quizId,
-        );
+        const runtimeManager = require("../runtime/runtime.manager");
+        const runtime = runtimeManager.requireRuntime(quizId);
+        const engine = runtimeManager.requireEngine(quizId);
 
         runtime.connectedUsers.delete(socket.dbUser.id);
+
+        // Broadcast updated lobby count
+        engine.broadcastRuntimeState();
       } catch (_) {}
     }
+
     socketManager.unregisterSocket(socket.dbUser.id);
+
     console.log(`[Socket] Disconnected: ${socket.dbUser.fullName}`);
   });
 }

@@ -21,6 +21,9 @@ function registerQuizEvents(io, socket) {
 
       runtime.connectedUsers.add(socket.dbUser.id);
 
+      // Notify everyone in the lobby about updated participant count
+      engine.broadcastRuntimeState();
+
       if (!engine.isParticipantRegistered(socket.dbUser.id)) {
         engine.registerParticipant(socket.dbUser);
       }

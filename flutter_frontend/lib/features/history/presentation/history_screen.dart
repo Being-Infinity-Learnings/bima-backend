@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/app_config.dart';
+import '../../../core/navigation/app_shell.dart';
 import '../../quiz/data/quiz_models.dart';
 import '../../quiz/data/quiz_repository.dart';
 
@@ -10,14 +12,17 @@ import '../../quiz/data/quiz_repository.dart';
 
 const int _pageSize = 10;
 
-class HistoryScreen extends StatefulWidget {
+// History tab index in AppShell's bottom nav (kept in sync with app_shell.dart).
+const int _historyTabIndex = 1;
+
+class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
   @override
-  State<HistoryScreen> createState() => _HistoryScreenState();
+  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> {
+class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   final QuizRepository _repository = QuizRepository();
 
   final List<HistoryResult> _results = [];
@@ -28,10 +33,34 @@ class _HistoryScreenState extends State<HistoryScreen> {
   bool _isLoadingMore = false;
   String? _error;
 
+  ProviderSubscription<int>? _tabListener;
+
   @override
   void initState() {
     super.initState();
     _loadPage();
+
+    // The History tab is kept alive inside AppShell's IndexedStack, so
+    // initState only ever runs once. Listen for the bottom-nav selection
+    // changing to this tab and refresh so results are always current the
+    // moment the user actually looks at the screen — not just on app start.
+    Future.microtask(() {
+      if (!mounted) return;
+      _tabListener = ref.listenManual<int>(selectedTabIndexProvider, (
+        previous,
+        next,
+      ) {
+        if (next == _historyTabIndex && previous != _historyTabIndex) {
+          _refresh();
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabListener?.close();
+    super.dispose();
   }
 
   Future<void> _loadPage() async {
