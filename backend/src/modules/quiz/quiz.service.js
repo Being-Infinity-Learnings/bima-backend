@@ -6,7 +6,7 @@ const { RuntimeConfig } = require("../runtime/runtime.constants");
 const {
   scheduleQuizStart,
   cancelQuizStart,
-} = require("../runtime/quiz-start.queue");
+} = require("../runtime/runtime.queue");
 
 /**
  * Resolves the coverImageUrl for a quiz create/update payload.

@@ -4,7 +4,7 @@
 const loader = require("./runtime.loader");
 const manager = require("./runtime.manager");
 const store = require("./runtime.store");
-const { cancelQuizStart } = require("./quiz-start.queue");
+const { cancelQuizStart } = require("./runtime.queue");
 
 // Map a thrown error to an HTTP response. Errors from runtime.state.js
 // (NotFoundError, ConflictError, ValidationError) carry an explicit

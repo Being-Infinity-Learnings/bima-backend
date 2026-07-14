@@ -1,6 +1,6 @@
 // Purpose: Implements the live quiz runtime engine. Manages quiz phases
 // (lobby, question, leaderboard, results, completed), scheduling of
-// phase transitions via BullMQ (see quiz-phase.queue.js), handling of
+// phase transitions via BullMQ (see runtime.queue.js), handling of
 // submissions, score calculation, and broadcasting runtime updates and
 // results to connected socket clients.
 //
@@ -23,10 +23,7 @@ const socketBroadcast = require("../socket/socket.broadcast");
 
 const calculateScore = require("./runtime.scoring");
 
-const {
-  schedulePhaseAction,
-  cancelPhaseAction,
-} = require("./quiz-phase.queue");
+const { schedulePhaseAction, cancelPhaseAction } = require("./runtime.queue");
 
 // RuntimeEngine: encapsulates an active quiz runtime's core state and
 // exposes methods to start and progress the quiz, accept submissions,
