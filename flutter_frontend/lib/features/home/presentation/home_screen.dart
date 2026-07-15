@@ -854,13 +854,10 @@ class _LastResultCard extends StatelessWidget {
         width: double.infinity,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              AppConfig.darkSurfaceElevatedAlt,
-              AppConfig.lightSurfaceAlt3,
-            ],
+            colors: AppConfig.lastResultCardGradient(isDark),
           ),
           border: Border.all(color: AppConfig.accentGold.withOpacity(0.2)),
           boxShadow: [
@@ -885,34 +882,36 @@ class _LastResultCard extends StatelessWidget {
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.4,
-                        color: AppConfig.accentGold.withOpacity(0.7),
+                        color: AppConfig.lastResultAccentColor(
+                          isDark,
+                        ).withOpacity(0.85),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       result.title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
-                        color: Color(0xFF7A8499),
+                        color: AppConfig.lastResultMutedText(isDark),
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       result.rank == null ? '—' : 'Rank #${result.rank}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -1,
-                        color: AppConfig.warningColor,
+                        color: AppConfig.lastResultAccentColor(isDark),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'out of ${result.totalParticipants} participants · '
                       '${formatHistoryDate(result.completedAt)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF7A8499),
+                        color: AppConfig.lastResultMutedText(isDark),
                       ),
                     ),
                   ],

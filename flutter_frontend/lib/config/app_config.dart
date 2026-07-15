@@ -68,7 +68,10 @@ class AppConfig {
 
   /// Common text colors used in light and dark modes.
   static const bodyTextLight = Color(0xFF0C0E14);
-  static const mutedTextLight = Color(0xFF9CA3AF);
+
+  /// Was too light (0xFF9CA3AF) to read comfortably on light backgrounds —
+  /// darkened to meet contrast on white/near-white surfaces.
+  static const mutedTextLight = Color(0xFF6B7280);
   static const mutedTextDark = Color(0xFF7A8499);
   static const mutedTextSecondary = Color(0xFF6B7280);
   static const splashVersionTextLight = Color(0xFFD1D5DB);
@@ -107,9 +110,9 @@ class AppConfig {
   static const approvalBadgeDark = Color(0xFF1B3A24);
 
   static const quizAnswerColors = [
-    Color(0xFF6C8EFF), // A
-    Color(0xFFFF6B6B), // B
-    Color(0xFFC8FF57), // C
+    Color(0xFF6C8EFF), // A - blue
+    Color(0xFF9B7EDE), // B - purple (was red — read as "wrong")
+    Color(0xFF3FB6E8), // C - sky blue (was lime green — read as "correct")
     Color(0xFFFFD166), // D
     Color(0xFFFF9F43), // E
     Color(0xFF48CFAD), // F
@@ -175,11 +178,60 @@ class AppConfig {
   static Color emptyButtonColor(bool isDark) =>
       isDark ? const Color(0xFF2A2E3D) : const Color(0xFFE5E7EB);
 
+  /// Many accent colors in this palette (rankGold, primaryColor/accentLime,
+  /// warningColor, accentAmber, and the quiz answer palette) are tuned to
+  /// pop on dark backgrounds but are far too pale to read as text/icons on
+  /// light surfaces. This maps a known bright accent to a deeper, legible
+  /// equivalent in light mode, while leaving it untouched in dark mode.
+  static Color accentOnSurface(bool isDark, Color base) {
+    if (isDark) return base;
+    if (base == rankGold ||
+        base == warningColor ||
+        base == accentGold ||
+        base == accentAmber) {
+      return warningAccentDark;
+    }
+    if (base == rankSilver) return const Color(0xFF6B7280);
+    if (base == rankBronze) return const Color(0xFF8A4A1E);
+    if (base == primaryColor || base == secondaryColor || base == accentLime) {
+      return const Color(0xFF4F7A00);
+    }
+    // Quiz answer palette — indices A..F.
+    if (base == quizAnswerColors[0]) return const Color(0xFF3355D6); // blue
+    if (base == quizAnswerColors[1]) return const Color(0xFF6B3FC2); // purple
+    if (base == quizAnswerColors[2]) return const Color(0xFF0A7EA8); // sky
+    if (base == quizAnswerColors[4]) return const Color(0xFFC2570F); // orange
+    if (base == quizAnswerColors[5]) return const Color(0xFF15805F); // teal
+    if (base == accentPink) return const Color(0xFFC23FC2);
+    if (base == accentBlue) return const Color(0xFF3355D6);
+    if (base == accentMint) return const Color(0xFF15805F);
+    if (base == accentOrange) return const Color(0xFFC2570F);
+    if (base == accentCoral) return const Color(0xFFD1453A);
+    return base;
+  }
+
   static Color highlightRankCardStart(bool isDark) =>
       isDark ? const Color(0xFF1C2440) : const Color(0xFFEEF2FF);
 
   static Color highlightRankCardEnd(bool isDark) =>
       isDark ? const Color(0xFF141A30) : const Color(0xFFE0E7FF);
+
+  /// Gradient for the "last quiz result" / recent activity highlight card.
+  /// Previously hardcoded to the dark palette so it never adapted to the
+  /// light theme, leaving it looking dark on a light background.
+  static List<Color> lastResultCardGradient(bool isDark) => isDark
+      ? [darkSurfaceElevatedAlt, lightSurfaceAlt3]
+      : [const Color(0xFFFFF8E7), const Color(0xFFFFF0D1)];
+
+  /// Accent color for the rank/score text on the last-result card.
+  /// `warningColor` (0xFFFFD166) is far too light to read on a light
+  /// background, so a deeper amber is used there instead.
+  static Color lastResultAccentColor(bool isDark) =>
+      isDark ? warningColor : warningAccentDark;
+
+  /// Secondary/muted text color for the last-result card.
+  static Color lastResultMutedText(bool isDark) =>
+      isDark ? mutedTextDark : mutedTextSecondary;
 
   static String get copyrightText => "$appName © ${DateTime.now().year}";
 }

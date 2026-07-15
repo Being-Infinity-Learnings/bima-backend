@@ -402,11 +402,11 @@ class _ResultCard extends StatelessWidget {
 
   Color get _rankColor {
     final rank = result.rank;
-    if (rank == null) return AppConfig.mutedTextDark;
+    if (rank == null) return AppConfig.mutedTextColor(isDark);
     if (rank == 1) return AppConfig.rankGold;
     if (rank <= 3) return AppConfig.accentLime;
     if (rank <= 10) return AppConfig.accentBlue;
-    return AppConfig.mutedTextDark;
+    return AppConfig.mutedTextColor(isDark);
   }
 
   String get _rankLabel {
@@ -454,7 +454,7 @@ class _ResultCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: (result.rank ?? 99) <= 3 ? 22 : 16,
                       fontWeight: FontWeight.w800,
-                      color: _rankColor,
+                      color: AppConfig.accentOnSurface(isDark, _rankColor),
                     ),
                   ),
                 ),
@@ -578,7 +578,7 @@ class _ScoreBar extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: rankColor,
+                color: AppConfig.accentOnSurface(isDark, rankColor),
               ),
             ),
           ],
@@ -592,7 +592,9 @@ class _ScoreBar extends StatelessWidget {
             backgroundColor: isDark
                 ? AppConfig.whiteColor.withOpacity(0.07)
                 : AppConfig.blackColor.withOpacity(0.07),
-            valueColor: AlwaysStoppedAnimation<Color>(rankColor),
+            valueColor: AlwaysStoppedAnimation<Color>(
+              AppConfig.accentOnSurface(isDark, rankColor),
+            ),
           ),
         ),
       ],
@@ -612,11 +614,11 @@ class _ResultDetailSheet extends StatelessWidget {
 
   Color get _rankColor {
     final rank = result.rank;
-    if (rank == null) return AppConfig.mutedTextDark;
+    if (rank == null) return AppConfig.mutedTextColor(isDark);
     if (rank == 1) return AppConfig.rankGold;
     if (rank <= 3) return AppConfig.accentLime;
     if (rank <= 10) return AppConfig.accentBlue;
-    return AppConfig.mutedTextDark;
+    return AppConfig.mutedTextColor(isDark);
   }
 
   @override
@@ -788,7 +790,7 @@ class _DetailStat extends StatelessWidget {
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w800,
-                color: color,
+                color: AppConfig.accentOnSurface(isDark, color),
               ),
             ),
           ],
