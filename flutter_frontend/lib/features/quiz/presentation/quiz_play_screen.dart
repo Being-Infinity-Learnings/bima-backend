@@ -282,7 +282,15 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
     if (!_revealed && quizState.phase == QuizPhase.question) {
       _syncQuestion(question, runtime?.phaseEndsAt, runtime?.remainingTimeMs);
     }
-    final totalQ = quizDetail.value?.questionCount ?? 0;
+    // `runtime?.totalQuestions` comes from the same socket payload as
+    // `questionIndex`/`question`, so it always updates in lockstep with the
+    // current question. `quizDetail` is a separate, autoDispose REST fetch
+    // that gets re-triggered (and briefly has no value) every time this
+    // screen remounts for a new question — using it as the primary source
+    // was why the progress bar could flash e.g. "3/3" before settling on
+    // the correct "3/10".
+    final totalQ =
+        runtime?.totalQuestions ?? quizDetail.value?.questionCount ?? 0;
     final idx = runtime?.questionIndex ?? 0;
     final hasImage =
         question.questionImage != null && question.questionImage!.isNotEmpty;

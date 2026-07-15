@@ -345,6 +345,13 @@ class RuntimeState {
   final DateTime? phaseEndsAt;
   final int? connectedUsers;
   final int? questionIndex;
+
+  /// Total number of questions in the quiz. Sent by the server as part of
+  /// the same QUESTION-phase payload as [questionIndex]/[question], so it
+  /// always arrives atomically with the current question — unlike a
+  /// separately-fetched quiz detail, it can never be momentarily stale or
+  /// missing (e.g. right after this screen remounts for a new question).
+  final int? totalQuestions;
   final QuizQuestionPayload? question;
 
   /// The server's own `Date.now()` at the instant this snapshot was built
@@ -366,6 +373,7 @@ class RuntimeState {
     required this.phaseEndsAt,
     this.connectedUsers,
     this.questionIndex,
+    this.totalQuestions,
     this.question,
     this.serverTime,
     DateTime? receivedAt,
@@ -383,6 +391,7 @@ class RuntimeState {
           : DateTime.parse(json['phaseEndsAt'] as String).toLocal(),
       connectedUsers: json['connectedUsers'] as int?,
       questionIndex: json['questionIndex'] as int?,
+      totalQuestions: (json['totalQuestions'] as num?)?.toInt(),
       question: json['question'] == null
           ? null
           : QuizQuestionPayload.fromJson(

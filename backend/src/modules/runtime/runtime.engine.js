@@ -720,6 +720,7 @@ class RuntimeEngine {
           ...baseState,
 
           questionIndex: this.runtime.currentQuestionIndex,
+          totalQuestions: this.runtime.questions.length,
 
           question: this.buildQuestionPayload(),
         };
