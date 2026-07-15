@@ -43,6 +43,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
   Timer? _autoRefreshTimer;
   ProviderSubscription<int>? _tabListener;
 
+  // How many upcoming quizzes are currently shown. Starts at one page and
+  // grows by one page each time "Show more" is tapped.
+  static const int _quizzesPageSize = 5;
+  int _visibleQuizCount = _quizzesPageSize;
+
   // AppShell (and therefore this widget, kept alive inside its
   // IndexedStack) is its own top-level route. Pushing a quiz screen
   // (/quiz/:id/waiting, /lobby, /play, ...) pushes a NEW route on top of
@@ -55,6 +60,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
   void _refreshNow() {
     ref.invalidate(myQuizzesProvider);
     ref.invalidate(latestHistoryResultProvider);
+    setState(() => _visibleQuizCount = _quizzesPageSize);
   }
 
   // Start/stop the 10s poll based on current visibility. Only polls while
@@ -182,6 +188,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
             onRefresh: () async {
               ref.invalidate(myQuizzesProvider);
               ref.invalidate(latestHistoryResultProvider);
+              setState(() => _visibleQuizCount = _quizzesPageSize);
               await ref.read(myQuizzesProvider.future);
             },
             color: AppConfig.primaryColor,
@@ -274,21 +281,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                                     message:
                                         'No quizzes scheduled right now.\nCheck back later!',
                                   )
-                                else
-                                  ...quizzes.map(
-                                    (quiz) => Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 12,
-                                      ),
-                                      child: _UpcomingQuizCard(
-                                        quiz: quiz,
-                                        isDark: isDark,
-                                        onTap: () => context.push(
-                                          '/quiz/${quiz.id}/waiting',
+                                else ...[
+                                  ...quizzes
+                                      .take(_visibleQuizCount)
+                                      .map(
+                                        (quiz) => Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 12,
+                                          ),
+                                          child: _UpcomingQuizCard(
+                                            quiz: quiz,
+                                            isDark: isDark,
+                                            onTap: () => context.push(
+                                              '/quiz/${quiz.id}/waiting',
+                                            ),
+                                          ),
                                         ),
                                       ),
+                                  if (_visibleQuizCount < quizzes.length)
+                                    _ShowMoreButton(
+                                      isDark: isDark,
+                                      remaining:
+                                          quizzes.length - _visibleQuizCount,
+                                      pageSize: _quizzesPageSize,
+                                      onTap: () => setState(
+                                        () => _visibleQuizCount +=
+                                            _quizzesPageSize,
+                                      ),
                                     ),
-                                  ),
+                                ],
                               ],
                             ),
                           );
@@ -934,6 +955,58 @@ class _LastResultCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Show More — reveals the next page of upcoming quizzes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ShowMoreButton extends StatelessWidget {
+  final bool isDark;
+  final int remaining;
+  final int pageSize;
+  final VoidCallback onTap;
+
+  const _ShowMoreButton({
+    required this.isDark,
+    required this.remaining,
+    required this.pageSize,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppConfig.accentOnSurface(isDark, AppConfig.primaryColor);
+    final nextBatch = remaining < pageSize ? remaining : pageSize;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: AppConfig.cardColor(isDark),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppConfig.subtleOverlay(isDark)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Show $nextBatch more',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: accent,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: accent),
+          ],
         ),
       ),
     );

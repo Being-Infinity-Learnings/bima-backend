@@ -63,7 +63,21 @@ class PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    // `colorScheme.onPrimary` is generated from the Material3 tonal palette
+    // and doesn't always land with enough contrast against `colorScheme
+    // .primary` for this brand's seed color — the loading spinner and label
+    // were nearly invisible on the button, so users couldn't tell
+    // verification was happening. Pick a guaranteed-legible color directly
+    // from the button's actual background brightness instead.
+    final onButtonColor =
+        ThemeData.estimateBrightnessForColor(cs.primary) == Brightness.dark
+        ? AppConfig.whiteColor
+        : AppConfig.bodyTextLight;
+
     return ElevatedButton(
+      style: ElevatedButton.styleFrom(foregroundColor: onButtonColor),
       onPressed: loading ? null : onPressed,
       child: loading
           ? SizedBox(
@@ -71,7 +85,7 @@ class PrimaryButton extends StatelessWidget {
               height: 22,
               child: CircularProgressIndicator(
                 strokeWidth: 2.5,
-                color: Theme.of(context).colorScheme.onPrimary,
+                color: onButtonColor,
               ),
             )
           : icon != null
