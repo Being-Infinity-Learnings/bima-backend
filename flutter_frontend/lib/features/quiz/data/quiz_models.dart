@@ -26,6 +26,12 @@ class MyQuizSummary {
   final String visibility;
   final int questionCount;
 
+  /// Only present when [status] == 'LIVE'. Tells us exactly which runtime
+  /// phase the quiz is in (WAITING / LOBBY / QUESTION / LEADERBOARD /
+  /// RESULTS) so the home screen can distinguish "lobby open, still
+  /// counting down" from "quiz actually in progress".
+  final QuizRuntimeSnapshot? runtime;
+
   const MyQuizSummary({
     required this.id,
     required this.title,
@@ -34,6 +40,7 @@ class MyQuizSummary {
     required this.status,
     required this.visibility,
     required this.questionCount,
+    this.runtime,
   });
 
   factory MyQuizSummary.fromJson(Map<String, dynamic> json) {
@@ -47,10 +54,30 @@ class MyQuizSummary {
       status: json['status'] as String? ?? 'SCHEDULED',
       visibility: json['visibility'] as String? ?? 'PUBLIC',
       questionCount: (json['_count']?['quizQuestions'] as int?) ?? 0,
+      runtime: json['runtime'] == null
+          ? null
+          : QuizRuntimeSnapshot.fromJson(
+              json['runtime'] as Map<String, dynamic>,
+            ),
     );
   }
 
   bool get isLive => status == 'LIVE';
+
+  /// True once the host has opened the lobby but the quiz hasn't actually
+  /// started running questions yet. While this is true we still show a
+  /// countdown (to the lobby/question phase ending). Once the quiz moves
+  /// into QUESTION/LEADERBOARD/RESULTS this becomes false and the card
+  /// switches to a plain "Ongoing" state with no timer.
+  bool get isInLobby => isLive && (runtime?.phase == 'LOBBY');
+
+  /// True once the quiz has moved past the lobby and is actually running
+  /// (questions, leaderboard, or results). No countdown makes sense here.
+  bool get isInProgress =>
+      isLive &&
+      runtime != null &&
+      runtime!.phase != 'WAITING' &&
+      runtime!.phase != 'LOBBY';
 }
 
 /// Lightweight snapshot of the runtime that is embedded inside the

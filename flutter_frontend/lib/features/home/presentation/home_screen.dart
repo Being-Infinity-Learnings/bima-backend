@@ -520,24 +520,69 @@ class _UpcomingQuizCard extends StatefulWidget {
   State<_UpcomingQuizCard> createState() => _UpcomingQuizCardState();
 }
 
+/// Which of the three states this card should render as:
+///  • [waiting]     – not live yet, counting down to [scheduledStartTime].
+///  • [lobby]        – host opened the lobby, counting down to the lobby's
+///                     [phaseEndsAt] (or falling back to the scheduled time
+///                     if that isn't known yet).
+///  • [inProgress]   – quiz has moved past the lobby (QUESTION / LEADERBOARD
+///                     / RESULTS). No timer makes sense here.
+enum _CardPhase { waiting, lobby, inProgress }
+
 class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
   late Duration _remaining;
   Timer? _timer;
 
+  _CardPhase get _phase {
+    final quiz = widget.quiz;
+    if (quiz.isInProgress) return _CardPhase.inProgress;
+    if (quiz.isInLobby) return _CardPhase.lobby;
+    return _CardPhase.waiting;
+  }
+
+  /// The moment we're counting down to, or null if no countdown applies.
+  DateTime? get _countdownTarget {
+    switch (_phase) {
+      case _CardPhase.waiting:
+        return widget.quiz.scheduledStartTime;
+      case _CardPhase.lobby:
+        return widget.quiz.runtime?.phaseEndsAt ??
+            widget.quiz.scheduledStartTime;
+      case _CardPhase.inProgress:
+        return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _remaining = _diff(widget.quiz.scheduledStartTime);
+    _remaining = _diff(_countdownTarget);
+    _startTimerIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _UpcomingQuizCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Runtime phase may have changed (e.g. lobby -> question) since the
+    // last poll, so re-evaluate whether we still need a ticking timer.
+    _remaining = _diff(_countdownTarget);
+    _startTimerIfNeeded();
+  }
+
+  void _startTimerIfNeeded() {
+    _timer?.cancel();
+    if (_countdownTarget == null) return;
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {
-        _remaining = _diff(widget.quiz.scheduledStartTime);
+        _remaining = _diff(_countdownTarget);
       });
     });
   }
 
-  Duration _diff(DateTime scheduledAt) {
-    final diff = scheduledAt.difference(DateTime.now());
+  Duration _diff(DateTime? target) {
+    if (target == null) return Duration.zero;
+    final diff = target.difference(DateTime.now());
     return diff.isNegative ? Duration.zero : diff;
   }
 
@@ -548,6 +593,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
   }
 
   String _formatCountdown(Duration d) {
+    if (_phase == _CardPhase.inProgress) return 'Ongoing';
     if (d.inSeconds <= 0) return 'Starting...';
     final h = d.inHours;
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -578,19 +624,36 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
     return '${months[dt.month - 1]} ${dt.day} • $hour12:$minute $period';
   }
 
-  Color _statusColor(bool isLive) =>
-      isLive ? const Color(0xFFFF6B6B) : const Color(0xFF6C8EFF);
+  Color _statusColor(_CardPhase phase) {
+    switch (phase) {
+      case _CardPhase.inProgress:
+        return const Color(0xFFFF6B6B); // red — live, no waiting
+      case _CardPhase.lobby:
+        return const Color(0xFFFFB020); // amber — lobby open, timer running
+      case _CardPhase.waiting:
+        return const Color(0xFF6C8EFF); // blue — just scheduled
+    }
+  }
 
-  String _statusLabel(bool isLive) => isLive ? 'LIVE NOW' : 'SCHEDULED';
+  String _statusLabel(_CardPhase phase) {
+    switch (phase) {
+      case _CardPhase.inProgress:
+        return 'LIVE NOW';
+      case _CardPhase.lobby:
+        return 'LOBBY OPEN';
+      case _CardPhase.waiting:
+        return 'SCHEDULED';
+    }
+  }
 
-  bool get _isImminent => _remaining.inMinutes < 15;
-  bool get _isStarting => widget.quiz.isLive || _remaining.inSeconds <= 0;
+  bool get _isImminent =>
+      _phase != _CardPhase.inProgress && _remaining.inMinutes < 15;
 
   @override
   Widget build(BuildContext context) {
-    final isLive = widget.quiz.isLive;
-    final accent = _statusColor(isLive);
-    final urgencyColor = _isStarting || _isImminent
+    final phase = _phase;
+    final accent = _statusColor(phase);
+    final urgencyColor = phase != _CardPhase.waiting || _isImminent
         ? const Color(0xFFFF6B6B)
         : accent;
 
@@ -627,7 +690,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      _statusLabel(isLive),
+                      _statusLabel(phase),
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -654,9 +717,11 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _isImminent
-                              ? Icons.flash_on_rounded
-                              : Icons.schedule_rounded,
+                          phase == _CardPhase.inProgress
+                              ? Icons.podcasts_rounded
+                              : (_isImminent
+                                    ? Icons.flash_on_rounded
+                                    : Icons.schedule_rounded),
                           size: 13,
                           color: urgencyColor,
                         ),
@@ -736,7 +801,9 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      _isStarting ? 'Join Now →' : 'Enter Lobby →',
+                      phase == _CardPhase.inProgress
+                          ? 'Join Now →'
+                          : 'Enter Lobby →',
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
