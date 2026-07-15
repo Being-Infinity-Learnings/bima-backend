@@ -11,6 +11,7 @@ import '../features/auth/presentation/complete_profile_screen.dart';
 import '../features/auth/presentation/otp_verification_screen.dart';
 import '../features/auth/presentation/blocked_screen.dart';
 import '../core/navigation/app_shell.dart';
+import '../core/navigation/route_observer.dart';
 
 // Quiz screens
 import '../features/quiz/presentation/quiz_waiting_screen.dart';
@@ -25,6 +26,7 @@ import '../features/quiz/presentation/quiz_phase_sync.dart';
 /// This GoRouter instance maps paths to their corresponding screens.
 final appRouter = GoRouter(
   initialLocation: '/',
+  observers: [routeObserver],
   routes: [
     GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
 

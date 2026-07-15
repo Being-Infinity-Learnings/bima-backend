@@ -1,22 +1,40 @@
 // Purpose: Implements the live quiz runtime engine. Manages quiz phases
 // (lobby, question, leaderboard, results, completed), scheduling of
-// phase transitions, handling of submissions, score calculation, and
-// broadcasting runtime updates and results to connected socket clients.
+// phase transitions via BullMQ (see runtime.queue.js), handling of
+// submissions, score calculation, and broadcasting runtime updates and
+// results to connected socket clients.
+//
+// IMPORTANT — horizontal scaling shape: an engine instance is now
+// short-lived. It is constructed fresh (via runtime.manager.loadEngine/
+// withEngine) from whatever is currently in Redis, used for one
+// operation (a socket event, an HTTP call, or a BullMQ job), and then
+// discarded — its mutated `this.runtime` core state gets persisted back
+// to Redis by the caller. Leaderboard/submissions/connected-user data is
+// NOT held on `this.runtime`; every access goes straight through
+// runtime.store (Redis) so it's immediately visible to every instance,
+// not just the one that made the change.
 const prisma = require("../../config/prisma");
 
-const manager = require("./runtime.manager");
+const store = require("./runtime.store");
 
 const { QuizPhase, RuntimeConfig } = require("./runtime.constants");
 
-const { socketBroadcast } = require("../socket");
+const socketBroadcast = require("../socket/socket.broadcast");
 
 const calculateScore = require("./runtime.scoring");
 
-// RuntimeEngine: encapsulates an active quiz runtime and exposes methods
-// to start and progress the quiz, accept submissions, and compute results.
+const { schedulePhaseAction, cancelPhaseAction } = require("./runtime.queue");
+
+// RuntimeEngine: encapsulates an active quiz runtime's core state and
+// exposes methods to start and progress the quiz, accept submissions,
+// and compute results.
 class RuntimeEngine {
   constructor(runtime) {
     this.runtime = runtime;
+  }
+
+  get quizId() {
+    return this.runtime.quiz.id;
   }
 
   // Return the duration (ms) for a question, using a custom timer if set.
@@ -25,10 +43,10 @@ class RuntimeEngine {
   }
 
   // Broadcast the current runtime state to all clients in the quiz room.
-  broadcastRuntimeState() {
+  async broadcastRuntimeState() {
     socketBroadcast.broadcastRuntimeState(
-      this.runtime.quiz.id,
-      this.getRuntimeState(),
+      this.quizId,
+      await this.getRuntimeState(),
     );
   }
 
@@ -45,20 +63,35 @@ class RuntimeEngine {
     }
   }
 
-  // Schedule the next phase/action; clears any existing timeout first.
-  scheduleNext(callback, delay) {
-    if (this.runtime.timeoutHandle) {
-      clearTimeout(this.runtime.timeoutHandle);
-    }
-
-    this.runtime.timeoutHandle = setTimeout(callback, delay);
+  // Schedule the next phase-transition action via BullMQ. `action` must
+  // be the name of a method on this engine (e.g. "enterQuestion",
+  // "finishQuestion", "enterLeaderboard", "enterResults", "complete") —
+  // the quiz-phase worker looks the method up by this name when the job
+  // fires (see runtime.worker.js).
+  async scheduleNext(action, delay) {
+    await schedulePhaseAction(this.quizId, action, delay);
   }
 
   // Start the runtime: mark quiz live in DB and enter lobby.
+  //
+  // The lobby is meant to end exactly at the quiz's scheduledStartTime.
+  // Normally that means running for the full configured
+  // LOBBY_DURATION_MS, because quiz-start.queue.js schedules this job to
+  // fire at (scheduledStartTime - LOBBY_DURATION_MS). But if an admin
+  // schedules/edits a quiz such that there's LESS time between "now" and
+  // scheduledStartTime than the configured lobby duration (e.g. quiz is
+  // scheduled for 5 minutes from now but lobby duration is 10 minutes),
+  // that delay clamps to 0 and this job fires immediately — in which
+  // case the lobby must run for whatever time is actually left (5
+  // minutes here), not the full configured duration, or the quiz would
+  // start 5 minutes late. If scheduledStartTime has already passed
+  // entirely by the time this runs (e.g. a delayed worker), the lobby
+  // duration collapses to 0 and we move on to the first question right
+  // away instead of waiting the full configured duration.
   async start() {
     await prisma.quiz.update({
       where: {
-        id: this.runtime.quiz.id,
+        id: this.quizId,
       },
 
       data: {
@@ -70,26 +103,34 @@ class RuntimeEngine {
 
     this.runtime.startedAt = new Date();
 
-    this.enterLobby();
+    const remainingUntilScheduledStart =
+      new Date(this.runtime.quiz.scheduledStartTime).getTime() - Date.now();
+
+    const lobbyDuration = Math.max(
+      Math.min(remainingUntilScheduledStart, RuntimeConfig.LOBBY_DURATION_MS),
+      0,
+    );
+
+    await this.enterLobby(lobbyDuration);
   }
 
   // Enter the lobby phase and schedule transition to the first question.
-  enterLobby() {
-    console.log(`[Runtime] Lobby`);
+  // `durationMs` defaults to the full configured lobby duration but is
+  // overridden by start() when less time is actually available before
+  // scheduledStartTime — see the comment on start() above.
+  async enterLobby(durationMs = RuntimeConfig.LOBBY_DURATION_MS) {
+    console.log(`[Runtime] Lobby (${durationMs}ms)`);
 
-    this.changePhase(QuizPhase.LOBBY, RuntimeConfig.LOBBY_DURATION_MS);
+    this.changePhase(QuizPhase.LOBBY, durationMs);
 
-    this.broadcastRuntimeState();
+    await this.broadcastRuntimeState();
 
-    this.scheduleNext(
-      () => this.enterQuestion(),
-      RuntimeConfig.LOBBY_DURATION_MS,
-    );
+    await this.scheduleNext("enterQuestion", durationMs);
   }
 
   // Advance to the next question, set timers, broadcast state, and
   // schedule finishQuestion.
-  enterQuestion() {
+  async enterQuestion() {
     this.runtime.currentQuestionIndex++;
 
     if (this.runtime.currentQuestionIndex >= this.runtime.questions.length) {
@@ -99,7 +140,7 @@ class RuntimeEngine {
     this.runtime.currentQuestion =
       this.runtime.questions[this.runtime.currentQuestionIndex];
 
-    this.runtime.submissions.clear();
+    await store.clearSubmissions(this.quizId);
 
     const duration = this.getQuestionDuration(this.runtime.currentQuestion);
 
@@ -109,9 +150,9 @@ class RuntimeEngine {
 
     this.changePhase(QuizPhase.QUESTION, duration);
 
-    this.broadcastRuntimeState();
+    await this.broadcastRuntimeState();
 
-    this.scheduleNext(() => this.finishQuestion(), duration);
+    await this.scheduleNext("finishQuestion", duration);
   }
 
   /// Called exactly once, the instant a question's timer runs out (whether
@@ -142,31 +183,32 @@ class RuntimeEngine {
     } else {
       // Participants who never submitted an answer still owe the full
       // question duration to their aggregate-time tie-breaker.
-      this.applyNonSubmittersAggregate();
+      await this.applyNonSubmittersAggregate();
     }
 
-    const questionResults = this.buildQuestionResults();
+    const questionResults = await this.buildQuestionResults();
 
-    this.runtime.lastQuestionResults = questionResults;
+    this.runtime.lastQuestionResults = mapToObject(questionResults);
 
     socketBroadcast.broadcastQuestionResults(questionResults);
 
-    this.scheduleNext(() => {
-      if (isLastQuestion) {
-        this.enterResults();
-      } else {
-        this.enterLeaderboard();
-      }
-    }, RuntimeConfig.REVEAL_DELAY_MS);
+    await this.scheduleNext(
+      isLastQuestion ? "enterResults" : "enterLeaderboard",
+      RuntimeConfig.REVEAL_DELAY_MS,
+    );
   }
 
   // For every registered participant who did not submit an answer to the
   // current (non-final) question, credit the full question duration to
   // their aggregate-time tie-breaker (no score change).
-  applyNonSubmittersAggregate() {
-    for (const userId of this.runtime.leaderboard.keys()) {
-      if (!this.runtime.submissions.has(userId)) {
-        this.updateLeaderboard(userId, 0, this.runtime.currentDurationMs);
+  async applyNonSubmittersAggregate() {
+    const userIds = await store.getLeaderboardUserIds(this.quizId);
+
+    for (const userId of userIds) {
+      const submitted = await store.hasSubmission(this.quizId, userId);
+
+      if (!submitted) {
+        await this.updateLeaderboard(userId, 0, this.runtime.currentDurationMs);
       }
     }
   }
@@ -179,30 +221,32 @@ class RuntimeEngine {
   async finalizeLastQuestion() {
     const durationMs = this.runtime.currentDurationMs;
 
-    for (const userId of this.runtime.leaderboard.keys()) {
-      const submission = this.runtime.submissions.get(userId);
+    const userIds = await store.getLeaderboardUserIds(this.quizId);
+
+    for (const userId of userIds) {
+      const submission = await store.getSubmission(this.quizId, userId);
 
       if (submission) {
-        this.updateLeaderboard(
+        await this.updateLeaderboard(
           userId,
           submission.score,
           submission.correct ? submission.elapsedMs : durationMs,
         );
       } else {
         // Never submitted an answer to the final question.
-        this.updateLeaderboard(userId, 0, durationMs);
+        await this.updateLeaderboard(userId, 0, durationMs);
       }
     }
 
     const FINISHING_BONUS = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
-    const ranked = this.getLeaderboard();
+    const ranked = await this.getLeaderboard();
 
     for (let i = 0; i < Math.min(FINISHING_BONUS.length, ranked.length); i++) {
       const { userId } = ranked[i];
       const bonus = FINISHING_BONUS[i];
 
-      const submission = this.runtime.submissions.get(userId);
+      const submission = await store.getSubmission(this.quizId, userId);
 
       // A user with no submission for the final question never actually
       // answered it — don't give them a finishing bonus, even if their
@@ -211,21 +255,22 @@ class RuntimeEngine {
         continue;
       }
 
-      const leaderboardEntry = this.runtime.leaderboard.get(userId);
-      leaderboardEntry.score += bonus;
-      this.runtime.leaderboard.set(userId, leaderboardEntry);
+      await this.updateLeaderboard(userId, bonus, 0);
 
       submission.score += bonus;
+      await store.setSubmission(this.quizId, userId, submission);
     }
 
-    for (const submission of this.runtime.submissions.values()) {
+    const allSubmissions = await store.getAllSubmissions(this.quizId);
+
+    for (const [, submission] of allSubmissions) {
       await this.persistSubmission(submission);
     }
   }
 
   // Enter leaderboard phase, broadcast leaderboard, and schedule next
   // question.
-  enterLeaderboard() {
+  async enterLeaderboard() {
     console.log("[Runtime] Leaderboard");
 
     // changePhase() (which stamps phaseStartedAt/phaseEndsAt) and the
@@ -238,36 +283,37 @@ class RuntimeEngine {
     );
 
     socketBroadcast.broadcastLeaderboard(
-      this.runtime.quiz.id,
-      this.buildLeaderboardPayload(),
+      this.quizId,
+      await this.buildLeaderboardPayload(),
     );
 
-    this.broadcastRuntimeState();
+    await this.broadcastRuntimeState();
 
-    this.scheduleNext(
-      () => this.enterQuestion(),
+    await this.scheduleNext(
+      "enterQuestion",
       RuntimeConfig.LEADERBOARD_DURATION_MS,
     );
   }
 
   // Enter results phase, compute final results and broadcast them.
-  enterResults() {
+  async enterResults() {
     console.log("[Runtime] Results");
 
     this.changePhase(QuizPhase.RESULTS, RuntimeConfig.RESULTS_DURATION_MS);
 
-    this.runtime.finalResults = this.buildFinalResults();
+    const finalResults = await this.buildFinalResults();
+    this.runtime.finalResults = mapToObject(finalResults);
 
     socketBroadcast.broadcastLeaderboard(
-      this.runtime.quiz.id,
-      this.buildLeaderboardPayload(),
+      this.quizId,
+      await this.buildLeaderboardPayload(),
     );
 
-    socketBroadcast.broadcastFinalResults(this.runtime.finalResults);
+    socketBroadcast.broadcastFinalResults(finalResults);
 
-    this.broadcastRuntimeState();
+    await this.broadcastRuntimeState();
 
-    this.scheduleNext(() => this.complete(), RuntimeConfig.RESULTS_DURATION_MS);
+    await this.scheduleNext("complete", RuntimeConfig.RESULTS_DURATION_MS);
   }
 
   // Ensure provided selected option ids exist on the question.
@@ -283,11 +329,13 @@ class RuntimeEngine {
 
   // Process an incoming answer submission: validate, compute score,
   // persist to DB, update leaderboard, and store the submission.
+  //
+  // Wrapped in a distributed lock (per quiz) by the caller (see
+  // socket/quiz.socket.js) so two submissions racing on different app
+  // instances for the same quiz can't corrupt the "everyone answered"
+  // early-finish check.
   async submitAnswer({ userId, questionId, selectedOptionIds }) {
-    this.validateSubmission({
-      userId,
-      questionId,
-    });
+    await this.validateSubmission({ userId, questionId });
 
     const question = this.runtime.currentQuestion;
 
@@ -332,24 +380,24 @@ class RuntimeEngine {
       // submission here; finalizeLastQuestion() (called from
       // finishQuestion()) is what computes scores, ranks everyone, adds
       // the bonus, updates the leaderboard, and persists everything.
-      this.runtime.submissions.set(userId, submission);
+      await store.setSubmission(this.quizId, userId, submission);
     } else {
       await this.persistSubmission(submission);
 
-      this.updateLeaderboard(
+      await this.updateLeaderboard(
         userId,
         score,
         correct ? elapsedMs : this.runtime.currentDurationMs,
       );
 
-      this.runtime.submissions.set(userId, submission);
+      await store.setSubmission(this.quizId, userId, submission);
     }
 
     // If every registered participant has now answered this question,
     // don't make the rest of the room wait out the clock: skip straight
     // to finishing the question (reveal -> leaderboard/results) instead
     // of waiting for the timer to expire naturally.
-    this.maybeFinishQuestionEarly();
+    await this.maybeFinishQuestionEarly();
 
     return;
   }
@@ -364,21 +412,23 @@ class RuntimeEngine {
   // Check whether all registered participants have submitted an answer
   // for the current question and, if so, jump straight to finishQuestion()
   // instead of waiting for the remaining time to elapse. Reuses
-  // scheduleNext() so it safely cancels the pending timer-expiry callback
-  // and replaces it with an immediate one, keeping finishQuestion() as the
-  // single source of truth for what happens next.
-  maybeFinishQuestionEarly() {
+  // scheduleNext() so it replaces the pending timer-expiry job with an
+  // immediate one, keeping finishQuestion() as the single source of truth
+  // for what happens next.
+  async maybeFinishQuestionEarly() {
     if (this.runtime.phase !== QuizPhase.QUESTION) {
       return;
     }
 
-    const totalParticipants = this.runtime.leaderboard.size;
+    const totalParticipants = await store.leaderboardSize(this.quizId);
 
     if (totalParticipants === 0) {
       return;
     }
 
-    const everyoneAnswered = this.runtime.submissions.size >= totalParticipants;
+    const submittedCount = await store.submissionsCount(this.quizId);
+
+    const everyoneAnswered = submittedCount >= totalParticipants;
 
     if (!everyoneAnswered) {
       return;
@@ -388,11 +438,11 @@ class RuntimeEngine {
       `[Runtime] All ${totalParticipants} participants answered - advancing early`,
     );
 
-    this.scheduleNext(() => this.finishQuestion(), 0);
+    await this.scheduleNext("finishQuestion", 0);
   }
 
   // Validate that submissions are currently accepted and not duplicated.
-  validateSubmission({ userId, questionId }) {
+  async validateSubmission({ userId, questionId }) {
     if (this.runtime.phase !== QuizPhase.QUESTION) {
       throw new Error("Quiz is not accepting answers.");
     }
@@ -401,7 +451,7 @@ class RuntimeEngine {
       throw new Error("Invalid question.");
     }
 
-    if (this.runtime.submissions.has(userId)) {
+    if (await store.hasSubmission(this.quizId, userId)) {
       throw new Error("Answer already submitted.");
     }
   }
@@ -426,51 +476,22 @@ class RuntimeEngine {
     }
   }
 
-  // Update in-memory leaderboard with a user's incremental score and the
-  // amount of time to add to their aggregate-time tie-breaker. Callers
-  // pass `elapsedMs` for correct answers and the full question duration
-  // for incorrect/unanswered ones (per the tie-break rule).
-  updateLeaderboard(userId, score, aggregateTimeDeltaMs = 0) {
-    let entry = this.runtime.leaderboard.get(userId);
-
-    if (!entry) {
-      entry = {
-        score: 0,
-
-        aggregateTimeMs: 0,
-
-        joinedAt: new Date(),
-
-        fullName: "",
-
-        profileImage: null,
-      };
-    }
-
-    entry.score += score;
-
-    entry.aggregateTimeMs += aggregateTimeDeltaMs;
-
-    this.runtime.leaderboard.set(userId, entry);
-
-    return entry.score;
+  // Add a score delta and an aggregate-time delta to a user's leaderboard
+  // entry (backed by a Redis sorted set + hash — see runtime.store.js).
+  // Returns the entry's new total score.
+  async updateLeaderboard(userId, score, aggregateTimeDeltaMs = 0) {
+    return store.updateLeaderboard(
+      this.quizId,
+      userId,
+      score,
+      aggregateTimeDeltaMs,
+    );
   }
 
   // Register a user in the runtime leaderboard if not present.
-  registerParticipant(user) {
-    if (this.runtime.leaderboard.has(user.id)) {
-      return;
-    }
-
-    this.runtime.leaderboard.set(user.id, {
-      score: 0,
-
-      aggregateTimeMs: 0,
-
-      joinedAt: new Date(),
-
+  async registerParticipant(user) {
+    await store.registerParticipant(this.quizId, user.id, {
       fullName: user.fullName,
-
       profileImage: user.profileImage,
     });
   }
@@ -506,7 +527,7 @@ class RuntimeEngine {
   async persistSubmission(submission) {
     await prisma.quizSubmission.create({
       data: {
-        quizId: this.runtime.quiz.id,
+        quizId: this.quizId,
 
         userId: submission.userId,
 
@@ -520,7 +541,7 @@ class RuntimeEngine {
 
         elapsedMs: submission.elapsedMs,
 
-        submittedAt: submission.submittedAt,
+        submittedAt: new Date(submission.submittedAt),
       },
     });
   }
@@ -574,23 +595,24 @@ class RuntimeEngine {
   }
 
   // Build a leaderboard payload limited to the top N entries.
-  buildLeaderboardPayload(limit = 10) {
+  async buildLeaderboardPayload(limit = 10) {
+    const leaderboard = await this.getLeaderboard();
     return {
-      leaderboard: this.getLeaderboard().slice(0, limit),
+      leaderboard: leaderboard.slice(0, limit),
     };
   }
 
-  buildResultsPayload() {
+  async buildResultsPayload() {
     return {
-      leaderboard: this.getLeaderboard(),
+      leaderboard: await this.getLeaderboard(),
     };
   }
 
   // Construct final results map for broadcast/storage.
-  buildFinalResults() {
+  async buildFinalResults() {
     const results = new Map();
 
-    const leaderboard = this.getLeaderboard();
+    const leaderboard = await this.getLeaderboard();
 
     for (const entry of leaderboard) {
       results.set(entry.userId, {
@@ -604,16 +626,16 @@ class RuntimeEngine {
   }
 
   // Build per-user question results (correct flag, score, rank, etc.).
-  buildQuestionResults() {
+  async buildQuestionResults() {
     const correctOptionIds = this.runtime.currentQuestion.options
       .filter((option) => option.isCorrect)
       .map((option) => option.id);
 
     const results = new Map();
-    const leaderboard = this.getLeaderboard();
+    const leaderboard = await this.getLeaderboard();
 
     for (const entry of leaderboard) {
-      const submission = this.runtime.submissions.get(entry.userId);
+      const submission = await store.getSubmission(this.quizId, entry.userId);
 
       results.set(entry.userId, {
         // Everyone needs a result payload so the client can animate and
@@ -633,52 +655,24 @@ class RuntimeEngine {
     return results;
   }
 
-  // Return a sorted array representation of the in-memory leaderboard.
+  // Return a sorted array representation of the Redis-backed leaderboard.
   // Sort order (all ascending in "better" direction):
   //   1. totalScore, descending (higher score wins)
   //   2. aggregateTimeMs, ascending (less time spent on correct answers wins)
   //   3. joinedAt, ascending (earlier join wins)
-  getLeaderboard() {
-    return [...this.runtime.leaderboard.entries()]
-      .map(([userId, entry]) => ({
-        userId,
-
-        fullName: entry.fullName,
-
-        profileImage: entry.profileImage,
-
-        totalScore: entry.score,
-
-        aggregateTimeMs: entry.aggregateTimeMs,
-
-        joinedAt: entry.joinedAt,
-      }))
-      .sort((a, b) => {
-        if (b.totalScore !== a.totalScore) {
-          return b.totalScore - a.totalScore;
-        }
-
-        if (a.aggregateTimeMs !== b.aggregateTimeMs) {
-          return a.aggregateTimeMs - b.aggregateTimeMs;
-        }
-
-        return a.joinedAt.getTime() - b.joinedAt.getTime();
-      })
-      .map((entry, index) => ({
-        rank: index + 1,
-
-        ...entry,
-      }));
+  async getLeaderboard() {
+    return store.getLeaderboard(this.quizId);
   }
 
   // Convenience: top N entries from leaderboard.
-  getTopLeaderboard(limit = 10) {
-    return this.getLeaderboard().slice(0, limit);
+  async getTopLeaderboard(limit = 10) {
+    const leaderboard = await this.getLeaderboard();
+    return leaderboard.slice(0, limit);
   }
 
   // Return a user's current rank or null if not present.
-  getUserRank(userId) {
-    const leaderboard = this.getLeaderboard();
+  async getUserRank(userId) {
+    const leaderboard = await this.getLeaderboard();
 
     const index = leaderboard.findIndex((entry) => entry.userId === userId);
 
@@ -690,14 +684,15 @@ class RuntimeEngine {
   }
 
   // Return a user's current total score.
-  getUserScore(userId) {
-    return this.runtime.leaderboard.get(userId)?.score ?? 0;
+  async getUserScore(userId) {
+    const entry = await store.getLeaderboardEntry(this.quizId, userId);
+    return entry?.score ?? 0;
   }
 
   // Build the canonical runtime state object sent to clients.
-  getRuntimeState() {
+  async getRuntimeState() {
     const baseState = {
-      quizId: this.runtime.quiz.id,
+      quizId: this.quizId,
 
       phase: this.runtime.phase,
 
@@ -717,7 +712,7 @@ class RuntimeEngine {
         return {
           ...baseState,
 
-          connectedUsers: this.runtime.connectedUsers.size,
+          connectedUsers: await store.connectedCount(this.quizId),
         };
 
       case QuizPhase.QUESTION:
@@ -754,16 +749,25 @@ class RuntimeEngine {
   }
 
   // Check whether a user is registered as a participant in this runtime.
-  isParticipantRegistered(userId) {
-    return this.runtime.leaderboard.has(userId);
+  async isParticipantRegistered(userId) {
+    return store.hasLeaderboardEntry(this.quizId, userId);
   }
 
-  // Mark the quiz completed in the DB, broadcast final state, and
-  // destroy the runtime manager entry.
+  // Add/remove a user from the connected-users presence set (Redis SET).
+  async addConnectedUser(userId) {
+    await store.addConnected(this.quizId, userId);
+  }
+
+  async removeConnectedUser(userId) {
+    await store.removeConnected(this.quizId, userId);
+  }
+
+  // Mark the quiz completed in the DB, broadcast final state, cancel any
+  // dangling phase job, and destroy all Redis keys for this runtime.
   async complete() {
     await prisma.quiz.update({
       where: {
-        id: this.runtime.quiz.id,
+        id: this.quizId,
       },
 
       data: {
@@ -775,12 +779,23 @@ class RuntimeEngine {
 
     this.changePhase(QuizPhase.COMPLETED);
 
-    this.broadcastRuntimeState();
+    await this.broadcastRuntimeState();
 
-    manager.destroy(this.runtime.quiz.id);
+    await cancelPhaseAction(this.quizId);
+    await store.deleteAll(this.quizId);
+
+    // Tell runtime.manager.withEngine() not to resurrect the state key we
+    // just deleted by re-saving it afterwards.
+    this._destroyed = true;
 
     console.log("[Runtime] Completed");
   }
+}
+
+// Convert a Map<userId, payload> into a plain {userId: payload} object so
+// it can be JSON-serialized into the core state blob stored in Redis.
+function mapToObject(map) {
+  return Object.fromEntries(map.entries());
 }
 
 module.exports = RuntimeEngine;
