@@ -259,8 +259,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
                                             color: isDark
-                                                ? const Color(0xFF7A8499)
-                                                : const Color(0xFF9CA3AF),
+                                                ? AppConfig.mutedTextColor(
+                                                    isDark,
+                                                  )
+                                                : AppConfig.mutedTextLight,
                                           ),
                                         ),
                                 ),
@@ -402,7 +404,7 @@ class _Header extends StatelessWidget {
                       fontSize: 24,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.4,
-                      color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                      color: AppConfig.bodyTextColor(isDark),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -410,8 +412,8 @@ class _Header extends StatelessWidget {
                     greetingIcon,
                     size: 22,
                     color: isDark
-                        ? const Color(0xFFC8FF57)
-                        : const Color(0xFF0C0E14),
+                        ? AppConfig.accentLime
+                        : AppConfig.bodyTextLight,
                   ),
                 ],
               ),
@@ -421,9 +423,7 @@ class _Header extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
-                  color: isDark
-                      ? const Color(0xFF7A8499)
-                      : const Color(0xFF6B7280),
+                  color: AppConfig.mutedTextColor(isDark),
                 ),
               ),
             ],
@@ -438,13 +438,13 @@ class _Header extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(
-                colors: [Color(0xFFC8FF57), Color(0xFF8AE600)],
+                colors: [AppConfig.accentLime, AppConfig.accentLimeDeep],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFC8FF57).withOpacity(0.3),
+                  color: AppConfig.accentLime.withOpacity(0.3),
                   blurRadius: 14,
                   offset: const Offset(0, 4),
                 ),
@@ -456,7 +456,7 @@ class _Header extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF0C0E14),
+                  color: AppConfig.bodyTextLight,
                 ),
               ),
             ),
@@ -492,7 +492,7 @@ class _SectionHeader extends StatelessWidget {
             fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.4,
-            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+            color: AppConfig.mutedTextColor(isDark),
           ),
         ),
         if (trailing != null) ...[const Spacer(), trailing!],
@@ -627,11 +627,11 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
   Color _statusColor(_CardPhase phase) {
     switch (phase) {
       case _CardPhase.inProgress:
-        return const Color(0xFFFF6B6B); // red — live, no waiting
+        return AppConfig.accentCoral; // red — live, no waiting
       case _CardPhase.lobby:
-        return const Color(0xFFFFB020); // amber — lobby open, timer running
+        return AppConfig.accentAmber; // amber — lobby open, timer running
       case _CardPhase.waiting:
-        return const Color(0xFF6C8EFF); // blue — just scheduled
+        return AppConfig.accentBlue; // blue — just scheduled
     }
   }
 
@@ -654,7 +654,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
     final phase = _phase;
     final accent = _statusColor(phase);
     final urgencyColor = phase != _CardPhase.waiting || _isImminent
-        ? const Color(0xFFFF6B6B)
+        ? AppConfig.accentCoral
         : accent;
 
     return GestureDetector(
@@ -664,9 +664,12 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
           color: widget.isDark
               ? Color.alphaBlend(
                   accent.withOpacity(0.05),
-                  const Color(0xFF161B26),
+                  AppConfig.darkCardColor,
                 )
-              : Color.alphaBlend(accent.withOpacity(0.04), Colors.white),
+              : Color.alphaBlend(
+                  accent.withOpacity(0.04),
+                  AppConfig.whiteColor,
+                ),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: accent.withOpacity(widget.isDark ? 0.12 : 0.18),
@@ -748,7 +751,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.3,
-                  color: widget.isDark ? Colors.white : const Color(0xFF0C0E14),
+                  color: AppConfig.bodyTextColor(widget.isDark),
                 ),
               ),
 
@@ -761,9 +764,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.4,
-                  color: widget.isDark
-                      ? const Color(0xFF7A8499)
-                      : const Color(0xFF6B7280),
+                  color: AppConfig.mutedTextColor(widget.isDark),
                 ),
               ),
 
@@ -775,8 +776,8 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                     Icons.help_outline_rounded,
                     size: 14,
                     color: widget.isDark
-                        ? const Color(0xFF7A8499)
-                        : const Color(0xFF9CA3AF),
+                        ? AppConfig.mutedTextColor(widget.isDark)
+                        : AppConfig.mutedTextLight,
                   ),
                   const SizedBox(width: 5),
                   Text(
@@ -785,8 +786,8 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                       color: widget.isDark
-                          ? const Color(0xFF7A8499)
-                          : const Color(0xFF6B7280),
+                          ? AppConfig.mutedTextColor(widget.isDark)
+                          : AppConfig.mutedTextSecondary,
                     ),
                   ),
                   const Spacer(),
@@ -807,7 +808,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF0C0E14),
+                        color: AppConfig.bodyTextLight,
                       ),
                     ),
                   ),
@@ -856,12 +857,15 @@ class _LastResultCard extends StatelessWidget {
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF1C2440), Color(0xFF141A30)],
+            colors: [
+              AppConfig.darkSurfaceElevatedAlt,
+              AppConfig.lightSurfaceAlt3,
+            ],
           ),
-          border: Border.all(color: const Color(0xFFFFD166).withOpacity(0.2)),
+          border: Border.all(color: AppConfig.accentGold.withOpacity(0.2)),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFFFFD166).withOpacity(0.06),
+              color: AppConfig.accentGold.withOpacity(0.06),
               blurRadius: 24,
               offset: const Offset(0, 8),
             ),
@@ -881,7 +885,7 @@ class _LastResultCard extends StatelessWidget {
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.4,
-                        color: const Color(0xFFFFD166).withOpacity(0.7),
+                        color: AppConfig.accentGold.withOpacity(0.7),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -899,7 +903,7 @@ class _LastResultCard extends StatelessWidget {
                         fontSize: 32,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -1,
-                        color: Color(0xFFFFD166),
+                        color: AppConfig.warningColor,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -919,9 +923,9 @@ class _LastResultCard extends StatelessWidget {
                 height: 64,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFFFFD166).withOpacity(0.1),
+                  color: AppConfig.accentGold.withOpacity(0.1),
                   border: Border.all(
-                    color: const Color(0xFFFFD166).withOpacity(0.2),
+                    color: AppConfig.accentGold.withOpacity(0.2),
                     width: 1.5,
                   ),
                 ),
@@ -958,21 +962,17 @@ class _EmptyState extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161B26) : Colors.white,
+        color: AppConfig.cardColor(isDark),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark
-              ? const Color(0xFFFFFFFF).withOpacity(0.06)
-              : const Color(0xFF000000).withOpacity(0.06),
+              ? AppConfig.whiteColor.withOpacity(0.06)
+              : AppConfig.blackColor.withOpacity(0.06),
         ),
       ),
       child: Column(
         children: [
-          Icon(
-            icon,
-            size: 36,
-            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
-          ),
+          Icon(icon, size: 36, color: AppConfig.mutedTextColor(isDark)),
           const SizedBox(height: 12),
           Text(
             message,
@@ -980,7 +980,7 @@ class _EmptyState extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               height: 1.5,
-              color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+              color: AppConfig.mutedTextColor(isDark),
             ),
           ),
         ],

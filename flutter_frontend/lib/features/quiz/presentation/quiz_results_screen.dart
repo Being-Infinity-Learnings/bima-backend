@@ -302,7 +302,7 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                         AppConfig.rankGold.withOpacity(
                           (0.07 + pulse * 0.07) * base,
                         ),
-                        Colors.transparent,
+                        AppConfig.transparentColor,
                       ],
                     ),
                   ),

@@ -146,8 +146,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: isDark
-                                ? const Color(0xFF1A1F2E)
-                                : Colors.white,
+                                ? AppConfig.darkSurfaceSubtle
+                                : AppConfig.whiteColor,
                             boxShadow: [
                               BoxShadow(
                                 color: AppConfig.primaryColor.withOpacity(
@@ -173,9 +173,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                             fontSize: 28,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.5,
-                            color: isDark
-                                ? Colors.white
-                                : const Color(0xFF0C0E14),
+                            color: AppConfig.bodyTextColor(isDark),
                           ),
                         ),
 
@@ -188,9 +186,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                             letterSpacing: 0.2,
-                            color: isDark
-                                ? const Color(0xFF7A8499)
-                                : const Color(0xFF9CA3AF),
+                            color: AppConfig.mutedTextColor(isDark),
                           ),
                         ),
 
@@ -226,8 +222,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     style: TextStyle(
                       fontSize: 11,
                       color: isDark
-                          ? const Color(0xFF3D4455)
-                          : const Color(0xFFD1D5DB),
+                          ? AppConfig.splashVersionTextDark
+                          : AppConfig.splashVersionTextLight,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -341,17 +337,19 @@ class _NoInternetWidget extends StatelessWidget {
           height: 52,
           decoration: BoxDecoration(
             color: isDark
-                ? const Color(0xFFFFD166).withOpacity(0.10)
-                : const Color(0xFFFFFBEB),
+                ? AppConfig.warningColor.withOpacity(0.10)
+                : AppConfig.warningLightSurface,
             shape: BoxShape.circle,
             border: Border.all(
-              color: const Color(0xFFD97706).withOpacity(isDark ? 0.25 : 0.20),
+              color: AppConfig.warningAccentDark.withOpacity(
+                isDark ? 0.25 : 0.20,
+              ),
             ),
           ),
           child: Icon(
             Icons.wifi_off_rounded,
             size: 24,
-            color: isDark ? const Color(0xFFFFD166) : const Color(0xFFD97706),
+            color: isDark ? AppConfig.accentGold : AppConfig.warningAccentDark,
           ),
         ),
 
@@ -362,7 +360,7 @@ class _NoInternetWidget extends StatelessWidget {
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : const Color(0xFF0C0E14),
+            color: AppConfig.bodyTextColor(isDark),
           ),
         ),
 
@@ -372,7 +370,7 @@ class _NoInternetWidget extends StatelessWidget {
           'Please check your network and try again.',
           style: TextStyle(
             fontSize: 13,
-            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+            color: AppConfig.mutedTextColor(isDark),
           ),
           textAlign: TextAlign.center,
         ),
@@ -386,7 +384,7 @@ class _NoInternetWidget extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFFC8FF57), Color(0xFF8AE600)],
+                colors: [AppConfig.accentLime, AppConfig.accentLimeDeep],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -404,7 +402,7 @@ class _NoInternetWidget extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF0C0E14),
+                color: AppConfig.bodyTextLight,
               ),
             ),
           ),

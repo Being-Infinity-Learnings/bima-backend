@@ -141,10 +141,10 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
     final errorPinTheme = defaultPinTheme.copyWith(
       decoration: BoxDecoration(
         color: isDark
-            ? const Color(0xFFFF6B6B).withOpacity(0.08)
-            : const Color(0xFFFFF4F4),
+            ? AppConfig.errorColor.withOpacity(0.08)
+            : AppConfig.errorLightSurface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDC2626).withOpacity(0.5)),
+        border: Border.all(color: AppConfig.errorBorderColor.withOpacity(0.5)),
       ),
     );
 
@@ -187,9 +187,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
                         borderRadius: BorderRadius.circular(28),
                         boxShadow: [
                           BoxShadow(
-                            color: isDark
-                                ? Colors.black.withValues(alpha: 0.15)
-                                : Colors.black.withValues(alpha: 0.04),
+                            color: AppConfig.shadowColor(isDark),
                             blurRadius: 30,
                             offset: const Offset(0, 10),
                           ),
@@ -335,17 +333,17 @@ class _ExpiredOtpHint extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: isDark
-              ? const Color(0xFF6C8EFF).withOpacity(0.08)
-              : const Color(0xFFEEF2FF),
+              ? AppConfig.accentBlue.withOpacity(0.08)
+              : AppConfig.highlightRankCardEnd(isDark),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF6C8EFF).withOpacity(0.20)),
+          border: Border.all(color: AppConfig.accentBlue.withOpacity(0.20)),
         ),
         child: Row(
           children: [
             const Icon(
               Icons.refresh_rounded,
               size: 16,
-              color: Color(0xFF6C8EFF),
+              color: AppConfig.accentBlue,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -355,8 +353,8 @@ class _ExpiredOtpHint extends StatelessWidget {
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   color: isDark
-                      ? const Color(0xFF9BB3FF)
-                      : const Color(0xFF4B6BF5),
+                      ? AppConfig.accentBlue.withOpacity(0.85)
+                      : AppConfig.accentBlue,
                 ),
               ),
             ),

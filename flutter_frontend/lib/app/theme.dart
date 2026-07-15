@@ -20,8 +20,8 @@ class AppTheme {
     return _buildTheme(
       colorScheme: colorScheme,
       scaffoldColor: AppConfig.scaffoldColor(false),
-      cardColor: Colors.white,
-      inputFillColor: Colors.white,
+      cardColor: AppConfig.whiteColor,
+      inputFillColor: AppConfig.whiteColor,
     );
   }
 
@@ -99,7 +99,7 @@ class AppTheme {
 
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(_radius),
-          borderSide: const BorderSide(color: Colors.red),
+          borderSide: const BorderSide(color: AppConfig.errorColor),
         ),
       ),
 

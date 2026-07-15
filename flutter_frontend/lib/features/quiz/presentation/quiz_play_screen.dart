@@ -603,7 +603,7 @@ class _QuestionCard extends StatelessWidget {
         border: Border.all(color: AppConfig.subtleOverlay(isDark)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
+            color: AppConfig.blackColor.withOpacity(isDark ? 0.3 : 0.05),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -925,7 +925,9 @@ class _AnswerTileState extends State<_AnswerTile>
     }
 
     final showGlow = widget.revealed && isCorrect;
-    final contrastText = isDark ? const Color(0xFF0C0E14) : Colors.white;
+    final contrastText = isDark
+        ? AppConfig.bodyTextLight
+        : AppConfig.whiteColor;
 
     return AnimatedBuilder(
       animation: Listenable.merge([_revealCtrl, _pendingCtrl]),
@@ -1080,7 +1082,7 @@ class _SubmitBar extends StatelessWidget {
   Widget build(BuildContext context) {
     String label;
     Color bgColor;
-    Color fgColor = const Color(0xFF0C0E14);
+    Color fgColor = AppConfig.bodyTextLight;
     bool tappable = false;
 
     if (timerExpired && !isSubmitted) {
