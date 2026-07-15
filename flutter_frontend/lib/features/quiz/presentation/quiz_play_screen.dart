@@ -857,6 +857,11 @@ class _AnswerTileState extends State<_AnswerTile>
     final option = widget.option;
     final baseColor = widget.baseColor;
     final isDark = widget.isDark;
+    // Palette colors are tuned for dark backgrounds; on light surfaces the
+    // raw color is too pale to read as shape/text. Backgrounds, borders and
+    // glows keep using `baseColor` (they're low-opacity tints), while actual
+    // foreground text/shape color goes through `accentOnSurface`.
+    final legibleColor = AppConfig.accentOnSurface(isDark, baseColor);
 
     final isSelected = widget.selectedId == option.id;
     final isCorrect = widget.isCorrect;
@@ -891,9 +896,9 @@ class _AnswerTileState extends State<_AnswerTile>
         trailingIcon = Icons.cancel_rounded;
         trailingIconColor = AppConfig.errorColor;
       } else {
-        tileColor = baseColor;
+        tileColor = legibleColor;
         bgColor = baseColor.withOpacity(isDark ? 0.06 : 0.1);
-        textColor = baseColor.withOpacity(0.6);
+        textColor = legibleColor.withOpacity(isDark ? 0.6 : 0.85);
         borderColor = baseColor.withOpacity(isDark ? 0.12 : 0.2);
         borderWidth = 1.0;
         tileOpacity = 1.0;
@@ -903,17 +908,17 @@ class _AnswerTileState extends State<_AnswerTile>
     } else if (locked) {
       // Locked (timer hit zero / already submitted) but the server hasn't
       // confirmed correctness yet — neutral dimmed state, no colors.
-      tileColor = baseColor;
+      tileColor = legibleColor;
       bgColor = baseColor.withOpacity(isDark ? 0.06 : 0.1);
-      textColor = baseColor.withOpacity(0.6);
+      textColor = legibleColor.withOpacity(isDark ? 0.6 : 0.85);
       borderColor = baseColor.withOpacity(isDark ? 0.12 : 0.2);
       borderWidth = isSelected ? 1.5 : 1.0;
       tileOpacity = 1.0;
       trailingIcon = null;
       trailingIconColor = null;
     } else {
-      tileColor = baseColor;
-      textColor = isDark ? baseColor : baseColor.withOpacity(0.9);
+      tileColor = legibleColor;
+      textColor = legibleColor;
       bgColor = baseColor.withOpacity(isDark ? 0.13 : 0.18);
       borderColor = baseColor.withOpacity(isDark ? 0.25 : 0.4);
       borderWidth = 1.0;

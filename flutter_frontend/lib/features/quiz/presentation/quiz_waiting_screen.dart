@@ -243,7 +243,10 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen>
                   child: Icon(
                     Icons.hourglass_top_rounded,
                     size: 36,
-                    color: AppConfig.primaryColor.withOpacity(0.9),
+                    color: AppConfig.accentOnSurface(
+                      isDark,
+                      AppConfig.primaryColor,
+                    ).withOpacity(0.9),
                   ),
                 ),
               ],
@@ -350,7 +353,10 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen>
                     fontSize: 34,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -0.5,
-                    color: AppConfig.primaryColor,
+                    color: AppConfig.accentOnSurface(
+                      isDark,
+                      AppConfig.primaryColor,
+                    ),
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -462,7 +468,11 @@ class _InfoPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: AppConfig.primaryColor),
+          Icon(
+            icon,
+            size: 14,
+            color: AppConfig.accentOnSurface(isDark, AppConfig.primaryColor),
+          ),
           const SizedBox(width: 6),
           Text(
             label,

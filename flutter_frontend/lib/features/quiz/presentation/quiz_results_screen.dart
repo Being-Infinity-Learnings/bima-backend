@@ -702,6 +702,9 @@ class _YourResultCard extends StatelessWidget {
         : entry.rank == 3
         ? AppConfig.rankBronze
         : AppConfig.quizAnswerColors[0];
+    // Backgrounds/tints keep the raw palette color; text/icon foregrounds
+    // use the theme-aware, legible variant.
+    final rankTextColor = AppConfig.accentOnSurface(isDark, rankColor);
 
     final String tagline = entry.rank == 1
         ? '🎉 You won! Incredible!'
@@ -742,7 +745,7 @@ class _YourResultCard extends StatelessWidget {
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
-                  color: rankColor.withOpacity(0.8),
+                  color: rankTextColor.withOpacity(0.8),
                 ),
               ),
               const Spacer(),
@@ -760,7 +763,9 @@ class _YourResultCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? rankColor : rankColor.withOpacity(0.9),
+                    color: isDark
+                        ? rankTextColor
+                        : rankTextColor.withOpacity(0.9),
                   ),
                 ),
               ),
@@ -773,7 +778,7 @@ class _YourResultCard extends StatelessWidget {
               _ResultStat(
                 value: '#${entry.rank}',
                 label: 'Final Rank',
-                color: rankColor,
+                color: rankTextColor,
                 big: true,
                 isDark: isDark,
               ),
