@@ -8,40 +8,80 @@ const { QuizPhase } = require("../runtime/runtime.constants");
 function registerQuizEvents(io, socket) {
   socket.on("joinQuiz", async ({ quizId }) => {
     try {
-      const engine = await manager.loadEngine(quizId);
+      // IMPORTANT: this used to call manager.loadEngine(quizId) directly,
+      // outside any lock, then mutate/broadcast/read off that one snapshot
+      // across several awaits. If a phase job (enterQuestion/
+      // finishQuestion/enterLeaderboard/...) fired concurrently, this
+      // handler's broadcastRuntimeState() could send a stale phase to the
+      // whole room right after the phase job's own (correct) broadcast —
+      // the same bug that hit the disconnect handler. Routing through
+      // store.withLock + manager.withEngine serializes this with
+      // submissions/phase-jobs and guarantees fresh state at broadcast
+      // time. Everything that needs to read state or mutate it happens
+      // inside the locked callback; only the socket.emit calls (no state
+      // access) happen after, using values captured from that fresh read.
+      const {
+        snapshot,
+        phase,
+        leaderboardPayload,
+        questionResults,
+        finalResult,
+      } = await store.withLock(quizId, () =>
+        manager.withEngine(quizId, async (engine) => {
+          validateUser(engine.runtime, socket.dbUser);
 
-      validateUser(engine.runtime, socket.dbUser);
+          socket.join(`quiz:${quizId}`);
 
-      socket.join(`quiz:${quizId}`);
+          socket.data.quizId = quizId;
 
-      socket.data.quizId = quizId;
+          await engine.addConnectedUser(socket.dbUser.id);
 
-      await engine.addConnectedUser(socket.dbUser.id);
+          if (!(await engine.isParticipantRegistered(socket.dbUser.id))) {
+            await engine.registerParticipant(socket.dbUser);
+          }
 
-      if (!(await engine.isParticipantRegistered(socket.dbUser.id))) {
-        await engine.registerParticipant(socket.dbUser);
-      }
+          // Notify everyone in the lobby about updated participant count
+          await engine.broadcastRuntimeState();
 
-      // Notify everyone in the lobby about updated participant count
-      await engine.broadcastRuntimeState();
+          const snapshot = await engine.getRuntimeState();
+          const phase = engine.runtime.phase;
+
+          let leaderboardPayload = null;
+          let questionResults = null;
+          let finalResult = null;
+
+          if (phase === "LEADERBOARD" || phase === QuizPhase.RESULTS) {
+            leaderboardPayload = await engine.buildLeaderboardPayload();
+
+            questionResults =
+              engine.runtime.lastQuestionResults?.[socket.dbUser.id] ??
+              (await engine.buildQuestionResults())[socket.dbUser.id];
+          }
+
+          if (phase === QuizPhase.RESULTS) {
+            finalResult = engine.runtime.finalResults?.[socket.dbUser.id];
+          }
+
+          return {
+            snapshot,
+            phase,
+            leaderboardPayload,
+            questionResults,
+            finalResult,
+          };
+        }),
+      );
 
       socket.emit("quizJoined", {
         success: true,
-        data: await engine.getRuntimeState(),
+        data: snapshot,
       });
 
-      if (
-        engine.runtime.phase === "LEADERBOARD" ||
-        engine.runtime.phase === QuizPhase.RESULTS
-      ) {
+      if (phase === "LEADERBOARD" || phase === QuizPhase.RESULTS) {
         socket.emit("leaderboardUpdated", {
           success: true,
-          data: await engine.buildLeaderboardPayload(),
+          data: leaderboardPayload,
         });
-
-        const questionResults =
-          engine.runtime.lastQuestionResults?.[socket.dbUser.id] ??
-          (await engine.buildQuestionResults())[socket.dbUser.id];
 
         socket.emit("questionResults", {
           success: true,
@@ -49,12 +89,10 @@ function registerQuizEvents(io, socket) {
         });
       }
 
-      if (engine.runtime.phase === QuizPhase.RESULTS) {
-        const result = engine.runtime.finalResults?.[socket.dbUser.id];
-
+      if (phase === QuizPhase.RESULTS) {
         socket.emit("finalResults", {
           success: true,
-          data: result,
+          data: finalResult,
         });
       }
 

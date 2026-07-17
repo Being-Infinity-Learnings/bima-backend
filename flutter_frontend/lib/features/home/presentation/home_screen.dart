@@ -43,6 +43,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
   Timer? _autoRefreshTimer;
   ProviderSubscription<int>? _tabListener;
 
+  // How many upcoming quizzes are currently shown. Starts at one page and
+  // grows by one page each time "Show more" is tapped.
+  static const int _quizzesPageSize = 5;
+  int _visibleQuizCount = _quizzesPageSize;
+
   // AppShell (and therefore this widget, kept alive inside its
   // IndexedStack) is its own top-level route. Pushing a quiz screen
   // (/quiz/:id/waiting, /lobby, /play, ...) pushes a NEW route on top of
@@ -55,6 +60,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
   void _refreshNow() {
     ref.invalidate(myQuizzesProvider);
     ref.invalidate(latestHistoryResultProvider);
+    setState(() => _visibleQuizCount = _quizzesPageSize);
   }
 
   // Start/stop the 10s poll based on current visibility. Only polls while
@@ -182,6 +188,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
             onRefresh: () async {
               ref.invalidate(myQuizzesProvider);
               ref.invalidate(latestHistoryResultProvider);
+              setState(() => _visibleQuizCount = _quizzesPageSize);
               await ref.read(myQuizzesProvider.future);
             },
             color: AppConfig.primaryColor,
@@ -259,8 +266,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
                                             color: isDark
-                                                ? const Color(0xFF7A8499)
-                                                : const Color(0xFF9CA3AF),
+                                                ? AppConfig.mutedTextColor(
+                                                    isDark,
+                                                  )
+                                                : AppConfig.mutedTextLight,
                                           ),
                                         ),
                                 ),
@@ -272,21 +281,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                                     message:
                                         'No quizzes scheduled right now.\nCheck back later!',
                                   )
-                                else
-                                  ...quizzes.map(
-                                    (quiz) => Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 12,
-                                      ),
-                                      child: _UpcomingQuizCard(
-                                        quiz: quiz,
-                                        isDark: isDark,
-                                        onTap: () => context.push(
-                                          '/quiz/${quiz.id}/waiting',
+                                else ...[
+                                  ...quizzes
+                                      .take(_visibleQuizCount)
+                                      .map(
+                                        (quiz) => Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 12,
+                                          ),
+                                          child: _UpcomingQuizCard(
+                                            quiz: quiz,
+                                            isDark: isDark,
+                                            onTap: () => context.push(
+                                              '/quiz/${quiz.id}/waiting',
+                                            ),
+                                          ),
                                         ),
                                       ),
+                                  if (_visibleQuizCount < quizzes.length)
+                                    _ShowMoreButton(
+                                      isDark: isDark,
+                                      remaining:
+                                          quizzes.length - _visibleQuizCount,
+                                      pageSize: _quizzesPageSize,
+                                      onTap: () => setState(
+                                        () => _visibleQuizCount +=
+                                            _quizzesPageSize,
+                                      ),
                                     ),
-                                  ),
+                                ],
                               ],
                             ),
                           );
@@ -402,7 +425,7 @@ class _Header extends StatelessWidget {
                       fontSize: 24,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.4,
-                      color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                      color: AppConfig.bodyTextColor(isDark),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -410,8 +433,8 @@ class _Header extends StatelessWidget {
                     greetingIcon,
                     size: 22,
                     color: isDark
-                        ? const Color(0xFFC8FF57)
-                        : const Color(0xFF0C0E14),
+                        ? AppConfig.accentLime
+                        : AppConfig.bodyTextLight,
                   ),
                 ],
               ),
@@ -421,9 +444,7 @@ class _Header extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
-                  color: isDark
-                      ? const Color(0xFF7A8499)
-                      : const Color(0xFF6B7280),
+                  color: AppConfig.mutedTextColor(isDark),
                 ),
               ),
             ],
@@ -438,13 +459,13 @@ class _Header extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(
-                colors: [Color(0xFFC8FF57), Color(0xFF8AE600)],
+                colors: [AppConfig.accentLime, AppConfig.accentLimeDeep],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFC8FF57).withOpacity(0.3),
+                  color: AppConfig.accentLime.withOpacity(0.3),
                   blurRadius: 14,
                   offset: const Offset(0, 4),
                 ),
@@ -456,7 +477,7 @@ class _Header extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF0C0E14),
+                  color: AppConfig.bodyTextLight,
                 ),
               ),
             ),
@@ -492,7 +513,7 @@ class _SectionHeader extends StatelessWidget {
             fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.4,
-            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+            color: AppConfig.mutedTextColor(isDark),
           ),
         ),
         if (trailing != null) ...[const Spacer(), trailing!],
@@ -520,24 +541,69 @@ class _UpcomingQuizCard extends StatefulWidget {
   State<_UpcomingQuizCard> createState() => _UpcomingQuizCardState();
 }
 
+/// Which of the three states this card should render as:
+///  • [waiting]     – not live yet, counting down to [scheduledStartTime].
+///  • [lobby]        – host opened the lobby, counting down to the lobby's
+///                     [phaseEndsAt] (or falling back to the scheduled time
+///                     if that isn't known yet).
+///  • [inProgress]   – quiz has moved past the lobby (QUESTION / LEADERBOARD
+///                     / RESULTS). No timer makes sense here.
+enum _CardPhase { waiting, lobby, inProgress }
+
 class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
   late Duration _remaining;
   Timer? _timer;
 
+  _CardPhase get _phase {
+    final quiz = widget.quiz;
+    if (quiz.isInProgress) return _CardPhase.inProgress;
+    if (quiz.isInLobby) return _CardPhase.lobby;
+    return _CardPhase.waiting;
+  }
+
+  /// The moment we're counting down to, or null if no countdown applies.
+  DateTime? get _countdownTarget {
+    switch (_phase) {
+      case _CardPhase.waiting:
+        return widget.quiz.scheduledStartTime;
+      case _CardPhase.lobby:
+        return widget.quiz.runtime?.phaseEndsAt ??
+            widget.quiz.scheduledStartTime;
+      case _CardPhase.inProgress:
+        return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _remaining = _diff(widget.quiz.scheduledStartTime);
+    _remaining = _diff(_countdownTarget);
+    _startTimerIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _UpcomingQuizCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Runtime phase may have changed (e.g. lobby -> question) since the
+    // last poll, so re-evaluate whether we still need a ticking timer.
+    _remaining = _diff(_countdownTarget);
+    _startTimerIfNeeded();
+  }
+
+  void _startTimerIfNeeded() {
+    _timer?.cancel();
+    if (_countdownTarget == null) return;
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {
-        _remaining = _diff(widget.quiz.scheduledStartTime);
+        _remaining = _diff(_countdownTarget);
       });
     });
   }
 
-  Duration _diff(DateTime scheduledAt) {
-    final diff = scheduledAt.difference(DateTime.now());
+  Duration _diff(DateTime? target) {
+    if (target == null) return Duration.zero;
+    final diff = target.difference(DateTime.now());
     return diff.isNegative ? Duration.zero : diff;
   }
 
@@ -548,6 +614,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
   }
 
   String _formatCountdown(Duration d) {
+    if (_phase == _CardPhase.inProgress) return 'Ongoing';
     if (d.inSeconds <= 0) return 'Starting...';
     final h = d.inHours;
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -578,20 +645,37 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
     return '${months[dt.month - 1]} ${dt.day} • $hour12:$minute $period';
   }
 
-  Color _statusColor(bool isLive) =>
-      isLive ? const Color(0xFFFF6B6B) : const Color(0xFF6C8EFF);
+  Color _statusColor(_CardPhase phase) {
+    switch (phase) {
+      case _CardPhase.inProgress:
+        return AppConfig.accentCoral; // red — live, no waiting
+      case _CardPhase.lobby:
+        return AppConfig.accentAmber; // amber — lobby open, timer running
+      case _CardPhase.waiting:
+        return AppConfig.accentBlue; // blue — just scheduled
+    }
+  }
 
-  String _statusLabel(bool isLive) => isLive ? 'LIVE NOW' : 'SCHEDULED';
+  String _statusLabel(_CardPhase phase) {
+    switch (phase) {
+      case _CardPhase.inProgress:
+        return 'LIVE NOW';
+      case _CardPhase.lobby:
+        return 'LOBBY OPEN';
+      case _CardPhase.waiting:
+        return 'SCHEDULED';
+    }
+  }
 
-  bool get _isImminent => _remaining.inMinutes < 15;
-  bool get _isStarting => widget.quiz.isLive || _remaining.inSeconds <= 0;
+  bool get _isImminent =>
+      _phase != _CardPhase.inProgress && _remaining.inMinutes < 15;
 
   @override
   Widget build(BuildContext context) {
-    final isLive = widget.quiz.isLive;
-    final accent = _statusColor(isLive);
-    final urgencyColor = _isStarting || _isImminent
-        ? const Color(0xFFFF6B6B)
+    final phase = _phase;
+    final accent = _statusColor(phase);
+    final urgencyColor = phase != _CardPhase.waiting || _isImminent
+        ? AppConfig.accentCoral
         : accent;
 
     return GestureDetector(
@@ -601,9 +685,12 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
           color: widget.isDark
               ? Color.alphaBlend(
                   accent.withOpacity(0.05),
-                  const Color(0xFF161B26),
+                  AppConfig.darkCardColor,
                 )
-              : Color.alphaBlend(accent.withOpacity(0.04), Colors.white),
+              : Color.alphaBlend(
+                  accent.withOpacity(0.04),
+                  AppConfig.whiteColor,
+                ),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: accent.withOpacity(widget.isDark ? 0.12 : 0.18),
@@ -627,7 +714,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      _statusLabel(isLive),
+                      _statusLabel(phase),
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -654,9 +741,11 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _isImminent
-                              ? Icons.flash_on_rounded
-                              : Icons.schedule_rounded,
+                          phase == _CardPhase.inProgress
+                              ? Icons.podcasts_rounded
+                              : (_isImminent
+                                    ? Icons.flash_on_rounded
+                                    : Icons.schedule_rounded),
                           size: 13,
                           color: urgencyColor,
                         ),
@@ -683,7 +772,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.3,
-                  color: widget.isDark ? Colors.white : const Color(0xFF0C0E14),
+                  color: AppConfig.bodyTextColor(widget.isDark),
                 ),
               ),
 
@@ -696,9 +785,7 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.4,
-                  color: widget.isDark
-                      ? const Color(0xFF7A8499)
-                      : const Color(0xFF6B7280),
+                  color: AppConfig.mutedTextColor(widget.isDark),
                 ),
               ),
 
@@ -710,8 +797,8 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                     Icons.help_outline_rounded,
                     size: 14,
                     color: widget.isDark
-                        ? const Color(0xFF7A8499)
-                        : const Color(0xFF9CA3AF),
+                        ? AppConfig.mutedTextColor(widget.isDark)
+                        : AppConfig.mutedTextLight,
                   ),
                   const SizedBox(width: 5),
                   Text(
@@ -720,8 +807,8 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                       color: widget.isDark
-                          ? const Color(0xFF7A8499)
-                          : const Color(0xFF6B7280),
+                          ? AppConfig.mutedTextColor(widget.isDark)
+                          : AppConfig.mutedTextSecondary,
                     ),
                   ),
                   const Spacer(),
@@ -736,11 +823,13 @@ class _UpcomingQuizCardState extends State<_UpcomingQuizCard> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      _isStarting ? 'Join Now →' : 'Enter Lobby →',
+                      phase == _CardPhase.inProgress
+                          ? 'Join Now →'
+                          : 'Enter Lobby →',
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF0C0E14),
+                        color: AppConfig.bodyTextLight,
                       ),
                     ),
                   ),
@@ -786,15 +875,15 @@ class _LastResultCard extends StatelessWidget {
         width: double.infinity,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF1C2440), Color(0xFF141A30)],
+            colors: AppConfig.lastResultCardGradient(isDark),
           ),
-          border: Border.all(color: const Color(0xFFFFD166).withOpacity(0.2)),
+          border: Border.all(color: AppConfig.accentGold.withOpacity(0.2)),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFFFFD166).withOpacity(0.06),
+              color: AppConfig.accentGold.withOpacity(0.06),
               blurRadius: 24,
               offset: const Offset(0, 8),
             ),
@@ -814,34 +903,36 @@ class _LastResultCard extends StatelessWidget {
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.4,
-                        color: const Color(0xFFFFD166).withOpacity(0.7),
+                        color: AppConfig.lastResultAccentColor(
+                          isDark,
+                        ).withOpacity(0.85),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       result.title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
-                        color: Color(0xFF7A8499),
+                        color: AppConfig.lastResultMutedText(isDark),
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       result.rank == null ? '—' : 'Rank #${result.rank}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -1,
-                        color: Color(0xFFFFD166),
+                        color: AppConfig.lastResultAccentColor(isDark),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'out of ${result.totalParticipants} participants · '
                       '${formatHistoryDate(result.completedAt)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF7A8499),
+                        color: AppConfig.lastResultMutedText(isDark),
                       ),
                     ),
                   ],
@@ -852,9 +943,9 @@ class _LastResultCard extends StatelessWidget {
                 height: 64,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFFFFD166).withOpacity(0.1),
+                  color: AppConfig.accentGold.withOpacity(0.1),
                   border: Border.all(
-                    color: const Color(0xFFFFD166).withOpacity(0.2),
+                    color: AppConfig.accentGold.withOpacity(0.2),
                     width: 1.5,
                   ),
                 ),
@@ -864,6 +955,58 @@ class _LastResultCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Show More — reveals the next page of upcoming quizzes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ShowMoreButton extends StatelessWidget {
+  final bool isDark;
+  final int remaining;
+  final int pageSize;
+  final VoidCallback onTap;
+
+  const _ShowMoreButton({
+    required this.isDark,
+    required this.remaining,
+    required this.pageSize,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppConfig.accentOnSurface(isDark, AppConfig.primaryColor);
+    final nextBatch = remaining < pageSize ? remaining : pageSize;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: AppConfig.cardColor(isDark),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppConfig.subtleOverlay(isDark)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Show $nextBatch more',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: accent,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: accent),
+          ],
         ),
       ),
     );
@@ -891,21 +1034,17 @@ class _EmptyState extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161B26) : Colors.white,
+        color: AppConfig.cardColor(isDark),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark
-              ? const Color(0xFFFFFFFF).withOpacity(0.06)
-              : const Color(0xFF000000).withOpacity(0.06),
+              ? AppConfig.whiteColor.withOpacity(0.06)
+              : AppConfig.blackColor.withOpacity(0.06),
         ),
       ),
       child: Column(
         children: [
-          Icon(
-            icon,
-            size: 36,
-            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
-          ),
+          Icon(icon, size: 36, color: AppConfig.mutedTextColor(isDark)),
           const SizedBox(height: 12),
           Text(
             message,
@@ -913,7 +1052,7 @@ class _EmptyState extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               height: 1.5,
-              color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+              color: AppConfig.mutedTextColor(isDark),
             ),
           ),
         ],

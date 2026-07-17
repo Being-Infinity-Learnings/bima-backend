@@ -348,7 +348,7 @@ async function removeGroupFromQuiz(quizId, groupId) {
 
 /** Get quizzes that the user can access */
 async function getMyQuizzes(user) {
-  return prisma.quiz.findMany({
+  const quizzes = await prisma.quiz.findMany({
     where: {
       status: {
         in: ["SCHEDULED", "LIVE"],
@@ -399,6 +399,36 @@ async function getMyQuizzes(user) {
       scheduledStartTime: "asc",
     },
   });
+
+  // For LIVE quizzes, attach the current runtime phase (WAITING / LOBBY /
+  // QUESTION / LEADERBOARD / RESULTS) so the home screen can tell the
+  // difference between "lobby is open, still counting down" and
+  // "quiz is actually in progress" without a separate round-trip.
+  return Promise.all(
+    quizzes.map(async (quiz) => {
+      if (quiz.status !== "LIVE") {
+        return { ...quiz, runtime: null };
+      }
+
+      const runtime = await runtimeManager.getRuntimeSnapshot(quiz.id);
+
+      return {
+        ...quiz,
+
+        runtime: runtime
+          ? {
+              phase: runtime.phase,
+
+              remainingTime: runtime.phaseEndsAt
+                ? Math.max(runtime.phaseEndsAt.getTime() - Date.now(), 0)
+                : null,
+              phaseStartedAt: runtime.phaseStartedAt?.toISOString() ?? null,
+              phaseEndsAt: runtime.phaseEndsAt?.toISOString() ?? null,
+            }
+          : null,
+      };
+    }),
+  );
 }
 
 async function getMyQuizById(quizId, user) {

@@ -57,7 +57,7 @@ class ProfileScreen extends ConsumerWidget {
                         fontSize: 26,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.5,
-                        color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                        color: AppConfig.bodyTextColor(isDark),
                       ),
                     ),
 
@@ -68,12 +68,10 @@ class ProfileScreen extends ConsumerWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF161B26) : Colors.white,
+                        color: AppConfig.cardColor(isDark),
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
-                          color: isDark
-                              ? const Color(0xFFFFFFFF).withOpacity(0.06)
-                              : const Color(0xFF000000).withOpacity(0.06),
+                          color: AppConfig.borderColor(isDark),
                         ),
                       ),
                       child: Row(
@@ -85,15 +83,16 @@ class ProfileScreen extends ConsumerWidget {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: const LinearGradient(
-                                colors: [Color(0xFFC8FF57), Color(0xFF8AE600)],
+                                colors: [
+                                  AppConfig.accentLime,
+                                  AppConfig.accentLimeDeep,
+                                ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(
-                                    0xFFC8FF57,
-                                  ).withOpacity(0.25),
+                                  color: AppConfig.accentLime.withOpacity(0.25),
                                   blurRadius: 16,
                                   offset: const Offset(0, 4),
                                 ),
@@ -105,7 +104,7 @@ class ProfileScreen extends ConsumerWidget {
                                 style: const TextStyle(
                                   fontSize: 26,
                                   fontWeight: FontWeight.w800,
-                                  color: Color(0xFF0C0E14),
+                                  color: AppConfig.bodyTextLight,
                                 ),
                               ),
                             ),
@@ -123,9 +122,7 @@ class ProfileScreen extends ConsumerWidget {
                                     fontSize: 18,
                                     fontWeight: FontWeight.w800,
                                     letterSpacing: -0.3,
-                                    color: isDark
-                                        ? Colors.white
-                                        : const Color(0xFF0C0E14),
+                                    color: AppConfig.bodyTextColor(isDark),
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -136,9 +133,9 @@ class ProfileScreen extends ConsumerWidget {
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFFC8FF57,
-                                    ).withOpacity(0.12),
+                                    color: AppConfig.accentLime.withOpacity(
+                                      0.12,
+                                    ),
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Text(
@@ -147,7 +144,7 @@ class ProfileScreen extends ConsumerWidget {
                                       fontSize: 10,
                                       fontWeight: FontWeight.w700,
                                       letterSpacing: 0.8,
-                                      color: Color(0xFFC8FF57),
+                                      color: AppConfig.accentLime,
                                     ),
                                   ),
                                 ),
@@ -168,12 +165,10 @@ class ProfileScreen extends ConsumerWidget {
                     // ── Info tiles ───────────────────────────────────────
                     Container(
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF161B26) : Colors.white,
+                        color: AppConfig.cardColor(isDark),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: isDark
-                              ? const Color(0xFFFFFFFF).withOpacity(0.06)
-                              : const Color(0xFF000000).withOpacity(0.06),
+                          color: AppConfig.borderColor(isDark),
                         ),
                       ),
                       child: Column(
@@ -181,7 +176,7 @@ class ProfileScreen extends ConsumerWidget {
                           _InfoTile(
                             isDark: isDark,
                             icon: Icons.email_outlined,
-                            iconColor: const Color(0xFF6C8EFF),
+                            iconColor: AppConfig.accentBlue,
                             label: 'Email',
                             value: user.email ?? '-',
                             isLast: false,
@@ -189,7 +184,7 @@ class ProfileScreen extends ConsumerWidget {
                           _InfoTile(
                             isDark: isDark,
                             icon: Icons.phone_outlined,
-                            iconColor: const Color(0xFFC8FF57),
+                            iconColor: AppConfig.accentLime,
                             label: 'Phone',
                             value: user.phone ?? '-',
                             isLast: false,
@@ -197,7 +192,7 @@ class ProfileScreen extends ConsumerWidget {
                           _InfoTile(
                             isDark: isDark,
                             icon: Icons.school_outlined,
-                            iconColor: const Color(0xFFFFD166),
+                            iconColor: AppConfig.accentGold,
                             label: 'College',
                             value: user.collegeName,
                             isLast: false,
@@ -205,7 +200,7 @@ class ProfileScreen extends ConsumerWidget {
                           _InfoTile(
                             isDark: isDark,
                             icon: Icons.badge_outlined,
-                            iconColor: const Color(0xFFFF6B6B),
+                            iconColor: AppConfig.accentCoral,
                             label: 'Roll Number',
                             value: user.rollNumber,
                             isLast: false,
@@ -213,7 +208,7 @@ class ProfileScreen extends ConsumerWidget {
                           _InfoTile(
                             isDark: isDark,
                             icon: Icons.person_outline,
-                            iconColor: const Color(0xFF6C8EFF),
+                            iconColor: AppConfig.accentBlue,
                             label: 'Gender',
                             value: user.gender,
                             isLast: true,
@@ -234,7 +229,7 @@ class ProfileScreen extends ConsumerWidget {
                       isDark: isDark,
                       icon: Icons.edit_outlined,
                       label: 'Edit Profile',
-                      iconColor: const Color(0xFFC8FF57),
+                      iconColor: AppConfig.accentLime,
                       onTap: () {
                         Navigator.push(
                           context,
@@ -252,7 +247,7 @@ class ProfileScreen extends ConsumerWidget {
                       isDark: isDark,
                       icon: Icons.logout_rounded,
                       label: 'Log Out',
-                      iconColor: const Color(0xFFFF6B6B),
+                      iconColor: AppConfig.accentCoral,
                       isDestructive: true,
                       onTap: () async {
                         final confirmed = await showConfirmationSheet(
@@ -335,9 +330,7 @@ class _InfoTile extends StatelessWidget {
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.3,
-                        color: isDark
-                            ? const Color(0xFF7A8499)
-                            : const Color(0xFF9CA3AF),
+                        color: AppConfig.mutedTextColor(isDark),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -346,7 +339,7 @@ class _InfoTile extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                        color: AppConfig.bodyTextColor(isDark),
                       ),
                     ),
                   ],
@@ -361,8 +354,8 @@ class _InfoTile extends StatelessWidget {
             indent: 66,
             endIndent: 16,
             color: isDark
-                ? const Color(0xFFFFFFFF).withOpacity(0.06)
-                : const Color(0xFF000000).withOpacity(0.06),
+                ? AppConfig.whiteColor.withOpacity(0.06)
+                : AppConfig.blackColor.withOpacity(0.06),
           ),
       ],
     );
@@ -400,21 +393,19 @@ class _ActionButton extends StatelessWidget {
           color: isDestructive
               ? (isDark
                     ? Color.alphaBlend(
-                        const Color(0xFFFF6B6B).withOpacity(0.05),
-                        const Color(0xFF161B26),
+                        AppConfig.errorColor.withOpacity(0.05),
+                        AppConfig.darkSurfaceElevated,
                       )
                     : Color.alphaBlend(
-                        const Color(0xFFFF6B6B).withOpacity(0.04),
-                        Colors.white,
+                        AppConfig.errorColor.withOpacity(0.04),
+                        AppConfig.whiteColor,
                       ))
-              : (isDark ? const Color(0xFF161B26) : Colors.white),
+              : (isDark ? AppConfig.darkSurfaceElevated : AppConfig.whiteColor),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isDestructive
-                ? const Color(0xFFFF6B6B).withOpacity(isDark ? 0.15 : 0.18)
-                : (isDark
-                      ? const Color(0xFFFFFFFF).withOpacity(0.06)
-                      : const Color(0xFF000000).withOpacity(0.06)),
+                ? AppConfig.errorColor.withOpacity(isDark ? 0.15 : 0.18)
+                : (AppConfig.borderColor(isDark)),
           ),
         ),
         child: Row(
@@ -435,15 +426,15 @@ class _ActionButton extends StatelessWidget {
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: isDestructive
-                    ? const Color(0xFFFF6B6B)
-                    : (isDark ? Colors.white : const Color(0xFF0C0E14)),
+                    ? AppConfig.errorColor
+                    : AppConfig.bodyTextColor(isDark),
               ),
             ),
             const Spacer(),
             Icon(
               Icons.chevron_right_rounded,
               size: 20,
-              color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+              color: AppConfig.mutedTextColor(isDark),
             ),
           ],
         ),
@@ -470,7 +461,7 @@ class _SectionLabel extends StatelessWidget {
         fontSize: 11,
         fontWeight: FontWeight.w700,
         letterSpacing: 1.4,
-        color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+        color: AppConfig.mutedTextColor(isDark),
       ),
     );
   }

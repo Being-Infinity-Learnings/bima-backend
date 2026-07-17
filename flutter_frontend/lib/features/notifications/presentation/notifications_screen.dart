@@ -541,7 +541,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppConfig.primaryColor,
-                            foregroundColor: Colors.black,
+                            foregroundColor: AppConfig.blackColor,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -759,12 +759,12 @@ class _FilterIconButton extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF161B26) : Colors.white,
+              color: AppConfig.cardColor(isDark),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isDark
-                    ? Colors.white.withOpacity(0.06)
-                    : Colors.black.withOpacity(0.06),
+                    ? AppConfig.whiteColor.withOpacity(0.06)
+                    : AppConfig.blackColor.withOpacity(0.06),
               ),
             ),
             child: Icon(
@@ -814,13 +814,9 @@ class _RefreshButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B26) : Colors.white,
+          color: AppConfig.cardColor(isDark),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withOpacity(0.06)
-                : Colors.black.withOpacity(0.06),
-          ),
+          border: Border.all(color: AppConfig.borderColor(isDark)),
         ),
         child: isLoading
             ? const SizedBox(
@@ -887,14 +883,16 @@ class _TypeFilterRow extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isSelected
                     ? accent.withOpacity(0.15)
-                    : (isDark ? const Color(0xFF161B26) : Colors.white),
+                    : (isDark
+                          ? AppConfig.darkSurfaceElevated
+                          : AppConfig.whiteColor),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: isSelected
                       ? accent.withOpacity(0.6)
                       : (isDark
-                            ? Colors.white.withOpacity(0.08)
-                            : Colors.black.withOpacity(0.08)),
+                            ? AppConfig.whiteColor.withOpacity(0.08)
+                            : AppConfig.blackColor.withOpacity(0.08)),
                 ),
               ),
               child: Text(
@@ -1000,13 +998,11 @@ class _DatePickerRow extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF232733) : const Color(0xFFF7F8FC),
+          color: isDark
+              ? AppConfig.darkInputFillColor
+              : AppConfig.scaffoldLight,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withOpacity(0.06)
-                : Colors.black.withOpacity(0.06),
-          ),
+          border: Border.all(color: AppConfig.borderColor(isDark)),
         ),
         child: Row(
           children: [
@@ -1095,7 +1091,7 @@ class _LoadMoreRow extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF161B26) : Colors.white,
+                color: AppConfig.cardColor(isDark),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
                   color: AppConfig.primaryColor.withOpacity(0.4),
@@ -1268,9 +1264,7 @@ class _NotifCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final meta = notif.type;
     final cardBg = AppConfig.cardColor(isDark);
-    final borderColor = isDark
-        ? Colors.white.withOpacity(0.06)
-        : Colors.black.withOpacity(0.06);
+    final borderColor = AppConfig.borderColor(isDark);
 
     return Container(
       decoration: BoxDecoration(

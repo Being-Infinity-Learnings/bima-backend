@@ -70,9 +70,7 @@ class WaitingApprovalScreen extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(28),
                         boxShadow: [
                           BoxShadow(
-                            color: isDark
-                                ? Colors.black.withValues(alpha: 0.15)
-                                : Colors.black.withValues(alpha: 0.04),
+                            color: AppConfig.shadowColor(isDark),
                             blurRadius: 30,
                             offset: const Offset(0, 10),
                           ),
@@ -86,13 +84,13 @@ class WaitingApprovalScreen extends ConsumerWidget {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: isDark
-                                  ? const Color(0xFF1B3A24)
-                                  : const Color(0xFFE8F5E9),
+                                  ? AppConfig.approvalBadgeDark
+                                  : AppConfig.successLightSurface,
                             ),
                             child: const Icon(
                               Icons.check_circle_rounded,
                               size: 42,
-                              color: Color(0xFF22C55E),
+                              color: AppConfig.successColor,
                             ),
                           ),
 

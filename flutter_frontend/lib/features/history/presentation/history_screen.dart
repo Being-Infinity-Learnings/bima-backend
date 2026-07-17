@@ -28,7 +28,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   final List<HistoryResult> _results = [];
   int _page = 0;
   int _total = 0;
-  bool _hasMore = true;  
+  bool _hasMore = true;
   bool _isLoadingFirstPage = true;
   bool _isLoadingMore = false;
   String? _error;
@@ -141,7 +141,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         fontSize: 26,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.5,
-                        color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                        color: AppConfig.bodyTextColor(isDark),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -153,8 +153,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: isDark
-                            ? const Color(0xFF7A8499)
-                            : const Color(0xFF6B7280),
+                            ? AppConfig.mutedTextColor(isDark)
+                            : AppConfig.mutedTextSecondary,
                       ),
                     ),
                   ],
@@ -225,7 +225,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppConfig.transparentColor,
       builder: (_) => _ResultDetailSheet(isDark: isDark, result: result),
     );
   }
@@ -248,7 +248,7 @@ class _EmptyState extends StatelessWidget {
           Icon(
             Icons.bar_chart_outlined,
             size: 48,
-            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+            color: AppConfig.mutedTextColor(isDark),
           ),
           const SizedBox(height: 16),
           Text(
@@ -257,7 +257,7 @@ class _EmptyState extends StatelessWidget {
             style: TextStyle(
               fontSize: 15,
               height: 1.5,
-              color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+              color: AppConfig.mutedTextColor(isDark),
             ),
           ),
         ],
@@ -286,7 +286,7 @@ class _ErrorState extends StatelessWidget {
           Icon(
             Icons.error_outline_rounded,
             size: 48,
-            color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+            color: AppConfig.mutedTextColor(isDark),
           ),
           const SizedBox(height: 16),
           Padding(
@@ -297,9 +297,7 @@ class _ErrorState extends StatelessWidget {
               style: TextStyle(
                 fontSize: 15,
                 height: 1.5,
-                color: isDark
-                    ? const Color(0xFF7A8499)
-                    : const Color(0xFF9CA3AF),
+                color: AppConfig.mutedTextColor(isDark),
               ),
             ),
           ),
@@ -357,9 +355,7 @@ class _LoadMoreFooter extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
-                color: isDark
-                    ? const Color(0xFF7A8499)
-                    : const Color(0xFF9CA3AF),
+                color: AppConfig.mutedTextColor(isDark),
               ),
             ),
             const SizedBox(height: 8),
@@ -367,11 +363,11 @@ class _LoadMoreFooter extends StatelessWidget {
           OutlinedButton(
             onPressed: onPressed,
             style: OutlinedButton.styleFrom(
-              foregroundColor: isDark ? Colors.white : const Color(0xFF0C0E14),
+              foregroundColor: AppConfig.bodyTextColor(isDark),
               side: BorderSide(
                 color: isDark
-                    ? const Color(0xFFFFFFFF).withOpacity(0.12)
-                    : const Color(0xFF000000).withOpacity(0.12),
+                    ? AppConfig.whiteColor.withOpacity(0.12)
+                    : AppConfig.blackColor.withOpacity(0.12),
               ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -406,11 +402,11 @@ class _ResultCard extends StatelessWidget {
 
   Color get _rankColor {
     final rank = result.rank;
-    if (rank == null) return const Color(0xFF7A8499);
-    if (rank == 1) return const Color(0xFFFFD166);
-    if (rank <= 3) return const Color(0xFFC8FF57);
-    if (rank <= 10) return const Color(0xFF6C8EFF);
-    return const Color(0xFF7A8499);
+    if (rank == null) return AppConfig.mutedTextColor(isDark);
+    if (rank == 1) return AppConfig.rankGold;
+    if (rank <= 3) return AppConfig.accentLime;
+    if (rank <= 10) return AppConfig.accentBlue;
+    return AppConfig.mutedTextColor(isDark);
   }
 
   String get _rankLabel {
@@ -428,12 +424,12 @@ class _ResultCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B26) : Colors.white,
+          color: isDark ? AppConfig.darkSurfaceElevated : AppConfig.whiteColor,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isDark
-                ? const Color(0xFFFFFFFF).withOpacity(0.06)
-                : const Color(0xFF000000).withOpacity(0.06),
+                ? AppConfig.whiteColor.withOpacity(0.06)
+                : AppConfig.blackColor.withOpacity(0.06),
           ),
         ),
         child: Padding(
@@ -458,7 +454,7 @@ class _ResultCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: (result.rank ?? 99) <= 3 ? 22 : 16,
                       fontWeight: FontWeight.w800,
-                      color: _rankColor,
+                      color: AppConfig.accentOnSurface(isDark, _rankColor),
                     ),
                   ),
                 ),
@@ -476,7 +472,7 @@ class _ResultCard extends StatelessWidget {
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.2,
-                        color: isDark ? Colors.white : const Color(0xFF0C0E14),
+                        color: AppConfig.bodyTextColor(isDark),
                       ),
                     ),
 
@@ -487,9 +483,7 @@ class _ResultCard extends StatelessWidget {
                         Icon(
                           Icons.calendar_today_outlined,
                           size: 12,
-                          color: isDark
-                              ? const Color(0xFF7A8499)
-                              : const Color(0xFF9CA3AF),
+                          color: AppConfig.mutedTextColor(isDark),
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -497,18 +491,14 @@ class _ResultCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
-                            color: isDark
-                                ? const Color(0xFF7A8499)
-                                : const Color(0xFF6B7280),
+                            color: AppConfig.mutedTextColor(isDark),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Icon(
                           Icons.people_outline_rounded,
                           size: 12,
-                          color: isDark
-                              ? const Color(0xFF7A8499)
-                              : const Color(0xFF9CA3AF),
+                          color: AppConfig.mutedTextColor(isDark),
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -516,9 +506,7 @@ class _ResultCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
-                            color: isDark
-                                ? const Color(0xFF7A8499)
-                                : const Color(0xFF6B7280),
+                            color: AppConfig.mutedTextColor(isDark),
                           ),
                         ),
                       ],
@@ -541,9 +529,7 @@ class _ResultCard extends StatelessWidget {
               Icon(
                 Icons.chevron_right_rounded,
                 size: 20,
-                color: isDark
-                    ? const Color(0xFF7A8499)
-                    : const Color(0xFF9CA3AF),
+                color: AppConfig.mutedTextColor(isDark),
               ),
             ],
           ),
@@ -584,9 +570,7 @@ class _ScoreBar extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: isDark
-                    ? const Color(0xFF7A8499)
-                    : const Color(0xFF9CA3AF),
+                color: AppConfig.mutedTextColor(isDark),
               ),
             ),
             Text(
@@ -594,7 +578,7 @@ class _ScoreBar extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: rankColor,
+                color: AppConfig.accentOnSurface(isDark, rankColor),
               ),
             ),
           ],
@@ -606,9 +590,11 @@ class _ScoreBar extends StatelessWidget {
             value: fraction,
             minHeight: 5,
             backgroundColor: isDark
-                ? const Color(0xFFFFFFFF).withOpacity(0.07)
-                : const Color(0xFF000000).withOpacity(0.07),
-            valueColor: AlwaysStoppedAnimation<Color>(rankColor),
+                ? AppConfig.whiteColor.withOpacity(0.07)
+                : AppConfig.blackColor.withOpacity(0.07),
+            valueColor: AlwaysStoppedAnimation<Color>(
+              AppConfig.accentOnSurface(isDark, rankColor),
+            ),
           ),
         ),
       ],
@@ -628,16 +614,18 @@ class _ResultDetailSheet extends StatelessWidget {
 
   Color get _rankColor {
     final rank = result.rank;
-    if (rank == null) return const Color(0xFF7A8499);
-    if (rank == 1) return const Color(0xFFFFD166);
-    if (rank <= 3) return const Color(0xFFC8FF57);
-    if (rank <= 10) return const Color(0xFF6C8EFF);
-    return const Color(0xFF7A8499);
+    if (rank == null) return AppConfig.mutedTextColor(isDark);
+    if (rank == 1) return AppConfig.rankGold;
+    if (rank <= 3) return AppConfig.accentLime;
+    if (rank <= 10) return AppConfig.accentBlue;
+    return AppConfig.mutedTextColor(isDark);
   }
 
   @override
   Widget build(BuildContext context) {
-    final bgColor = isDark ? const Color(0xFF161B26) : Colors.white;
+    final bgColor = isDark
+        ? AppConfig.darkSurfaceElevated
+        : AppConfig.whiteColor;
     final rankColor = _rankColor;
 
     return Container(
@@ -656,9 +644,7 @@ class _ResultDetailSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFFFFFFFF).withOpacity(0.12)
-                    : const Color(0xFF000000).withOpacity(0.1),
+                color: AppConfig.strongOverlay(isDark),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -671,7 +657,7 @@ class _ResultDetailSheet extends StatelessWidget {
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
-              color: isDark ? Colors.white : const Color(0xFF0C0E14),
+              color: AppConfig.bodyTextColor(isDark),
             ),
           ),
 
@@ -681,7 +667,7 @@ class _ResultDetailSheet extends StatelessWidget {
             formatHistoryDate(result.completedAt),
             style: TextStyle(
               fontSize: 14,
-              color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+              color: AppConfig.mutedTextColor(isDark),
             ),
           ),
 
@@ -701,7 +687,7 @@ class _ResultDetailSheet extends StatelessWidget {
                 isDark: isDark,
                 label: 'Total Players',
                 value: '${result.totalParticipants}',
-                color: const Color(0xFF6C8EFF),
+                color: AppConfig.accentBlue,
               ),
             ],
           ),
@@ -714,14 +700,14 @@ class _ResultDetailSheet extends StatelessWidget {
                 isDark: isDark,
                 label: 'Score',
                 value: '${result.score} pts',
-                color: const Color(0xFFC8FF57),
+                color: AppConfig.accentLime,
               ),
               const SizedBox(width: 12),
               _DetailStat(
                 isDark: isDark,
                 label: 'Questions',
                 value: '${result.totalQuestions}',
-                color: const Color(0xFFFFD166),
+                color: AppConfig.accentGold,
               ),
             ],
           ),
@@ -733,8 +719,8 @@ class _ResultDetailSheet extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: isDark
-                  ? const Color(0xFFFFFFFF).withOpacity(0.03)
-                  : const Color(0xFF000000).withOpacity(0.03),
+                  ? AppConfig.whiteColor.withOpacity(0.03)
+                  : AppConfig.blackColor.withOpacity(0.03),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Row(
@@ -742,9 +728,7 @@ class _ResultDetailSheet extends StatelessWidget {
                 Icon(
                   Icons.lock_outline_rounded,
                   size: 16,
-                  color: isDark
-                      ? const Color(0xFF7A8499)
-                      : const Color(0xFF9CA3AF),
+                  color: AppConfig.mutedTextColor(isDark),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -753,9 +737,7 @@ class _ResultDetailSheet extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.5,
-                      color: isDark
-                          ? const Color(0xFF7A8499)
-                          : const Color(0xFF9CA3AF),
+                      color: AppConfig.mutedTextColor(isDark),
                     ),
                   ),
                 ),
@@ -799,9 +781,7 @@ class _DetailStat extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: isDark
-                    ? const Color(0xFF7A8499)
-                    : const Color(0xFF9CA3AF),
+                color: AppConfig.mutedTextColor(isDark),
               ),
             ),
             const SizedBox(height: 6),
@@ -810,7 +790,7 @@ class _DetailStat extends StatelessWidget {
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w800,
-                color: color,
+                color: AppConfig.accentOnSurface(isDark, color),
               ),
             ),
           ],
@@ -837,7 +817,7 @@ class _SectionLabel extends StatelessWidget {
         fontSize: 11,
         fontWeight: FontWeight.w700,
         letterSpacing: 1.4,
-        color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+        color: AppConfig.mutedTextColor(isDark),
       ),
     );
   }

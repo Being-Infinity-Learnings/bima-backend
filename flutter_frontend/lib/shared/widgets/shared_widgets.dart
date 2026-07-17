@@ -63,7 +63,21 @@ class PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    // `colorScheme.onPrimary` is generated from the Material3 tonal palette
+    // and doesn't always land with enough contrast against `colorScheme
+    // .primary` for this brand's seed color — the loading spinner and label
+    // were nearly invisible on the button, so users couldn't tell
+    // verification was happening. Pick a guaranteed-legible color directly
+    // from the button's actual background brightness instead.
+    final onButtonColor =
+        ThemeData.estimateBrightnessForColor(cs.primary) == Brightness.dark
+        ? AppConfig.whiteColor
+        : AppConfig.bodyTextLight;
+
     return ElevatedButton(
+      style: ElevatedButton.styleFrom(foregroundColor: onButtonColor),
       onPressed: loading ? null : onPressed,
       child: loading
           ? SizedBox(
@@ -71,7 +85,7 @@ class PrimaryButton extends StatelessWidget {
               height: 22,
               child: CircularProgressIndicator(
                 strokeWidth: 2.5,
-                color: Theme.of(context).colorScheme.onPrimary,
+                color: onButtonColor,
               ),
             )
           : icon != null
@@ -240,13 +254,13 @@ Future<bool?> showConfirmationSheet(
       ? AppConfig.errorColor
       : AppConfig.successColor;
   final Color confirmTextColor = isDestructive
-      ? Colors.white
+      ? AppConfig.whiteColor
       : AppConfig.bodyTextLight;
 
   return showModalBottomSheet<bool>(
     context: context,
-    backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withOpacity(0.5),
+    backgroundColor: AppConfig.transparentColor,
+    barrierColor: AppConfig.blackColor.withOpacity(0.5),
     isScrollControlled: true,
     builder: (ctx) {
       return SafeArea(
@@ -254,13 +268,11 @@ Future<bool?> showConfirmationSheet(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Container(
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF161B26) : Colors.white,
+              color: isDark
+                  ? AppConfig.darkSurfaceElevated
+                  : AppConfig.whiteColor,
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: isDark
-                    ? const Color(0xFFFFFFFF).withOpacity(0.07)
-                    : const Color(0xFF000000).withOpacity(0.06),
-              ),
+              border: Border.all(color: AppConfig.borderColor(isDark)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -272,9 +284,7 @@ Future<bool?> showConfirmationSheet(
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFFFFFFFF).withOpacity(0.12)
-                          : const Color(0xFF000000).withOpacity(0.10),
+                      color: AppConfig.strongBorderColor(isDark),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -304,9 +314,7 @@ Future<bool?> showConfirmationSheet(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.3,
-                          color: isDark
-                              ? Colors.white
-                              : const Color(0xFF0C0E14),
+                          color: AppConfig.bodyTextColor(isDark),
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -318,9 +326,7 @@ Future<bool?> showConfirmationSheet(
                         style: TextStyle(
                           fontSize: 14,
                           height: 1.5,
-                          color: isDark
-                              ? const Color(0xFF7A8499)
-                              : const Color(0xFF6B7280),
+                          color: AppConfig.mutedTextColor(isDark),
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -339,8 +345,8 @@ Future<bool?> showConfirmationSheet(
                                 ? null
                                 : const LinearGradient(
                                     colors: [
-                                      Color(0xFFC8FF57),
-                                      Color(0xFF8AE600),
+                                      AppConfig.accentLime,
+                                      AppConfig.accentLimeDeep,
                                     ],
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
@@ -377,8 +383,8 @@ Future<bool?> showConfirmationSheet(
                           padding: const EdgeInsets.symmetric(vertical: 15),
                           decoration: BoxDecoration(
                             color: isDark
-                                ? const Color(0xFFFFFFFF).withOpacity(0.05)
-                                : const Color(0xFF000000).withOpacity(0.04),
+                                ? AppConfig.whiteColor.withOpacity(0.05)
+                                : AppConfig.blackColor.withOpacity(0.04),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Center(
@@ -387,9 +393,7 @@ Future<bool?> showConfirmationSheet(
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
-                                color: isDark
-                                    ? const Color(0xFF7A8499)
-                                    : const Color(0xFF6B7280),
+                                color: AppConfig.mutedTextColor(isDark),
                               ),
                             ),
                           ),

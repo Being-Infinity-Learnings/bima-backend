@@ -122,7 +122,10 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
     final quizAsync = ref.watch(myQuizDetailProvider(widget.quizId));
     final quizState = ref.watch(quizRuntimeControllerProvider(widget.quizId));
 
-    const accent = AppConfig.primaryColor;
+    // `primaryColor` (lime) is tuned for dark backgrounds and reads as
+    // near-invisible text/ring color on light surfaces, so it's routed
+    // through `accentOnSurface` to get a legible, theme-aware variant.
+    final accent = AppConfig.accentOnSurface(isDark, AppConfig.primaryColor);
 
     final phaseEndsAt =
         quizState.runtime?.phaseEndsAt ?? quizAsync.value?.runtime?.phaseEndsAt;
@@ -194,7 +197,7 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
                                     width: 1,
                                   ),
                                 ),
-                                child: const Text(
+                                child: Text(
                                   'LIVE QUIZ',
                                   style: TextStyle(
                                     fontSize: 11,
@@ -238,9 +241,7 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
                                   SocketConnectionStatus.connected)
                                 Column(
                                   children: [
-                                    const CircularProgressIndicator(
-                                      color: AppConfig.primaryColor,
-                                    ),
+                                    CircularProgressIndicator(color: accent),
                                     const SizedBox(height: 16),
                                     Text(
                                       'Connecting to the quiz…',
@@ -271,14 +272,20 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
                                     icon: Icons.help_outline_rounded,
                                     label:
                                         '${quizAsync.value?.questionCount ?? "…"} Questions',
-                                    color: AppConfig.quizAnswerColors[0],
+                                    color: AppConfig.accentOnSurface(
+                                      isDark,
+                                      AppConfig.quizAnswerColors[0],
+                                    ),
                                     isDark: isDark,
                                   ),
                                   const SizedBox(width: 12),
                                   _InfoChip(
                                     icon: Icons.timer_outlined,
                                     label: 'Speed scoring',
-                                    color: AppConfig.warningColor,
+                                    color: AppConfig.accentOnSurface(
+                                      isDark,
+                                      AppConfig.warningColor,
+                                    ),
                                     isDark: isDark,
                                   ),
                                 ],
@@ -533,14 +540,14 @@ class _ParticipantCounter extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-          Text(
-            count == 1 ? 'player in the lobby' : 'players in the lobby',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: AppConfig.mutedTextColor(isDark),
-            ),
+        Text(
+          count == 1 ? 'player in the lobby' : 'players in the lobby',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: AppConfig.mutedTextColor(isDark),
           ),
+        ),
       ],
     );
   }

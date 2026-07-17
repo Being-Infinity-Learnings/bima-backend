@@ -5,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dio/dio.dart';
+import '../../../config/app_config.dart';
 import '../../../core/network/api_client.dart';
 
 class FcmService {
@@ -44,7 +45,8 @@ class FcmService {
     // notification arrives.
     final androidPlugin = _localNotifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+          AndroidFlutterLocalNotificationsPlugin
+        >();
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
@@ -96,7 +98,9 @@ class FcmService {
     try {
       final token = await _messaging.getToken();
       if (token != null) {
-        await _callBackend('DELETE', '/notifications/fcm-token', {'token': token});
+        await _callBackend('DELETE', '/notifications/fcm-token', {
+          'token': token,
+        });
       }
       await _messaging.deleteToken();
       _initialized = false;
@@ -140,19 +144,30 @@ class FcmService {
 
       final headers = {'Authorization': 'Bearer $idToken'};
       if (method == 'POST') {
-        await ApiClient.dio.post(path, data: body, options: Options(headers: headers));
+        await ApiClient.dio.post(
+          path,
+          data: body,
+          options: Options(headers: headers),
+        );
       } else if (method == 'DELETE') {
-        await ApiClient.dio.delete(path, data: body, options: Options(headers: headers));
+        await ApiClient.dio.delete(
+          path,
+          data: body,
+          options: Options(headers: headers),
+        );
       }
       debugPrint('[FCM] Backend call OK: $method $path');
     } on DioException catch (e) {
-      debugPrint('[FCM] Backend call failed ($path): ${e.response?.statusCode} ${e.response?.data ?? e.message}');
+      debugPrint(
+        '[FCM] Backend call failed ($path): ${e.response?.statusCode} ${e.response?.data ?? e.message}',
+      );
     }
   }
 
   static Future<void> _showLocalNotification(RemoteMessage message) async {
-    final title = message.notification?.title ?? message.data['title'] as String?;
-    final body  = message.notification?.body  ?? message.data['body']  as String?;
+    final title =
+        message.notification?.title ?? message.data['title'] as String?;
+    final body = message.notification?.body ?? message.data['body'] as String?;
     if (title == null && body == null) return;
 
     await _localNotifications.show(
@@ -167,7 +182,7 @@ class FcmService {
           importance: Importance.max,
           priority: Priority.max,
           icon: '@mipmap/ic_launcher',
-          color: Color(0xFFC8FF57),
+          color: AppConfig.accentLime,
           playSound: true,
           enableVibration: true,
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../config/app_config.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../shared/widgets/shared_widgets.dart';
 
@@ -102,14 +103,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             children: [
               Icon(
                 Icons.check_circle_outline_rounded,
-                color: Colors.white,
+                color: AppConfig.whiteColor,
                 size: 18,
               ),
               SizedBox(width: 10),
               Text('Profile updated successfully'),
             ],
           ),
-          backgroundColor: const Color(0xFF22C55E),
+          backgroundColor: AppConfig.successColor,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -163,8 +164,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       },
       child: Scaffold(
         backgroundColor: isDark
-            ? const Color(0xFF0C0E14)
-            : const Color(0xFFF5F6FA),
+            ? AppConfig.bodyTextLight
+            : AppConfig.lightSurfaceAlt,
         body: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -172,11 +173,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               end: Alignment.bottomRight,
               colors: isDark
                   ? [
-                      const Color(0xFF0C0E14),
-                      const Color(0xFF131720),
-                      const Color(0xFF0F1219),
+                      AppConfig.bodyTextLight,
+                      AppConfig.darkSurfaceElevatedAlt,
+                      AppConfig.lightSurfaceAlt3,
                     ]
-                  : [const Color(0xFFF5F6FA), const Color(0xFFEEF0F7)],
+                  : [AppConfig.lightSurfaceAlt, AppConfig.lightSurfaceAlt2],
             ),
           ),
           child: SafeArea(
@@ -197,21 +198,21 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           height: 40,
                           decoration: BoxDecoration(
                             color: isDark
-                                ? const Color(0xFF161B26)
-                                : Colors.white,
+                                ? AppConfig.darkSurfaceElevated
+                                : AppConfig.whiteColor,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: isDark
-                                  ? const Color(0xFFFFFFFF).withOpacity(0.06)
-                                  : const Color(0xFF000000).withOpacity(0.06),
+                                  ? AppConfig.whiteColor.withOpacity(0.06)
+                                  : AppConfig.blackColor.withOpacity(0.06),
                             ),
                           ),
                           child: Icon(
                             Icons.arrow_back_rounded,
                             size: 20,
                             color: isDark
-                                ? Colors.white
-                                : const Color(0xFF0C0E14),
+                                ? AppConfig.whiteColor
+                                : AppConfig.bodyTextLight,
                           ),
                         ),
                       ),
@@ -222,9 +223,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.4,
-                          color: isDark
-                              ? Colors.white
-                              : const Color(0xFF0C0E14),
+                          color: AppConfig.bodyTextColor(isDark),
                         ),
                       ),
 
@@ -235,7 +234,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           width: 7,
                           height: 7,
                           decoration: const BoxDecoration(
-                            color: Color(0xFFC8FF57),
+                            color: AppConfig.accentLime,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -277,7 +276,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                   _FieldRow(
                                     isDark: isDark,
                                     icon: Icons.person_outline,
-                                    iconColor: const Color(0xFFC8FF57),
+                                    iconColor: AppConfig.accentLime,
                                     label: 'Full Name',
                                     child: TextFormField(
                                       controller: _nameCtrl,
@@ -303,7 +302,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                   _FieldRow(
                                     isDark: isDark,
                                     icon: Icons.email_outlined,
-                                    iconColor: const Color(0xFF6C8EFF),
+                                    iconColor: AppConfig.accentBlue,
                                     label: 'Email',
                                     child: TextFormField(
                                       controller: _emailCtrl,
@@ -345,7 +344,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                   _FieldRow(
                                     isDark: isDark,
                                     icon: Icons.school_outlined,
-                                    iconColor: const Color(0xFFFFD166),
+                                    iconColor: AppConfig.accentGold,
                                     label: 'College',
                                     child: TextFormField(
                                       controller: _collegeCtrl,
@@ -366,7 +365,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                   _FieldRow(
                                     isDark: isDark,
                                     icon: Icons.badge_outlined,
-                                    iconColor: const Color(0xFFFF6B6B),
+                                    iconColor: AppConfig.accentCoral,
                                     label: 'Roll Number',
                                     child: TextFormField(
                                       controller: _rollCtrl,
@@ -387,23 +386,21 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                   _FieldRow(
                                     isDark: isDark,
                                     icon: Icons.person_outline,
-                                    iconColor: const Color(0xFF6C8EFF),
+                                    iconColor: AppConfig.accentBlue,
                                     label: 'Gender',
                                     child: DropdownButtonFormField<String>(
                                       value: _selectedGender,
                                       style: _inputStyle(isDark),
                                       dropdownColor: isDark
-                                          ? const Color(0xFF1E2535)
-                                          : Colors.white,
+                                          ? AppConfig.darkSurfaceElevatedAlt
+                                          : AppConfig.whiteColor,
                                       decoration: _inputDecoration(
                                         isDark,
                                         hint: 'Select gender',
                                       ),
                                       icon: Icon(
                                         Icons.keyboard_arrow_down_rounded,
-                                        color: isDark
-                                            ? const Color(0xFF7A8499)
-                                            : const Color(0xFF9CA3AF),
+                                        color: AppConfig.mutedTextColor(isDark),
                                       ),
                                       items: const [
                                         DropdownMenuItem(
@@ -451,16 +448,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                           ? null
                                           : const LinearGradient(
                                               colors: [
-                                                Color(0xFFC8FF57),
-                                                Color(0xFF8AE600),
+                                                AppConfig.accentLime,
+                                                AppConfig.accentLimeDeep,
                                               ],
                                               begin: Alignment.topLeft,
                                               end: Alignment.bottomRight,
                                             ),
                                       color: authState.isLoading
                                           ? (isDark
-                                                ? const Color(0xFF161B26)
-                                                : const Color(0xFFE5E7EB))
+                                                ? AppConfig.darkSurfaceElevated
+                                                : AppConfig.borderLight)
                                           : null,
                                       borderRadius: BorderRadius.circular(16),
                                       boxShadow:
@@ -468,9 +465,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                           ? null
                                           : [
                                               BoxShadow(
-                                                color: const Color(
-                                                  0xFFC8FF57,
-                                                ).withOpacity(0.3),
+                                                color: AppConfig.accentLime
+                                                    .withOpacity(0.3),
                                                 blurRadius: 16,
                                                 offset: const Offset(0, 6),
                                               ),
@@ -483,7 +479,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                               height: 20,
                                               child: CircularProgressIndicator(
                                                 strokeWidth: 2,
-                                                color: Color(0xFF7A8499),
+                                                color: AppConfig.mutedTextDark,
                                               ),
                                             )
                                           : const Text(
@@ -491,7 +487,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                               style: TextStyle(
                                                 fontSize: 15,
                                                 fontWeight: FontWeight.w800,
-                                                color: Color(0xFF0C0E14),
+                                                color: AppConfig.bodyTextLight,
                                                 letterSpacing: -0.2,
                                               ),
                                             ),
@@ -529,13 +525,9 @@ class _InputCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161B26) : Colors.white,
+        color: isDark ? AppConfig.darkSurfaceElevated : AppConfig.whiteColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark
-              ? const Color(0xFFFFFFFF).withOpacity(0.06)
-              : const Color(0xFF000000).withOpacity(0.06),
-        ),
+        border: Border.all(color: AppConfig.borderColor(isDark)),
       ),
       child: Column(children: children),
     );
@@ -592,9 +584,7 @@ class _FieldRow extends StatelessWidget {
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.3,
-                        color: isDark
-                            ? const Color(0xFF7A8499)
-                            : const Color(0xFF9CA3AF),
+                        color: AppConfig.mutedTextColor(isDark),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -610,9 +600,7 @@ class _FieldRow extends StatelessWidget {
             height: 1,
             indent: 66,
             endIndent: 16,
-            color: isDark
-                ? const Color(0xFFFFFFFF).withOpacity(0.06)
-                : const Color(0xFF000000).withOpacity(0.06),
+            color: AppConfig.borderColor(isDark),
           ),
       ],
     );
@@ -626,7 +614,7 @@ class _FieldRow extends StatelessWidget {
 TextStyle _inputStyle(bool isDark) => TextStyle(
   fontSize: 14,
   fontWeight: FontWeight.w600,
-  color: isDark ? Colors.white : const Color(0xFF0C0E14),
+  color: AppConfig.bodyTextColor(isDark),
 );
 
 InputDecoration _inputDecoration(bool isDark, {required String hint}) =>
@@ -636,8 +624,8 @@ InputDecoration _inputDecoration(bool isDark, {required String hint}) =>
         fontSize: 14,
         fontWeight: FontWeight.w400,
         color: isDark
-            ? const Color(0xFF7A8499).withOpacity(0.6)
-            : const Color(0xFF9CA3AF),
+            ? AppConfig.mutedTextDark.withOpacity(0.6)
+            : AppConfig.mutedTextLight,
       ),
       isDense: true,
       contentPadding: EdgeInsets.zero,
@@ -666,7 +654,7 @@ class _SectionLabel extends StatelessWidget {
         fontSize: 11,
         fontWeight: FontWeight.w700,
         letterSpacing: 1.4,
-        color: isDark ? const Color(0xFF7A8499) : const Color(0xFF9CA3AF),
+        color: AppConfig.mutedTextColor(isDark),
       ),
     );
   }
