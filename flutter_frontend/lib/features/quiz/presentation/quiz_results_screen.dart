@@ -262,10 +262,9 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
       yourEntry = _placeholder(leaderboard.length + 1);
     }
 
-    final totalParticipants = math.max(
-      quizState.peakParticipantCount,
-      leaderboard.length,
-    );
+    // Exact participant count, as reported by the backend (leaderboard
+    // size), independent of the top-10-only leaderboard slice above.
+    final totalParticipants = quizState.totalParticipants;
 
     return Scaffold(
       backgroundColor: AppConfig.scaffoldColor(isDark),

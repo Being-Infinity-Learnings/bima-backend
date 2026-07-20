@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -158,18 +157,9 @@ class _QuizLeaderboardScreenState extends ConsumerState<QuizLeaderboardScreen>
     final didNotAnswer = quizState.selectedOptionId == null;
     const isLast = false;
 
-    // `leaderboard` here is the top-10 slice the server sends for display,
-    // so its length is capped at 10 even when more people have joined.
-    // `result?.rank`, on the other hand, is computed against every
-    // registered participant and isn't capped — so on its own
-    // `leaderboard.length` can be smaller than the rank (e.g. "#11 of 10").
-    // Fold in `peakParticipantCount` (same approximation the results
-    // screen uses) and the rank itself so the total shown can never be
-    // less than the rank it's paired with.
-    final totalParticipants = math.max(
-      math.max(quizState.peakParticipantCount, leaderboard.length),
-      result?.rank ?? 0,
-    );
+    // Exact participant count, as reported by the backend (leaderboard
+    // size), independent of the top-10-only leaderboard slice shown below.
+    final totalParticipants = quizState.totalParticipants;
 
     return Scaffold(
       backgroundColor: AppConfig.scaffoldColor(isDark),

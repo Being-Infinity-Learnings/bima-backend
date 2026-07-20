@@ -597,14 +597,18 @@ class RuntimeEngine {
   // Build a leaderboard payload limited to the top N entries.
   async buildLeaderboardPayload(limit = 10) {
     const leaderboard = await this.getLeaderboard();
+    const totalParticipants = await store.leaderboardSize(this.quizId);
     return {
       leaderboard: leaderboard.slice(0, limit),
+      totalParticipants,
     };
   }
 
   async buildResultsPayload() {
+    const totalParticipants = await store.leaderboardSize(this.quizId);
     return {
       leaderboard: await this.getLeaderboard(),
+      totalParticipants,
     };
   }
 
@@ -613,12 +617,15 @@ class RuntimeEngine {
     const results = new Map();
 
     const leaderboard = await this.getLeaderboard();
+    const totalParticipants = await store.leaderboardSize(this.quizId);
 
     for (const entry of leaderboard) {
       results.set(entry.userId, {
         rank: entry.rank,
 
         totalScore: entry.totalScore,
+
+        totalParticipants,
       });
     }
 
@@ -633,6 +640,7 @@ class RuntimeEngine {
 
     const results = new Map();
     const leaderboard = await this.getLeaderboard();
+    const totalParticipants = await store.leaderboardSize(this.quizId);
 
     for (const entry of leaderboard) {
       const submission = await store.getSubmission(this.quizId, entry.userId);
@@ -649,6 +657,8 @@ class RuntimeEngine {
         rank: entry.rank,
 
         correctOptionIds,
+
+        totalParticipants,
       });
     }
 
