@@ -9,6 +9,7 @@ import '../data/quiz_models.dart';
 import '../providers/quiz_providers.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../config/app_config.dart';
+import '../../../shared/widgets/shared_widgets.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -313,6 +314,11 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
           SafeArea(
             child: Column(
               children: [
+                const AppBrandBar(
+                  logoSize: 15,
+                  padding: EdgeInsets.fromLTRB(20, 8, 20, 0),
+                ),
+
                 FadeTransition(
                   opacity: _headerFade,
                   child: SlideTransition(

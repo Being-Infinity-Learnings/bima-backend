@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../data/quiz_models.dart';
 import '../providers/quiz_providers.dart';
 import '../../../config/app_config.dart';
+import '../../../shared/widgets/shared_widgets.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -148,6 +149,11 @@ class _QuizLobbyScreenState extends ConsumerState<QuizLobbyScreen>
           child: SafeArea(
             child: Column(
               children: [
+                const AppBrandBar(
+                  logoSize: 15,
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                ),
+
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: Row(

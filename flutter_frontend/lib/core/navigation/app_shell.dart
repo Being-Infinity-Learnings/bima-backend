@@ -7,6 +7,8 @@ import '../../features/home/presentation/home_screen.dart';
 import '../../features/history/presentation/history_screen.dart';
 import '../../features/notifications/presentation/notifications_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../../shared/widgets/shared_widgets.dart';
+import '../../config/app_config.dart';
 
 // Tracks how many unread notifications have come in since the user last
 // visited the notifications tab. Exposed so the badge can read it.
@@ -85,9 +87,29 @@ class _AppShellState extends ConsumerState<AppShell> {
   Widget build(BuildContext context) {
     final unread = ref.watch(_unreadCountProvider);
     final selectedIndex = ref.watch(selectedTabIndexProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      body: IndexedStack(index: selectedIndex, children: _screens),
+      backgroundColor: AppConfig.scaffoldColor(isDark),
+
+      // The persistent branding strip lives here, above the tab content, so
+      // every tab (Home, History, Notifications, Profile) shows it without
+      // each screen needing its own copy. Each tab screen still draws its
+      // own SafeArea, so the top inset is consumed here and removed below
+      // to avoid double padding.
+      body: Column(
+        children: [
+          SafeArea(bottom: false, child: const AppBrandBar()),
+
+          Expanded(
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              child: IndexedStack(index: selectedIndex, children: _screens),
+            ),
+          ),
+        ],
+      ),
 
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,

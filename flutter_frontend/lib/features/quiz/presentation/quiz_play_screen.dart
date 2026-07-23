@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/quiz_models.dart';
 import '../providers/quiz_providers.dart';
 import '../../../config/app_config.dart';
+import '../../../shared/widgets/shared_widgets.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // How the reveal is synchronized with the server
@@ -308,6 +309,11 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen>
       body: SafeArea(
         child: Column(
           children: [
+            const AppBrandBar(
+              logoSize: 15,
+              padding: EdgeInsets.fromLTRB(20, 8, 20, 0),
+            ),
+
             _HeaderBar(
               current: idx + 1,
               total: totalQ > 0 ? totalQ : (idx + 1),

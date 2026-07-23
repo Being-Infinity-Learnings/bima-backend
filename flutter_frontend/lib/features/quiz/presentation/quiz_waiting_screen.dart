@@ -15,6 +15,7 @@ import 'package:dio/dio.dart';
 import '../data/quiz_models.dart';
 import '../providers/quiz_providers.dart';
 import '../../../config/app_config.dart';
+import '../../../shared/widgets/shared_widgets.dart';
 
 class QuizWaitingScreen extends ConsumerStatefulWidget {
   final String quizId;
@@ -138,6 +139,11 @@ class _QuizWaitingScreenState extends ConsumerState<QuizWaitingScreen>
       body: SafeArea(
         child: Column(
           children: [
+            const AppBrandBar(
+              logoSize: 15,
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            ),
+
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Row(

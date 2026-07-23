@@ -183,6 +183,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           child: SafeArea(
             child: Column(
               children: [
+                const AppBrandBar(
+                  logoSize: 15,
+                  padding: EdgeInsets.fromLTRB(20, 8, 20, 0),
+                ),
+
                 // ── Custom app bar ───────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(

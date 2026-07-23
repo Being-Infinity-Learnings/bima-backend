@@ -46,6 +46,63 @@ class AppBrandWidget extends StatelessWidget {
   }
 }
 
+/// A small, persistent branding strip (logo + app name) meant to sit at the
+/// top of every non-auth screen so the app identity stays present throughout
+/// the app, not just on the auth flow. Kept deliberately compact and muted
+/// so it reads as part of the page chrome rather than a separate banner.
+class AppBrandBar extends StatelessWidget {
+  final double logoSize;
+  final EdgeInsetsGeometry padding;
+  final MainAxisAlignment alignment;
+
+  const AppBrandBar({
+    super.key,
+    this.logoSize = 18,
+    this.padding = const EdgeInsets.fromLTRB(20, 10, 20, 2),
+    this.alignment = MainAxisAlignment.start,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Wrapped in a full-width Align so this always sits top-left even when
+    // the parent Column has the default (center) crossAxisAlignment.
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: padding,
+        child: Row(
+          mainAxisAlignment: alignment,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.asset(
+                AppConfig.logoAsset,
+                width: logoSize,
+                height: logoSize,
+              ),
+            ),
+
+            const SizedBox(width: 7),
+
+            Text(
+              AppConfig.appName,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.1,
+                color: AppConfig.mutedTextColor(isDark),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// A loading button that shows a spinner when [loading] is true.
 class PrimaryButton extends StatelessWidget {
   final String label;
