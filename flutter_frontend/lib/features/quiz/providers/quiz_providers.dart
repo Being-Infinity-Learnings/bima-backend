@@ -61,10 +61,10 @@ class QuizRuntimeState {
   final QuestionResult? myQuestionResult;
   final FinalResult? myFinalResult;
 
-  /// Highest `connectedUsers` count observed (from the LOBBY phase) —
-  /// used as an approximation of "players competed" on the results screen,
-  /// since the leaderboard payload itself is capped at 10 entries.
-  final int peakParticipantCount;
+  /// Exact total participant count for this quiz attempt, as reported by
+  /// the backend (leaderboard size), independent of the fact that only the
+  /// top 10 leaderboard entries are ever sent to the client.
+  final int totalParticipants;
 
   /// Locally selected (not-yet-submitted) option for the current question.
   final String? selectedOptionId;
@@ -82,7 +82,7 @@ class QuizRuntimeState {
     this.leaderboard = const [],
     this.myQuestionResult,
     this.myFinalResult,
-    this.peakParticipantCount = 0,
+    this.totalParticipants = 0,
     this.selectedOptionId,
     this.submissionStatus = SubmissionStatus.none,
     this.submissionError,
@@ -114,7 +114,7 @@ class QuizRuntimeState {
     QuestionResult? myQuestionResult,
     bool clearQuestionResult = false,
     FinalResult? myFinalResult,
-    int? peakParticipantCount,
+    int? totalParticipants,
     String? selectedOptionId,
     bool clearSelectedOptionId = false,
     SubmissionStatus? submissionStatus,
@@ -134,7 +134,7 @@ class QuizRuntimeState {
           ? null
           : (myQuestionResult ?? this.myQuestionResult),
       myFinalResult: myFinalResult ?? this.myFinalResult,
-      peakParticipantCount: peakParticipantCount ?? this.peakParticipantCount,
+      totalParticipants: totalParticipants ?? this.totalParticipants,
       selectedOptionId: clearSelectedOptionId
           ? null
           : (selectedOptionId ?? this.selectedOptionId),
@@ -246,11 +246,6 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
         state = state.copyWith(
           connectionStatus: SocketConnectionStatus.connected,
           runtime: runtime,
-          peakParticipantCount: runtime.connectedUsers != null
-              ? (runtime.connectedUsers! > state.peakParticipantCount
-                    ? runtime.connectedUsers!
-                    : state.peakParticipantCount)
-              : state.peakParticipantCount,
         );
         _resetPerQuestionStateIfNeeded(runtime);
       },
@@ -269,14 +264,7 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
         final runtime = RuntimeState.fromJson(
           data['data'] as Map<String, dynamic>,
         );
-        state = state.copyWith(
-          runtime: runtime,
-          peakParticipantCount: runtime.connectedUsers != null
-              ? (runtime.connectedUsers! > state.peakParticipantCount
-                    ? runtime.connectedUsers!
-                    : state.peakParticipantCount)
-              : state.peakParticipantCount,
-        );
+        state = state.copyWith(runtime: runtime);
         _resetPerQuestionStateIfNeeded(runtime);
       },
       onLeaderboardUpdated: (data) {
@@ -287,21 +275,30 @@ class QuizRuntimeController extends StateNotifier<QuizRuntimeState> {
           leaderboard: list
               .map((e) => LeaderboardEntry.fromJson(e as Map<String, dynamic>))
               .toList(),
+          totalParticipants:
+              (payload?['totalParticipants'] as num?)?.toInt() ??
+              state.totalParticipants,
         );
       },
       onQuestionResults: (data) {
         if (_disposed) return;
         final payload = data['data'] as Map<String, dynamic>?;
         if (payload == null) return;
+        final questionResult = QuestionResult.fromJson(payload);
         state = state.copyWith(
-          myQuestionResult: QuestionResult.fromJson(payload),
+          myQuestionResult: questionResult,
+          totalParticipants: questionResult.totalParticipants,
         );
       },
       onFinalResults: (data) {
         if (_disposed) return;
         final payload = data['data'] as Map<String, dynamic>?;
         if (payload == null) return;
-        state = state.copyWith(myFinalResult: FinalResult.fromJson(payload));
+        final finalResult = FinalResult.fromJson(payload);
+        state = state.copyWith(
+          myFinalResult: finalResult,
+          totalParticipants: finalResult.totalParticipants,
+        );
       },
       onAnswerSubmitted: () {
         if (_disposed) return;

@@ -9,6 +9,7 @@ import '../data/quiz_models.dart';
 import '../providers/quiz_providers.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../config/app_config.dart';
+import '../../../shared/widgets/shared_widgets.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -262,10 +263,9 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
       yourEntry = _placeholder(leaderboard.length + 1);
     }
 
-    final totalParticipants = math.max(
-      quizState.peakParticipantCount,
-      leaderboard.length,
-    );
+    // Exact participant count, as reported by the backend (leaderboard
+    // size), independent of the top-10-only leaderboard slice above.
+    final totalParticipants = quizState.totalParticipants;
 
     return Scaffold(
       backgroundColor: AppConfig.scaffoldColor(isDark),
@@ -314,6 +314,11 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
           SafeArea(
             child: Column(
               children: [
+                const AppBrandBar(
+                  logoSize: 15,
+                  padding: EdgeInsets.fromLTRB(20, 8, 20, 0),
+                ),
+
                 FadeTransition(
                   opacity: _headerFade,
                   child: SlideTransition(

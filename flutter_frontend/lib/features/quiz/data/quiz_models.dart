@@ -445,6 +445,7 @@ class QuestionResult {
   final int totalScore;
   final int? rank;
   final List<String> correctOptionIds;
+  final int totalParticipants;
 
   const QuestionResult({
     required this.correct,
@@ -452,6 +453,7 @@ class QuestionResult {
     required this.totalScore,
     required this.rank,
     required this.correctOptionIds,
+    required this.totalParticipants,
   });
 
   factory QuestionResult.fromJson(Map<String, dynamic> json) {
@@ -463,6 +465,7 @@ class QuestionResult {
       correctOptionIds: ((json['correctOptionIds'] as List?) ?? [])
           .map((e) => e.toString())
           .toList(),
+      totalParticipants: (json['totalParticipants'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -471,13 +474,19 @@ class QuestionResult {
 class FinalResult {
   final int? rank;
   final int totalScore;
+  final int totalParticipants;
 
-  const FinalResult({required this.rank, required this.totalScore});
+  const FinalResult({
+    required this.rank,
+    required this.totalScore,
+    required this.totalParticipants,
+  });
 
   factory FinalResult.fromJson(Map<String, dynamic> json) {
     return FinalResult(
       rank: (json['rank'] as num?)?.toInt(),
       totalScore: (json['totalScore'] as num?)?.toInt() ?? 0,
+      totalParticipants: (json['totalParticipants'] as num?)?.toInt() ?? 0,
     );
   }
 }
