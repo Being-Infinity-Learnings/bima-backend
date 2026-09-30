@@ -11,6 +11,7 @@
 const store = require("./runtime.store");
 const RuntimeEngine = require("./runtime.engine");
 const { NotFoundError, ConflictError } = require("./runtime.state");
+const socketBroadcast = require("../socket/socket.broadcast");
 
 // Check whether a runtime exists for the given quiz id.
 async function exists(quizId) {
@@ -52,12 +53,38 @@ async function withEngine(quizId, fn) {
   const result = await fn(engine);
 
   // engine.complete() deletes all Redis keys for this quiz itself; don't
-  // resurrect the state key by saving again afterwards.
-  if (!engine._destroyed) {
+  // resurrect the state key by saving again afterwards. Likewise, skip the
+  // resave when the engine itself says this.runtime was never touched
+  // (submitAnswer() — see RuntimeEngine's constructor comment on _dirty) —
+  // re-serializing the whole quiz+questions blob for every single answer
+  // was pure overhead inside the per-quiz lock.
+  if (!engine._destroyed && engine._dirty) {
     await store.saveState(quizId, engine.runtime);
   }
 
   return result;
+}
+
+// Broadcast `snapshot` to the quiz room ONLY if the runtime hasn't been
+// saved again since `expectedVersion` was read. This is what lets
+// joinQuiz and the disconnect handler broadcast to the whole room WITHOUT
+// holding the per-quiz lock: a phase transition (enterQuestion/
+// finishQuestion/...) still runs under that lock, and every save it makes
+// bumps the version (see store.saveState). If one landed while we were
+// doing our own work, its own broadcast already delivered the correct,
+// newer state to the room — sending our older snapshot now would show
+// everyone a stale phase for a moment, the exact bug the lock used to
+// prevent. The check happens as the very last thing before the actual
+// emit (nothing async after it), which is what keeps the race window as
+// small as it can physically be — this isn't a Redis atomicity problem,
+// it's an ordering problem between two Node-side broadcasts, so a Lua
+// script can't help here the way it did for submitAnswer.
+async function broadcastIfCurrent(quizId, expectedVersion, snapshot) {
+  const raw = await store.loadState(quizId);
+
+  if (raw && raw.version === expectedVersion) {
+    socketBroadcast.broadcastRuntimeState(quizId, snapshot);
+  }
 }
 
 // Destroy every Redis key associated with a quiz's runtime (core state,
@@ -94,6 +121,7 @@ module.exports = {
   create,
   loadEngine,
   withEngine,
+  broadcastIfCurrent,
   destroy,
   getRuntimeSnapshot,
 };

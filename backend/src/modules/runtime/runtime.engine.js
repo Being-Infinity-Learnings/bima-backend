@@ -31,6 +31,16 @@ const { schedulePhaseAction, cancelPhaseAction } = require("./runtime.queue");
 class RuntimeEngine {
   constructor(runtime) {
     this.runtime = runtime;
+
+    // Most engine methods (enterLobby, enterQuestion, finishQuestion, ...)
+    // mutate this.runtime's own fields (phase, currentQuestionIndex, ...)
+    // and rely on withEngine() persisting the full state blob back to Redis
+    // afterwards, so this defaults to true. submitAnswer() is the one
+    // high-frequency call that never touches this.runtime itself — every
+    // write it makes goes through the separate leaderboard/submissions
+    // Redis structures instead — so it opts out via this flag and lets
+    // withEngine() skip a redundant full-state resave on every submission.
+    this._dirty = true;
   }
 
   get quizId() {
@@ -43,10 +53,15 @@ class RuntimeEngine {
   }
 
   // Broadcast the current runtime state to all clients in the quiz room.
-  async broadcastRuntimeState() {
+  // Accepts an already-built state (e.g. from a caller that just got a
+  // fresh connectedCount from joinParticipant() and built its own snapshot
+  // with it) to avoid a redundant getRuntimeState() call for the same
+  // moment in time — every other caller omits this and gets one computed
+  // fresh, exactly as before.
+  async broadcastRuntimeState(precomputedState) {
     socketBroadcast.broadcastRuntimeState(
       this.quizId,
-      await this.getRuntimeState(),
+      precomputedState ?? (await this.getRuntimeState()),
     );
   }
 
@@ -173,6 +188,15 @@ class RuntimeEngine {
   // broadcasts immediate per-user reveal payloads then schedules the
   // transition to leaderboard or results after REVEAL_DELAY_MS.
   async finishQuestion() {
+    // MUST be the first thing this method does. This is what lets
+    // submitAnswer() run without the per-quiz lock: it atomically closes
+    // the window for new submissions before anything below reads who
+    // did/didn't submit, so a submission that's still in flight either
+    // lands before this (and gets counted normally) or is rejected by
+    // SUBMIT_SCRIPT's closed-flag check (and never reaches here at all) —
+    // never both. See loadtest/quiz/LOCK-REMOVAL.md.
+    await store.closeSubmissions(this.quizId);
+
     const isLastQuestion = this.isLastQuestion();
 
     if (isLastQuestion) {
@@ -184,6 +208,11 @@ class RuntimeEngine {
       // Participants who never submitted an answer still owe the full
       // question duration to their aggregate-time tie-breaker.
       await this.applyNonSubmittersAggregate();
+
+      // submitAnswer() no longer writes to Postgres synchronously (see the
+      // comment there) — every submission for this question is persisted
+      // here, once, in a single batch, now that the question is over.
+      await this.persistAllSubmissions();
     }
 
     const questionResults = await this.buildQuestionResults();
@@ -261,11 +290,7 @@ class RuntimeEngine {
       await store.setSubmission(this.quizId, userId, submission);
     }
 
-    const allSubmissions = await store.getAllSubmissions(this.quizId);
-
-    for (const [, submission] of allSubmissions) {
-      await this.persistSubmission(submission);
-    }
+    await this.persistAllSubmissions();
   }
 
   // Enter leaderboard phase, broadcast leaderboard, and schedule next
@@ -327,15 +352,30 @@ class RuntimeEngine {
     }
   }
 
-  // Process an incoming answer submission: validate, compute score,
-  // persist to DB, update leaderboard, and store the submission.
+  // Process an incoming answer submission: validate, compute score, then
+  // atomically update the leaderboard + buffer the submission + detect
+  // whether this was the last participant to answer, all in one Redis
+  // round trip (store.recordSubmission — see SUBMIT_SCRIPT in
+  // runtime.store.js). Persisting to Postgres happens separately, batched,
+  // once the question ends (see persistAllSubmissions()).
   //
-  // Wrapped in a distributed lock (per quiz) by the caller (see
-  // socket/quiz.socket.js) so two submissions racing on different app
-  // instances for the same quiz can't corrupt the "everyone answered"
-  // early-finish check.
+  // No per-quiz lock here at all anymore (neither caller — the socket
+  // handler nor the debug HTTP endpoint — wraps this in one). The one
+  // race a lock used to be needed for was this landing at the exact
+  // instant a question's timer expires, racing finishQuestion()'s
+  // non-submitter sweep; that's now handled by finishQuestion() atomically
+  // closing the submission window first (store.closeSubmissions), which
+  // SUBMIT_SCRIPT checks before anything else. See
+  // loadtest/quiz/LOCK-REMOVAL.md for the full reasoning and
+  // loadtest/quiz/ATOMIC-SUBMIT-CHANGE.md for the earlier, still-locked
+  // step this built on.
   async submitAnswer({ userId, questionId, selectedOptionIds }) {
-    await this.validateSubmission({ userId, questionId });
+    // This method never mutates this.runtime itself — see the constructor
+    // comment on _dirty — so withEngine() can skip resaving the full state
+    // blob for every single answer.
+    this._dirty = false;
+
+    this.validateSubmissionContext(questionId);
 
     const question = this.runtime.currentQuestion;
 
@@ -372,32 +412,59 @@ class RuntimeEngine {
       score,
     });
 
-    if (this.isLastQuestion()) {
-      // The last question needs the top-10 finishing bonus applied before
-      // anything is written to the DB or reflected on the leaderboard, and
-      // that bonus can only be computed once every submission for this
-      // question is known. So for the last question we just buffer the
-      // submission here; finalizeLastQuestion() (called from
-      // finishQuestion()) is what computes scores, ranks everyone, adds
-      // the bonus, updates the leaderboard, and persists everything.
-      await store.setSubmission(this.quizId, userId, submission);
-    } else {
-      await this.persistSubmission(submission);
+    const isLast = this.isLastQuestion();
 
-      await this.updateLeaderboard(
-        userId,
-        score,
-        correct ? elapsedMs : this.runtime.currentDurationMs,
-      );
+    // The last question needs the top-10 finishing bonus applied before
+    // anything is reflected on the leaderboard, and that bonus can only be
+    // computed once every submission for this question is known — so for
+    // the last question this only buffers the submission (mode: "buffer").
+    // finalizeLastQuestion() (called from finishQuestion()) is what
+    // computes scores, ranks everyone, adds the bonus, updates the
+    // leaderboard, and persists everything. Postgres is NOT written here
+    // either way — finishQuestion() batches every submission for this
+    // question into ONE Postgres write once it ends (see
+    // persistAllSubmissions()), instead of N sequential ones.
+    const { tooLate, duplicate, everyoneAnswered } = await store.recordSubmission(
+      this.quizId,
+      userId,
+      {
+        mode: isLast ? "buffer" : "score",
+        scoreDelta: isLast ? 0 : score,
+        aggregateTimeDeltaMs: isLast
+          ? 0
+          : correct
+            ? elapsedMs
+            : this.runtime.currentDurationMs,
+        submissionJson: JSON.stringify(submission),
+      },
+    );
 
-      await store.setSubmission(this.quizId, userId, submission);
+    // finishQuestion() had already closed this question's submissions
+    // (see the comment there) by the time this one reached Redis — the
+    // deadline was hit right as this was in flight. Same user-facing
+    // outcome as the phase check above, just a narrower race window that
+    // check alone can't catch (phase doesn't flip to LEADERBOARD/RESULTS
+    // until REVEAL_DELAY_MS after closing).
+    if (tooLate) {
+      throw new Error("Quiz is not accepting answers.");
+    }
+
+    if (duplicate) {
+      throw new Error("Answer already submitted.");
     }
 
     // If every registered participant has now answered this question,
-    // don't make the rest of the room wait out the clock: skip straight
-    // to finishing the question (reveal -> leaderboard/results) instead
-    // of waiting for the timer to expire naturally.
-    await this.maybeFinishQuestionEarly();
+    // don't make the rest of the room wait out the clock: skip straight to
+    // finishing the question (reveal -> leaderboard/results) instead of
+    // waiting for the timer to expire naturally. recordSubmission() already
+    // determined this atomically in the same round trip as the write, so
+    // there's no separate "is everyone done" check left to race.
+    if (everyoneAnswered && this.runtime.phase === QuizPhase.QUESTION) {
+      console.log(
+        `[Runtime] Quiz ${this.quizId}: all participants answered - advancing early`,
+      );
+      await this.scheduleNext("finishQuestion", 0);
+    }
 
     return;
   }
@@ -409,50 +476,18 @@ class RuntimeEngine {
     );
   }
 
-  // Check whether all registered participants have submitted an answer
-  // for the current question and, if so, jump straight to finishQuestion()
-  // instead of waiting for the remaining time to elapse. Reuses
-  // scheduleNext() so it replaces the pending timer-expiry job with an
-  // immediate one, keeping finishQuestion() as the single source of truth
-  // for what happens next.
-  async maybeFinishQuestionEarly() {
-    if (this.runtime.phase !== QuizPhase.QUESTION) {
-      return;
-    }
-
-    const totalParticipants = await store.leaderboardSize(this.quizId);
-
-    if (totalParticipants === 0) {
-      return;
-    }
-
-    const submittedCount = await store.submissionsCount(this.quizId);
-
-    const everyoneAnswered = submittedCount >= totalParticipants;
-
-    if (!everyoneAnswered) {
-      return;
-    }
-
-    console.log(
-      `[Runtime] All ${totalParticipants} participants answered - advancing early`,
-    );
-
-    await this.scheduleNext("finishQuestion", 0);
-  }
-
-  // Validate that submissions are currently accepted and not duplicated.
-  async validateSubmission({ userId, questionId }) {
+  // Validate that submissions are currently accepted for this question.
+  // The "already submitted" check used to live here too (a separate Redis
+  // HEXISTS call, made redundant by store.recordSubmission's atomic
+  // duplicate check, which is now the sole authority on that) — see
+  // loadtest/quiz/ATOMIC-SUBMIT-CHANGE.md.
+  validateSubmissionContext(questionId) {
     if (this.runtime.phase !== QuizPhase.QUESTION) {
       throw new Error("Quiz is not accepting answers.");
     }
 
     if (questionId !== this.runtime.currentQuestion.id) {
       throw new Error("Invalid question.");
-    }
-
-    if (await store.hasSubmission(this.quizId, userId)) {
-      throw new Error("Answer already submitted.");
     }
   }
 
@@ -488,9 +523,11 @@ class RuntimeEngine {
     );
   }
 
-  // Register a user in the runtime leaderboard if not present.
-  async registerParticipant(user) {
-    await store.registerParticipant(this.quizId, user.id, {
+  // Atomically mark a user connected and register them as a participant
+  // if this is their first join — see store.joinParticipant/JOIN_SCRIPT.
+  // Returns the fresh connected count.
+  async joinParticipant(user) {
+    return store.joinParticipant(this.quizId, user.id, {
       fullName: user.fullName,
       profileImage: user.profileImage,
     });
@@ -523,26 +560,32 @@ class RuntimeEngine {
     };
   }
 
-  // Persist a submission record to the database.
-  async persistSubmission(submission) {
-    await prisma.quizSubmission.create({
-      data: {
+  // Persist every buffered submission for the CURRENT question in one
+  // batch, instead of one INSERT per submitter. Called once, from
+  // finishQuestion()/finalizeLastQuestion(), after the question has ended —
+  // never from submitAnswer() itself, which only buffers to Redis (see the
+  // comment there). skipDuplicates guards the same [quizId,userId,
+  // questionId] unique constraint a per-row insert would have hit anyway
+  // (e.g. a retried job re-processing this question).
+  async persistAllSubmissions() {
+    const allSubmissions = await store.getAllSubmissions(this.quizId);
+
+    if (allSubmissions.length === 0) {
+      return;
+    }
+
+    await prisma.quizSubmission.createMany({
+      data: allSubmissions.map(([, submission]) => ({
         quizId: this.quizId,
-
         userId: submission.userId,
-
         questionId: submission.questionId,
-
         selectedOptionIds: submission.selectedOptionIds,
-
         correct: submission.correct,
-
         score: submission.score,
-
         elapsedMs: submission.elapsedMs,
-
         submittedAt: new Date(submission.submittedAt),
-      },
+      })),
+      skipDuplicates: true,
     });
   }
 
@@ -700,7 +743,12 @@ class RuntimeEngine {
   }
 
   // Build the canonical runtime state object sent to clients.
-  async getRuntimeState() {
+  //
+  // `connectedCountOverride` lets a caller that JUST got a fresh connected
+  // count back from a write (joinParticipant()'s return value) pass it
+  // straight through, instead of this method re-querying store.connectedCount()
+  // a second time for the same number a moment later.
+  async getRuntimeState(connectedCountOverride) {
     const baseState = {
       quizId: this.quizId,
 
@@ -722,7 +770,8 @@ class RuntimeEngine {
         return {
           ...baseState,
 
-          connectedUsers: await store.connectedCount(this.quizId),
+          connectedUsers:
+            connectedCountOverride ?? (await store.connectedCount(this.quizId)),
         };
 
       case QuizPhase.QUESTION:
@@ -759,16 +808,8 @@ class RuntimeEngine {
     );
   }
 
-  // Check whether a user is registered as a participant in this runtime.
-  async isParticipantRegistered(userId) {
-    return store.hasLeaderboardEntry(this.quizId, userId);
-  }
-
-  // Add/remove a user from the connected-users presence set (Redis SET).
-  async addConnectedUser(userId) {
-    await store.addConnected(this.quizId, userId);
-  }
-
+  // Remove a user from the connected-users presence set (Redis SET). The
+  // add side is now handled atomically by joinParticipant() above.
   async removeConnectedUser(userId) {
     await store.removeConnected(this.quizId, userId);
   }

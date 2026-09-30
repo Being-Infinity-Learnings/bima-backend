@@ -68,7 +68,8 @@ async function handlePhaseAction(quizId, action) {
   // Two phase jobs for the SAME quiz can legitimately both be picked up
   // around the same moment — e.g. the natural timer-expiry job is already
   // active/locked (and thus un-cancelable, see runtime.queue.js) at the
-  // exact instant maybeFinishQuestionEarly() schedules an immediate
+  // exact instant a submission that just completed the "everyone answered"
+  // check (see submitAnswer() in runtime.engine.js) schedules an immediate
   // follow-up job. Without a lock here, both would run engine[action]()
   // concurrently against the same load-mutate-save state, which can
   // double-advance the phase or double-apply the finishing bonus. The

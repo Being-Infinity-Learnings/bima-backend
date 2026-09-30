@@ -3,7 +3,6 @@
 // actions.
 const loader = require("./runtime.loader");
 const manager = require("./runtime.manager");
-const store = require("./runtime.store");
 const { cancelQuizStart } = require("./runtime.queue");
 
 // Map a thrown error to an HTTP response. Errors from runtime.state.js
@@ -78,17 +77,16 @@ async function submitAnswer(req, res) {
   try {
     const { quizId } = req.params;
 
-    // Same lock the socket path uses (quiz.socket.js) — this debug HTTP
-    // endpoint mutates the same runtime state and must not be allowed to
-    // race a real submission coming in over the socket at the same time.
-    const result = await store.withLock(quizId, () =>
-      manager.withEngine(quizId, (engine) =>
-        engine.submitAnswer({
-          userId: req.user.id,
-          questionId: req.body.questionId,
-          selectedOptionIds: req.body.selectedOptionIds,
-        }),
-      ),
+    // Same call the socket path uses (quiz.socket.js) — no lock needed
+    // here either, for the same reason: engine.submitAnswer() is
+    // self-sufficient via atomic Redis operations now. See
+    // loadtest/quiz/LOCK-REMOVAL.md.
+    const result = await manager.withEngine(quizId, (engine) =>
+      engine.submitAnswer({
+        userId: req.user.id,
+        questionId: req.body.questionId,
+        selectedOptionIds: req.body.selectedOptionIds,
+      }),
     );
 
     return res.json({
