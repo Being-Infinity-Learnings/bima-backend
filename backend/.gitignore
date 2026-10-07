@@ -7,12 +7,4 @@ node_modules
 
 scripts/testSocket.js
 
-# Disposable local load-testing stack — no secrets, but no reason to commit
-# generated seed/result data either. Both suites (quiz/, notification/)
-# generate the same three filenames into their own directory.
-loadtest/.env.loadtest
-loadtest/*/seed-output.json
-loadtest/*/bench-results*.json
-loadtest/*/results.md
-
 
