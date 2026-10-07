@@ -79,8 +79,7 @@ async function submitAnswer(req, res) {
 
     // Same call the socket path uses (quiz.socket.js) — no lock needed
     // here either, for the same reason: engine.submitAnswer() is
-    // self-sufficient via atomic Redis operations now. See
-    // loadtest/quiz/LOCK-REMOVAL.md.
+    // self-sufficient via atomic Redis operations now.
     const result = await manager.withEngine(quizId, (engine) =>
       engine.submitAnswer({
         userId: req.user.id,

@@ -60,7 +60,7 @@ async function handleStartQuiz(quizId) {
   await manager.withEngine(quizId, (engine) => engine.start());
 }
 
-async function handlePhaseAction(quizId, action) {
+async function handlePhaseAction(quizId, action, questionIndex) {
   if (typeof RuntimeEngine.prototype[action] !== "function") {
     throw new Error(`Unknown runtime action: ${action}`);
   }
@@ -72,25 +72,41 @@ async function handlePhaseAction(quizId, action) {
   // check (see submitAnswer() in runtime.engine.js) schedules an immediate
   // follow-up job. Without a lock here, both would run engine[action]()
   // concurrently against the same load-mutate-save state, which can
-  // double-advance the phase or double-apply the finishing bonus. The
-  // same lock submitAnswer() already uses (see quiz.socket.js) serializes
-  // this too, so only one mutation touches this quiz's state at a time
-  // no matter which path it came from.
+  // double-advance the phase or double-apply the finishing bonus. Only
+  // phase jobs take this lock (submissions and joins don't), so it orders
+  // phase jobs against each other, not against submissions.
   await store.withLock(quizId, () =>
-    manager.withEngine(quizId, (engine) => engine[action]()),
+    manager.withEngine(quizId, (engine) => {
+      // The job was scheduled for a question the quiz has since moved past
+      // (e.g. a job that was already active when a newer phase cancelled
+      // it). Running it now would act on the wrong question. Jobs queued
+      // before questionIndex was added carry none and always run.
+      if (
+        questionIndex !== undefined &&
+        questionIndex !== engine.runtime.currentQuestionIndex
+      ) {
+        engine._dirty = false;
+        console.warn(
+          `[quiz-runtime] skipping stale ${action} for ${quizId} (question ${questionIndex}, now ${engine.runtime.currentQuestionIndex})`,
+        );
+        return;
+      }
+
+      return engine[action]();
+    }),
   );
 }
 
 const runtimeWorker = new Worker(
   QUEUE_NAME,
   async (job) => {
-    const { quizId } = job.data;
+    const { quizId, questionIndex } = job.data;
 
     if (job.name === "start-quiz") {
       return handleStartQuiz(quizId);
     }
 
-    return handlePhaseAction(quizId, job.name);
+    return handlePhaseAction(quizId, job.name, questionIndex);
   },
   {
     connection: redis.createBullConnection(),

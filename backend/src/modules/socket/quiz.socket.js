@@ -99,13 +99,12 @@ function registerQuizEvents(io, socket) {
         throw new Error("You are not connected to a quiz.");
       }
 
-      // No per-quiz lock here (unlike joinQuiz below) — submitAnswer()'s
-      // leaderboard math, duplicate check, and "everyone answered"
-      // detection are all atomic on their own (store.recordSubmission),
-      // and the one race that DID need the lock — a submission landing at
-      // the exact instant a question closes — is now handled by
-      // finishQuestion() atomically closing submissions first. See
-      // loadtest/quiz/LOCK-REMOVAL.md.
+      // No per-quiz lock here — submitAnswer()'s leaderboard math,
+      // duplicate check, and "everyone answered" detection are all atomic
+      // on their own (store.recordSubmission), and the one race that DID
+      // need the lock — a submission landing at the exact instant a
+      // question closes — is now handled by finishQuestion() atomically
+      // closing submissions first.
       await manager.withEngine(quizId, (engine) =>
         engine.submitAnswer({
           userId: socket.dbUser.id,

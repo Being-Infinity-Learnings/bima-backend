@@ -97,13 +97,25 @@ function pendingPhaseJobKey(quizId) {
 // Instead, we let BullMQ generate a unique id per job, and separately
 // track "the current pending job id" for each quiz in Redis so we can
 // still cancel a genuinely pending (not yet active) job on demand — e.g.
-// when a question finishes early because everyone already answered.
-async function schedulePhaseAction(quizId, action, delayMs) {
+// when the next phase is scheduled from inside the job that runs it.
+//
+// `questionIndex` is the quiz's currentQuestionIndex at scheduling time.
+// The worker skips the job if the quiz has moved on by the time it runs
+// (see runtime.worker.js), so a job that slipped past cancellation can
+// never act on a later question.
+//
+// Must only be called while holding the per-quiz lock (i.e. from a phase
+// job in runtime.worker.js, or from start() before any phase job exists).
+// The cancel → add → set-pending
+// sequence isn't atomic, and two callers interleaving it can orphan or
+// wrongly remove a job. The lock-free submit path uses
+// scheduleEarlyFinish() below instead.
+async function schedulePhaseAction(quizId, action, delayMs, questionIndex) {
   await cancelPhaseAction(quizId);
 
   const job = await runtimeQueue.add(
     action,
-    { quizId, action },
+    { quizId, action, questionIndex },
     {
       delay: Math.max(delayMs, 0),
       removeOnComplete: true,
@@ -114,6 +126,29 @@ async function schedulePhaseAction(quizId, action, delayMs) {
   );
 
   await redis.set(pendingPhaseJobKey(quizId), job.id);
+}
+
+// Run finishQuestion now because every participant has answered. Called
+// from submitAnswer(), which holds no lock, so unlike schedulePhaseAction()
+// this never touches the pending-job key. That keeps it from racing a
+// phase job that is updating that key. It uses a fixed per-question jobId,
+// so several submissions that all see "everyone answered" add one job, not
+// several. The timer-driven finishQuestion job is still pending. When this
+// job runs, finishQuestion's own scheduleNext() cancels it; if it's already
+// active, finishQuestion() sees the question is already finished and does
+// nothing.
+async function scheduleEarlyFinish(quizId, questionIndex) {
+  await runtimeQueue.add(
+    "finishQuestion",
+    { quizId, action: "finishQuestion", questionIndex },
+    {
+      jobId: `quiz-finish-${quizId}-${questionIndex}`,
+      removeOnComplete: true,
+      removeOnFail: true,
+      attempts: 3,
+      backoff: { type: "fixed", delay: 2000 },
+    },
+  );
 }
 
 // Remove the job currently tracked as "pending" for this quiz, if any.
@@ -151,5 +186,6 @@ module.exports = {
   cancelQuizStart,
 
   schedulePhaseAction,
+  scheduleEarlyFinish,
   cancelPhaseAction,
 };

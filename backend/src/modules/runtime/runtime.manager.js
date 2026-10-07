@@ -57,7 +57,7 @@ async function withEngine(quizId, fn) {
   // resave when the engine itself says this.runtime was never touched
   // (submitAnswer() — see RuntimeEngine's constructor comment on _dirty) —
   // re-serializing the whole quiz+questions blob for every single answer
-  // was pure overhead inside the per-quiz lock.
+  // was pure overhead.
   if (!engine._destroyed && engine._dirty) {
     await store.saveState(quizId, engine.runtime);
   }
@@ -68,9 +68,8 @@ async function withEngine(quizId, fn) {
 // Broadcast `snapshot` to the quiz room ONLY if the runtime hasn't been
 // saved again since `expectedVersion` was read. This is what lets
 // joinQuiz and the disconnect handler broadcast to the whole room WITHOUT
-// holding the per-quiz lock: a phase transition (enterQuestion/
-// finishQuestion/...) still runs under that lock, and every save it makes
-// bumps the version (see store.saveState). If one landed while we were
+// holding the per-quiz lock: every save a phase transition (enterQuestion/
+// finishQuestion/...) makes bumps the version (see store.saveState). If one landed while we were
 // doing our own work, its own broadcast already delivered the correct,
 // newer state to the room — sending our older snapshot now would show
 // everyone a stale phase for a moment, the exact bug the lock used to

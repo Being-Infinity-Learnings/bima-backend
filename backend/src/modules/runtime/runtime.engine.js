@@ -23,7 +23,11 @@ const socketBroadcast = require("../socket/socket.broadcast");
 
 const calculateScore = require("./runtime.scoring");
 
-const { schedulePhaseAction, cancelPhaseAction } = require("./runtime.queue");
+const {
+  schedulePhaseAction,
+  scheduleEarlyFinish,
+  cancelPhaseAction,
+} = require("./runtime.queue");
 
 // RuntimeEngine: encapsulates an active quiz runtime's core state and
 // exposes methods to start and progress the quiz, accept submissions,
@@ -82,9 +86,15 @@ class RuntimeEngine {
   // be the name of a method on this engine (e.g. "enterQuestion",
   // "finishQuestion", "enterLeaderboard", "enterResults", "complete") —
   // the quiz-phase worker looks the method up by this name when the job
-  // fires (see runtime.worker.js).
+  // fires (see runtime.worker.js). The job is tagged with the current
+  // question index so the worker can drop it if the quiz has moved on.
   async scheduleNext(action, delay) {
-    await schedulePhaseAction(this.quizId, action, delay);
+    await schedulePhaseAction(
+      this.quizId,
+      action,
+      delay,
+      this.runtime.currentQuestionIndex,
+    );
   }
 
   // Start the runtime: mark quiz live in DB and enter lobby.
@@ -155,7 +165,7 @@ class RuntimeEngine {
     this.runtime.currentQuestion =
       this.runtime.questions[this.runtime.currentQuestionIndex];
 
-    await store.clearSubmissions(this.quizId);
+    await store.openSubmissions(this.quizId, this.runtime.currentQuestion.id);
 
     const duration = this.getQuestionDuration(this.runtime.currentQuestion);
 
@@ -188,36 +198,60 @@ class RuntimeEngine {
   // broadcasts immediate per-user reveal payloads then schedules the
   // transition to leaderboard or results after REVEAL_DELAY_MS.
   async finishQuestion() {
-    // MUST be the first thing this method does. This is what lets
-    // submitAnswer() run without the per-quiz lock: it atomically closes
-    // the window for new submissions before anything below reads who
-    // did/didn't submit, so a submission that's still in flight either
-    // lands before this (and gets counted normally) or is rejected by
-    // SUBMIT_SCRIPT's closed-flag check (and never reaches here at all) —
-    // never both. See loadtest/quiz/LOCK-REMOVAL.md.
+    // finishQuestion can be queued more than once for the same question:
+    // the timer job plus an early-finish job when everyone has answered
+    // (see submitAnswer()). Phase jobs run one at a time under the per-quiz
+    // lock (runtime.worker.js), so whichever runs second sees this marker,
+    // which the first one's state save set, and does nothing.
+    if (
+      this.runtime.phase !== QuizPhase.QUESTION ||
+      this.runtime.finishedQuestionIndex === this.runtime.currentQuestionIndex
+    ) {
+      this._dirty = false;
+      return;
+    }
+
+    const questionId = this.runtime.currentQuestion.id;
+
+    // MUST come before anything below reads who did/didn't submit. This is
+    // what lets submitAnswer() run without the per-quiz lock: it atomically
+    // closes the window for new submissions first, so a submission that's
+    // still in flight either lands before this (and gets counted normally)
+    // or is rejected by SUBMIT_SCRIPT's open-question check (and never
+    // reaches here at all), never both.
     await store.closeSubmissions(this.quizId);
 
     const isLastQuestion = this.isLastQuestion();
 
-    if (isLastQuestion) {
-      // Computes scores for every participant, ranks them, adds the
-      // top-10 finishing bonus, updates the leaderboard, and only then
-      // persists the final question's submissions to the DB.
-      await this.finalizeLastQuestion();
-    } else {
-      // Participants who never submitted an answer still owe the full
-      // question duration to their aggregate-time tie-breaker.
-      await this.applyNonSubmittersAggregate();
+    // The leaderboard updates below ADD to each participant's score and
+    // time, so they must run exactly once per question. If a later step
+    // (e.g. the Postgres write) throws, BullMQ retries this whole job, and
+    // the retry has to skip straight past them.
+    if (!(await store.isQuestionScored(this.quizId, questionId))) {
+      if (isLastQuestion) {
+        // Computes scores for every participant, ranks them, adds the
+        // top-10 finishing bonus and updates the leaderboard.
+        await this.finalizeLastQuestion();
+      } else {
+        // Participants who never submitted an answer still owe the full
+        // question duration to their aggregate-time tie-breaker.
+        await this.applyNonSubmittersAggregate();
+      }
 
-      // submitAnswer() no longer writes to Postgres synchronously (see the
-      // comment there) — every submission for this question is persisted
-      // here, once, in a single batch, now that the question is over.
-      await this.persistAllSubmissions();
+      await store.markQuestionScored(this.quizId, questionId);
     }
+
+    // submitAnswer() doesn't write to Postgres (see the comment there).
+    // Every submission for this question is persisted here in a single
+    // batch, now that the question is over. Safe to repeat on a retry
+    // (skipDuplicates).
+    await this.persistAllSubmissions();
 
     const questionResults = await this.buildQuestionResults();
 
     this.runtime.lastQuestionResults = mapToObject(questionResults);
+
+    this.runtime.finishedQuestionIndex = this.runtime.currentQuestionIndex;
 
     socketBroadcast.broadcastQuestionResults(questionResults);
 
@@ -245,8 +279,8 @@ class RuntimeEngine {
   // Finalize the last question: apply every buffered submission's score
   // and aggregate time to the leaderboard, rank participants, award the
   // top-10 finishing bonus (10 pts for 1st ... 1 pt for 10th) on top of
-  // their final-question score, and only then persist the (possibly
-  // bonus-adjusted) submissions to the DB.
+  // their final-question score. The (possibly bonus-adjusted) submissions
+  // are persisted afterwards by finishQuestion().
   async finalizeLastQuestion() {
     const durationMs = this.runtime.currentDurationMs;
 
@@ -289,8 +323,6 @@ class RuntimeEngine {
       submission.score += bonus;
       await store.setSubmission(this.quizId, userId, submission);
     }
-
-    await this.persistAllSubmissions();
   }
 
   // Enter leaderboard phase, broadcast leaderboard, and schedule next
@@ -365,10 +397,7 @@ class RuntimeEngine {
   // instant a question's timer expires, racing finishQuestion()'s
   // non-submitter sweep; that's now handled by finishQuestion() atomically
   // closing the submission window first (store.closeSubmissions), which
-  // SUBMIT_SCRIPT checks before anything else. See
-  // loadtest/quiz/LOCK-REMOVAL.md for the full reasoning and
-  // loadtest/quiz/ATOMIC-SUBMIT-CHANGE.md for the earlier, still-locked
-  // step this built on.
+  // SUBMIT_SCRIPT checks before anything else, against this question's id.
   async submitAnswer({ userId, questionId, selectedOptionIds }) {
     // This method never mutates this.runtime itself — see the constructor
     // comment on _dirty — so withEngine() can skip resaving the full state
@@ -428,6 +457,7 @@ class RuntimeEngine {
       this.quizId,
       userId,
       {
+        questionId,
         mode: isLast ? "buffer" : "score",
         scoreDelta: isLast ? 0 : score,
         aggregateTimeDeltaMs: isLast
@@ -441,7 +471,8 @@ class RuntimeEngine {
 
     // finishQuestion() had already closed this question's submissions
     // (see the comment there) by the time this one reached Redis — the
-    // deadline was hit right as this was in flight. Same user-facing
+    // deadline was hit right as this was in flight, or the quiz has
+    // already moved on to another question. Same user-facing
     // outcome as the phase check above, just a narrower race window that
     // check alone can't catch (phase doesn't flip to LEADERBOARD/RESULTS
     // until REVEAL_DELAY_MS after closing).
@@ -458,12 +489,14 @@ class RuntimeEngine {
     // finishing the question (reveal -> leaderboard/results) instead of
     // waiting for the timer to expire naturally. recordSubmission() already
     // determined this atomically in the same round trip as the write, so
-    // there's no separate "is everyone done" check left to race.
+    // there's no separate "is everyone done" check left to race. This must
+    // not use scheduleNext(): that path isn't safe without the per-quiz lock
+    // (see scheduleEarlyFinish() in runtime.queue.js).
     if (everyoneAnswered && this.runtime.phase === QuizPhase.QUESTION) {
       console.log(
         `[Runtime] Quiz ${this.quizId}: all participants answered - advancing early`,
       );
-      await this.scheduleNext("finishQuestion", 0);
+      await scheduleEarlyFinish(this.quizId, this.runtime.currentQuestionIndex);
     }
 
     return;
@@ -479,8 +512,7 @@ class RuntimeEngine {
   // Validate that submissions are currently accepted for this question.
   // The "already submitted" check used to live here too (a separate Redis
   // HEXISTS call, made redundant by store.recordSubmission's atomic
-  // duplicate check, which is now the sole authority on that) — see
-  // loadtest/quiz/ATOMIC-SUBMIT-CHANGE.md.
+  // duplicate check, which is now the sole authority on that).
   validateSubmissionContext(questionId) {
     if (this.runtime.phase !== QuizPhase.QUESTION) {
       throw new Error("Quiz is not accepting answers.");

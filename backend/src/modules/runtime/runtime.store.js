@@ -22,13 +22,20 @@
 //   quiz:{id}:submissions        - HASH, field=userId, value=JSON submission
 //                                  (current question only; cleared each
 //                                  time a new question starts)
-//   quiz:{id}:submissions:closed - flag (EXISTS check only), set the
-//                                  instant finishQuestion() starts closing
-//                                  out a question, cleared when the next
-//                                  question opens. See closeSubmissions()
-//                                  and SUBMIT_SCRIPT below for why this
-//                                  is what lets submitAnswer() run without
-//                                  the per-quiz lock.
+//   quiz:{id}:submissions:open   - id of the question currently accepting
+//                                  answers. Set when a question opens,
+//                                  deleted the instant finishQuestion()
+//                                  starts closing it out. See
+//                                  openSubmissions()/closeSubmissions() and
+//                                  SUBMIT_SCRIPT below for why this is what
+//                                  lets submitAnswer() run without the
+//                                  per-quiz lock.
+//   quiz:{id}:scored-question    - id of the last question whose
+//                                  end-of-question leaderboard updates
+//                                  (non-submitter time / final-question
+//                                  scoring + bonus) have been applied, so a
+//                                  retried finishQuestion job never applies
+//                                  them twice.
 //   quiz:{id}:connected          - SET of connected userIds
 const redis = require("../../config/redis");
 
@@ -56,18 +63,18 @@ else
 end
 `;
 
-// Atomically: reject a submission that arrives after the question has
-// been closed OR a duplicate, optionally update the leaderboard
+// Atomically: reject a submission for a question that isn't the one
+// currently open (closed, or already moved on to another question) OR a
+// duplicate, optionally update the leaderboard
 // (read-modify-write on the submitter's score/aggregate time), buffer the
 // submission, and check whether every registered participant has now
 // answered — all in ONE round trip. This is what submitAnswer() used to
 // do as 7 separate calls (HEXISTS, HGET, HSET, ZADD, HSET, ZCARD, HLEN)
-// while holding the per-quiz lock — see
-// loadtest/quiz/ATOMIC-SUBMIT-CHANGE.md for the before/after.
+// while holding the per-quiz lock.
 //
-// The closed-flag check (KEYS[4]) is what makes it safe for this to run
-// WITHOUT the per-quiz lock at all (see loadtest/quiz/LOCK-REMOVAL.md):
-// closeSubmissions() sets that flag as the very first thing
+// The open-question check (KEYS[4] must equal ARGV[8]) is what makes it
+// safe for this to run WITHOUT the per-quiz lock at all:
+// closeSubmissions() deletes that key as the very first thing
 // finishQuestion() does, atomically, before it reads anything about who
 // did/didn't submit. Redis processes commands one at a time, so whichever
 // of "a late submission" or "the close" actually reaches Redis first
@@ -78,18 +85,26 @@ end
 // finishQuestion's non-submitter credit from double-counting a
 // submission that was still in flight.
 //
+// Comparing against the question id (rather than a plain closed flag)
+// matters because the caller validated its questionId against a state
+// snapshot it loaded earlier, without any lock. If that caller stalls long
+// enough for the quiz to close this question AND open the next one, a
+// plain flag would already be cleared again and the stale answer would be
+// recorded into the next question's submissions. With the id check it's
+// rejected as too late instead.
+//
 // mode "score": updates the leaderboard — the normal case, every question
 // except the last. mode "buffer": only stores the submission, no
 // leaderboard write — the last question, where scoring is deferred to
 // finalizeLastQuestion() so the top-10 finishing bonus can be applied
 // first (unchanged from before this change).
 //
-// Returns -2 (question already closed — nothing written), -1 (ARGV[1]
+// Returns -2 (ARGV[8] isn't the open question — nothing written), -1 (ARGV[1]
 // already had a submission — nothing written), 0 (written, not everyone
 // has answered yet), or 1 (written, and this was the submission that
 // completed the set for every registered participant).
 const SUBMIT_SCRIPT = `
-if redis.call("EXISTS", KEYS[4]) == 1 then
+if redis.call("GET", KEYS[4]) ~= ARGV[8] then
   return -2
 end
 
@@ -130,8 +145,7 @@ end
 // connected count, all in ONE round trip. Replaces what joinQuiz used to
 // do as up to 4 separate calls (SADD, HEXISTS, a REDUNDANT second HEXISTS
 // inside the old registerParticipant, HSET, ZADD) plus a further
-// redundant SCARD from getRuntimeState() right after — see
-// loadtest/quiz/PERFORMANCE.md for the measured effect.
+// redundant SCARD from getRuntimeState() right after.
 const JOIN_SCRIPT = `
 redis.call("SADD", KEYS[1], ARGV[1])
 
@@ -158,7 +172,8 @@ function keys(quizId) {
     leaderboard: `quiz:${quizId}:leaderboard`,
     leaderboardMeta: `quiz:${quizId}:leaderboard:meta`,
     submissions: `quiz:${quizId}:submissions`,
-    submissionsClosed: `quiz:${quizId}:submissions:closed`,
+    submissionsOpen: `quiz:${quizId}:submissions:open`,
+    scoredQuestion: `quiz:${quizId}:scored-question`,
     connected: `quiz:${quizId}:connected`,
   };
 }
@@ -200,7 +215,8 @@ async function deleteAll(quizId) {
     k.leaderboard,
     k.leaderboardMeta,
     k.submissions,
-    k.submissionsClosed,
+    k.submissionsOpen,
+    k.scoredQuestion,
     k.connected,
   );
 }
@@ -345,29 +361,42 @@ async function submissionsCount(quizId) {
 }
 
 // Called when a new question opens (enterQuestion) — clears last
-// question's buffered submissions AND reopens submissions for the new
-// one (deletes the closed flag closeSubmissions() set for the last
-// question).
-async function clearSubmissions(quizId) {
+// question's buffered submissions and opens submissions for `questionId`
+// only, in one MULTI so no submission can land between the two.
+async function openSubmissions(quizId, questionId) {
   const k = keys(quizId);
-  await redis.del(k.submissions, k.submissionsClosed);
+  await redis
+    .multi()
+    .del(k.submissions)
+    .set(k.submissionsOpen, questionId)
+    .exec();
 }
 
 // Called once, as the very first thing finishQuestion() does — see
 // SUBMIT_SCRIPT's comment above for why this ordering is what makes
-// submitAnswer() safe without the per-quiz lock. Idempotent: setting an
-// already-set flag is harmless, which matters if finishQuestion ever runs
-// more than once for the same question (see runtime.worker.js's comment
-// on two phase jobs both becoming active).
+// submitAnswer() safe without the per-quiz lock. Idempotent: deleting an
+// already-deleted key is harmless, which matters if finishQuestion ever
+// runs more than once for the same question (e.g. a retried job).
 async function closeSubmissions(quizId) {
-  await redis.set(keys(quizId).submissionsClosed, "1");
+  await redis.del(keys(quizId).submissionsOpen);
+}
+
+// The end-of-question leaderboard updates in finishQuestion() aren't
+// idempotent (they ADD time/score), so finishQuestion() records which
+// question it has already applied them for and skips them on a retry.
+async function isQuestionScored(quizId, questionId) {
+  return (await redis.get(keys(quizId).scoredQuestion)) === questionId;
+}
+
+async function markQuestionScored(quizId, questionId) {
+  await redis.set(keys(quizId).scoredQuestion, questionId);
 }
 
 // See SUBMIT_SCRIPT above for exactly what this does atomically.
 async function recordSubmission(
   quizId,
   userId,
-  { mode, scoreDelta = 0, aggregateTimeDeltaMs = 0, submissionJson },
+  { questionId, mode, scoreDelta = 0, aggregateTimeDeltaMs = 0, submissionJson },
 ) {
   const k = keys(quizId);
 
@@ -377,7 +406,7 @@ async function recordSubmission(
     k.leaderboardMeta,
     k.leaderboard,
     k.submissions,
-    k.submissionsClosed,
+    k.submissionsOpen,
     userId,
     mode,
     scoreDelta,
@@ -385,6 +414,7 @@ async function recordSubmission(
     submissionJson,
     new Date().toISOString(),
     COMPOSITE_MULTIPLIER,
+    questionId,
   );
 
   if (result === -2) {
@@ -419,8 +449,7 @@ async function withLock(
   fn,
   // retries*retryDelayMs ~= 6s give-up budget. The original defaults here
   // (20 * 50ms = ~1s) gave up almost immediately under any real concurrent
-  // burst — see loadtest/PERFORMANCE.md for the measurements behind this
-  // number: 6s is long enough that a genuine burst of a few thousand
+  // burst: 6s is long enough that a genuine burst of a few thousand
   // concurrent submissions to one quiz mostly clears instead of erroring
   // out, without leaving a caller waiting indefinitely.
   { ttlMs = 4000, retries = 60, retryDelayMs = 100 } = {},
@@ -474,8 +503,10 @@ module.exports = {
   hasSubmission,
   getAllSubmissions,
   submissionsCount,
-  clearSubmissions,
+  openSubmissions,
   closeSubmissions,
+  isQuestionScored,
+  markQuestionScored,
   recordSubmission,
 
   removeConnected,
