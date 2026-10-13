@@ -137,6 +137,7 @@ export const questionApi = {
   getById: (id) => request("GET", `/question/${id}`),
   // body: { questionText, questionType, options[], customTimer? }
   create: (body) => request("POST", "/question", body),
+  bulkCreate: (questions) => request("POST", "/question/bulk", { questions }),
   update: (id, body) => request("PATCH", `/question/${id}`, body),
   delete: (id) => request("DELETE", `/question/${id}`),
 };

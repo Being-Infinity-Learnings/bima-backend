@@ -86,6 +86,43 @@ router.post(
 
 /**
  * @swagger
+ * /question/bulk:
+ *   post:
+ *     summary: Bulk create questions
+ *     tags: [Question]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [questions]
+ *             properties:
+ *               questions:
+ *                 type: array
+ *                 items:
+ *                   $ref: '#/components/schemas/QuestionCreate'
+ *     responses:
+ *       201:
+ *         description: Questions created successfully
+ *       400:
+ *         description: Validation error in one or more questions
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
+router.post(
+  "/bulk",
+  auth,
+  allowRoles("ADMIN", "AUTHOR"),
+  controller.createQuestionsBulk,
+);
+
+/**
+ * @swagger
  * /question:
  *   get:
  *     summary: Retrieve all questions in the question bank
