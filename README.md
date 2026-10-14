@@ -39,56 +39,43 @@ docker run -d -p 6379:6379 redis:7
 
 ### Backend
 
-Create `backend/.env`:
+Copy the example env file and fill in your values:
 
-```dotenv
-PORT=3000
-DATABASE_URL="postgresql://bima:bima@localhost:5432/bima?schema=public"
-REDIS_URL="redis://127.0.0.1:6379"
-
-# Firebase Admin (from the service account JSON)
-FIREBASE_TYPE="service_account"
-FIREBASE_PROJECT_ID=""
-FIREBASE_PRIVATE_KEY_ID=""
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-FIREBASE_CLIENT_EMAIL=""
-FIREBASE_CLIENT_ID=""
-FIREBASE_AUTH_URI="https://accounts.google.com/o/oauth2/auth"
-FIREBASE_TOKEN_URI="https://oauth2.googleapis.com/token"
-FIREBASE_AUTH_PROVIDER_X509_CERT_URL="https://www.googleapis.com/oauth2/v1/certs"
-FIREBASE_CLIENT_X509_CERT_URL=""
-FIREBASE_UNIVERSE_DOMAIN="googleapis.com"
-
-# AWS S3
-AWS_REGION=""
-AWS_ACCESS_KEY_ID=""
-AWS_SECRET_ACCESS_KEY=""
-AWS_S3_BUCKET=""
+```bash
+cp backend/.env.example backend/.env
 ```
 
-Then install, migrate and start:
+[backend/.env.example](backend/.env.example) lists every variable the backend reads: the Postgres and Redis URLs, the Firebase Admin service account fields (from the service account JSON), and the AWS S3 credentials and bucket. With the Docker containers above, use:
+
+```dotenv
+DATABASE_URL="postgresql://bima:bima@localhost:5432/bima?schema=public"
+REDIS_URL="redis://127.0.0.1:6379"
+```
+
+Then install and start:
 
 ```bash
 cd backend
 npm install
-npx prisma migrate deploy
 npm run dev
 ```
+
+If the database is fresh (no tables yet, e.g. the Docker container above), create the tables before starting:
+
+```bash
+npx prisma migrate deploy
+```
+
+Skip this if `DATABASE_URL` points to an existing database that already has the tables.
 
 The API runs at http://localhost:3000. API docs are at [/api-docs](http://localhost:3000/api-docs), and the health check is at [/health](http://localhost:3000/health).
 
 ### Dashboard
 
-Create `dashboard/.env`:
+Copy the example env file and fill in your Firebase Web app config (Firebase Console → Project Settings → Your apps):
 
-```dotenv
-VITE_API_BASE_URL=http://localhost:3000
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_MESSAGING_SENDER_ID=
-VITE_FIREBASE_APP_ID=
+```bash
+cp dashboard/.env.example dashboard/.env
 ```
 
 Then install and start:
@@ -110,3 +97,5 @@ UPDATE "User" SET role = 'ADMIN', approved = true WHERE phone = '+91XXXXXXXXXX';
 After that, you can manage roles for other users from the dashboard's **Users** page.
 
 > To log in locally without real SMS, add test phone numbers in Firebase Console → Authentication → Phone.
+
+> Never commit real `.env` files. Only the `.env.example` templates are tracked in git.
