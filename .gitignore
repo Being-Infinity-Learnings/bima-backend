@@ -1,2 +1,9 @@
 node_modules/
 .DS_Store
+*.log
+
+# Environment variables: ignore real env files (in every folder),
+# but keep the .env.example templates tracked
+.env
+.env.*
+!.env.example
