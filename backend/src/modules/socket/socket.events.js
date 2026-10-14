@@ -3,7 +3,6 @@
 // handling.
 const registerQuizEvents = require("./quiz.socket");
 const manager = require("../runtime/runtime.manager");
-const store = require("../runtime/runtime.store");
 
 // Register per-socket event handlers and attach disconnect logic.
 function registerEvents(io, socket) {
@@ -18,24 +17,23 @@ function registerEvents(io, socket) {
 
     if (quizId) {
       try {
-        // IMPORTANT: this used to call manager.loadEngine(quizId) directly,
-        // outside any lock, and then broadcast that snapshot. If a phase
-        // job (enterQuestion/finishQuestion/enterLeaderboard/...) landed
-        // in the same instant, this handler's stale, already-loaded state
-        // could broadcast AFTER the phase job's own broadcast, sending
-        // every client back to the previous phase with an old, nearly-
-        // expired timer. Routing through the same store.withLock +
-        // manager.withEngine that submissions/phase-jobs use serializes
-        // this with them and guarantees we load fresh state right before
-        // broadcasting, so it can never "win" a race with a stale view.
-        await store.withLock(quizId, () =>
-          manager.withEngine(quizId, async (engine) => {
-            await engine.removeConnectedUser(socket.dbUser.id);
+        // No per-quiz lock (see runtime.manager.broadcastIfCurrent). This
+        // used to need one: loading state, mutating it, and broadcasting
+        // across several awaits, outside any lock, meant a phase job
+        // landing in the same instant could have its broadcast overtaken
+        // by this handler's stale, already-loaded one — sending every
+        // client back to an old phase with a nearly-expired timer.
+        // broadcastIfCurrent re-checks the state's version immediately
+        // before emitting, so a broadcast this handler builds from stale
+        // data simply never gets sent — the phase job's own (correct,
+        // newer) broadcast already reached the room instead.
+        const engine = await manager.loadEngine(quizId);
 
-            // Broadcast updated lobby count
-            await engine.broadcastRuntimeState();
-          }),
-        );
+        await engine.removeConnectedUser(socket.dbUser.id);
+
+        const snapshot = await engine.getRuntimeState();
+
+        await manager.broadcastIfCurrent(quizId, engine.runtime.version, snapshot);
       } catch (_) {
         // Runtime may already be gone (quiz completed/unpublished) —
         // nothing to clean up in that case.
