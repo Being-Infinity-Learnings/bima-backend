@@ -231,14 +231,16 @@ export default function UsersPage() {
   }, [search, filter]);
 
   async function openUserModal(id) {
+    const existing = users.find((u) => u.id === id);
+    if (existing) {
+      setSelectedUser(existing);
+      return;
+    }
     setModalLoading(true);
     setSelectedUser({ id });
     try {
-      const [data, groups] = await Promise.all([
-        adminApi.getUserById(id),
-        adminApi.getUserGroups(id).catch(() => []),
-      ]);
-      setSelectedUser({ ...data, groups });
+      const data = await adminApi.getUserById(id);
+      setSelectedUser(data);
     } catch (err) {
       toast(
         "Failed to load user details: " + (err.message || "Unknown error"),
@@ -258,14 +260,8 @@ export default function UsersPage() {
       setUsers(list);
       setSelected(new Set()); // clear selection on reload
 
-      const entries = await Promise.all(
-        list.map((u) =>
-          adminApi
-            .getUserGroups(u.id)
-            .then((g) => [u.id, g])
-            .catch(() => [u.id, []]),
-        ),
-      );
+      // Groups are included directly in the getAllUsers response — 0 extra API calls
+      const entries = list.map((u) => [u.id, u.groups ?? []]);
       setUserGroups(Object.fromEntries(entries));
     } catch (err) {
       toast(
