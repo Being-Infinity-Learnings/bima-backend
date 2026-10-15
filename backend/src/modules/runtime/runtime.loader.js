@@ -75,6 +75,10 @@ async function load(quizId) {
 
     currentDurationMs: null,
 
+    // Index of the last question finishQuestion() completed; guards it
+    // against running twice for the same question.
+    finishedQuestionIndex: null,
+
     // Per-question reveal payload and final results, stored as plain
     // objects ({userId: payload}) since JSON can't represent a Map.
     lastQuestionResults: null,

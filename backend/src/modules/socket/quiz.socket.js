@@ -1,76 +1,54 @@
 // Purpose: Register quiz-specific socket event handlers (join, submit)
 // and perform runtime user validation.
 const manager = require("../runtime/runtime.manager");
-const store = require("../runtime/runtime.store");
 const { QuizPhase } = require("../runtime/runtime.constants");
 
 // Register handlers for quiz-related socket events.
 function registerQuizEvents(io, socket) {
   socket.on("joinQuiz", async ({ quizId }) => {
     try {
-      // IMPORTANT: this used to call manager.loadEngine(quizId) directly,
-      // outside any lock, then mutate/broadcast/read off that one snapshot
-      // across several awaits. If a phase job (enterQuestion/
-      // finishQuestion/enterLeaderboard/...) fired concurrently, this
-      // handler's broadcastRuntimeState() could send a stale phase to the
-      // whole room right after the phase job's own (correct) broadcast —
-      // the same bug that hit the disconnect handler. Routing through
-      // store.withLock + manager.withEngine serializes this with
-      // submissions/phase-jobs and guarantees fresh state at broadcast
-      // time. Everything that needs to read state or mutate it happens
-      // inside the locked callback; only the socket.emit calls (no state
-      // access) happen after, using values captured from that fresh read.
-      const {
-        snapshot,
-        phase,
-        leaderboardPayload,
-        questionResults,
-        finalResult,
-      } = await store.withLock(quizId, () =>
-        manager.withEngine(quizId, async (engine) => {
-          validateUser(engine.runtime, socket.dbUser);
+      // No per-quiz lock (see runtime.manager.broadcastIfCurrent for the
+      // mechanism that replaces it). Validation and joining never need to
+      // be ordered against a phase transition or against a different
+      // user's join — only the room-wide broadcast at the end does, and
+      // that's handled by re-checking the state's version immediately
+      // before emitting instead of holding a lock the whole time through.
+      const initial = await manager.loadEngine(quizId);
 
-          socket.join(`quiz:${quizId}`);
+      validateUser(initial.runtime, socket.dbUser);
 
-          socket.data.quizId = quizId;
+      socket.join(`quiz:${quizId}`);
 
-          await engine.addConnectedUser(socket.dbUser.id);
+      socket.data.quizId = quizId;
 
-          if (!(await engine.isParticipantRegistered(socket.dbUser.id))) {
-            await engine.registerParticipant(socket.dbUser);
-          }
+      // Marks connected + registers as a participant (first join only) +
+      // returns the fresh connected count, all in one atomic round trip.
+      // Doesn't touch the state blob, so it can't change its version.
+      const connectedCount = await initial.joinParticipant(socket.dbUser);
 
-          // Notify everyone in the lobby about updated participant count
-          await engine.broadcastRuntimeState();
+      // Reload fresh rather than reusing `initial` — gives this joiner
+      // the most current possible view, and its version becomes the
+      // baseline the broadcast check re-verifies against right before
+      // emitting.
+      const fresh = await manager.loadEngine(quizId);
+      const snapshot = await fresh.getRuntimeState(connectedCount);
+      const phase = fresh.runtime.phase;
 
-          const snapshot = await engine.getRuntimeState();
-          const phase = engine.runtime.phase;
+      let leaderboardPayload = null;
+      let questionResults = null;
+      let finalResult = null;
 
-          let leaderboardPayload = null;
-          let questionResults = null;
-          let finalResult = null;
+      if (phase === "LEADERBOARD" || phase === QuizPhase.RESULTS) {
+        leaderboardPayload = await fresh.buildLeaderboardPayload();
 
-          if (phase === "LEADERBOARD" || phase === QuizPhase.RESULTS) {
-            leaderboardPayload = await engine.buildLeaderboardPayload();
+        questionResults =
+          fresh.runtime.lastQuestionResults?.[socket.dbUser.id] ??
+          (await fresh.buildQuestionResults())[socket.dbUser.id];
+      }
 
-            questionResults =
-              engine.runtime.lastQuestionResults?.[socket.dbUser.id] ??
-              (await engine.buildQuestionResults())[socket.dbUser.id];
-          }
-
-          if (phase === QuizPhase.RESULTS) {
-            finalResult = engine.runtime.finalResults?.[socket.dbUser.id];
-          }
-
-          return {
-            snapshot,
-            phase,
-            leaderboardPayload,
-            questionResults,
-            finalResult,
-          };
-        }),
-      );
+      if (phase === QuizPhase.RESULTS) {
+        finalResult = fresh.runtime.finalResults?.[socket.dbUser.id];
+      }
 
       socket.emit("quizJoined", {
         success: true,
@@ -96,6 +74,13 @@ function registerQuizEvents(io, socket) {
         });
       }
 
+      // Notify everyone in the lobby about the updated participant count —
+      // but only if nothing has changed since `fresh` was read. If a
+      // phase transition landed in between, its own broadcast already
+      // delivered the correct, newer state; sending this one now would
+      // show the room a stale phase for a moment.
+      await manager.broadcastIfCurrent(quizId, fresh.runtime.version, snapshot);
+
       console.log(`[Socket] ${socket.dbUser.fullName} joined quiz ${quizId}`);
     } catch (error) {
       socket.emit("joinQuizError", {
@@ -114,20 +99,20 @@ function registerQuizEvents(io, socket) {
         throw new Error("You are not connected to a quiz.");
       }
 
-      // Guard against two submissions for the same quiz racing on
-      // different app instances at the same time (e.g. right at the
-      // "everyone answered, finish early" boundary) — see
-      // runtime.store.withLock.
-      await store.withLock(quizId, () =>
-        manager.withEngine(quizId, (engine) =>
-          engine.submitAnswer({
-            userId: socket.dbUser.id,
+      // No per-quiz lock here — submitAnswer()'s leaderboard math,
+      // duplicate check, and "everyone answered" detection are all atomic
+      // on their own (store.recordSubmission), and the one race that DID
+      // need the lock — a submission landing at the exact instant a
+      // question closes — is now handled by finishQuestion() atomically
+      // closing submissions first.
+      await manager.withEngine(quizId, (engine) =>
+        engine.submitAnswer({
+          userId: socket.dbUser.id,
 
-            questionId,
+          questionId,
 
-            selectedOptionIds,
-          }),
-        ),
+          selectedOptionIds,
+        }),
       );
 
       socket.emit("answerSubmitted", {
