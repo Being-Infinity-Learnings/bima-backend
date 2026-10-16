@@ -14,6 +14,7 @@ import {
   CalendarClock,
   ArrowRight,
   AlertCircle,
+  Upload,
   FlaskConical, // TEST-ONLY: used by the "Test Runtime" button, remove import if button is removed
 } from "lucide-react";
 import {
@@ -34,6 +35,7 @@ import {
   toast,
 } from "../../components/ui/index.jsx";
 import APP_CONFIG from "../../config/app.config.js";
+import BulkUploadQuestionsModal from "./BulkUploadQuestionsModal.jsx";
 
 // The DateTimePicker works with naive "YYYY-MM-DDTHH:MM" strings (no timezone
 // info) representing the admin's LOCAL wall-clock time. The backend expects
@@ -1225,6 +1227,7 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bankSearch, setBankSearch] = useState("");
   const [showInlineCreate, setShowInlineCreate] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [addingToQuiz, setAddingToQuiz] = useState(false);
 
   useEffect(() => {
@@ -1242,6 +1245,7 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
       setCoverImageUrl(quiz?.coverImageUrl ?? null);
       setSelectedIds(new Set());
       setShowInlineCreate(false);
+      setShowBulkUpload(false);
     }
   }, [open, quiz?.id]);
 
@@ -1322,6 +1326,21 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
     setBankQuestions((prev) => [q, ...prev]);
     setSelectedIds((prev) => new Set([...prev, q.id]));
     setShowInlineCreate(false);
+  }
+
+  function handleBulkCreated(created) {
+    if (created && created.length > 0) {
+      setBankQuestions((prev) => [...created, ...prev]);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        created.forEach((q) => next.add(q.id));
+        return next;
+      });
+      toast(
+        `Imported ${created.length} question${created.length > 1 ? "s" : ""} and added to quiz selection.`,
+        "success",
+      );
+    }
   }
 
   async function finishStep2() {
@@ -1630,26 +1649,51 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
               />
             </div>
           ) : (
-            <button
-              onClick={() => setShowInlineCreate(true)}
-              style={{
-                background: `${T.primary}0d`,
-                border: `1.5px dashed ${T.primary}50`,
-                borderRadius: 12,
-                color: T.primary,
-                fontSize: 14,
-                fontWeight: 600,
-                padding: "14px 18px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                textAlign: "left",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <Plus size={17} /> Create a new question
-            </button>
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => setShowInlineCreate(true)}
+                style={{
+                  flex: 1,
+                  background: `${T.primary}0d`,
+                  border: `1.5px dashed ${T.primary}50`,
+                  borderRadius: 12,
+                  color: T.primary,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  padding: "14px 18px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  textAlign: "left",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <Plus size={17} /> Create a new question
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowBulkUpload(true)}
+                style={{
+                  background: `${T.primary}0d`,
+                  border: `1.5px dashed ${T.primary}50`,
+                  borderRadius: 12,
+                  color: T.primary,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  padding: "14px 18px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <Upload size={17} /> Bulk upload questions
+              </button>
+            </div>
           )}
 
           <input
@@ -1793,6 +1837,11 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
           </div>
         </div>
       )}
+      <BulkUploadQuestionsModal
+        open={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        onSuccess={handleBulkCreated}
+      />
     </Modal>
   );
 }
@@ -1957,6 +2006,7 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -1965,6 +2015,7 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
     setSearch("");
     setError("");
     setShowCreate(false);
+    setShowBulkUpload(false);
     questionApi
       .getAll()
       .then((q) => setQuestions(q ?? []))
@@ -1987,6 +2038,21 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
     setQuestions((prev) => [q, ...prev]);
     setSelected((prev) => new Set([...prev, q.id]));
     setShowCreate(false);
+  }
+
+  function handleBulkCreated(created) {
+    if (created && created.length > 0) {
+      setQuestions((prev) => [...created, ...prev]);
+      setSelected((prev) => {
+        const next = new Set(prev);
+        created.forEach((q) => next.add(q.id));
+        return next;
+      });
+      toast(
+        `Imported ${created.length} question${created.length > 1 ? "s" : ""} and selected.`,
+        "success",
+      );
+    }
   }
 
   async function addSelected() {
@@ -2036,26 +2102,51 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
             />
           </div>
         ) : (
-          <button
-            onClick={() => setShowCreate(true)}
-            style={{
-              background: `${T.primary}0d`,
-              border: `1.5px dashed ${T.primary}50`,
-              borderRadius: 12,
-              color: T.primary,
-              fontSize: 14,
-              fontWeight: 600,
-              padding: "14px 18px",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              textAlign: "left",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <Plus size={17} /> Create a new question
-          </button>
+          <div style={{ display: "flex", gap: 12 }}>
+            <button
+              type="button"
+              onClick={() => setShowCreate(true)}
+              style={{
+                flex: 1,
+                background: `${T.primary}0d`,
+                border: `1.5px dashed ${T.primary}50`,
+                borderRadius: 12,
+                color: T.primary,
+                fontSize: 14,
+                fontWeight: 600,
+                padding: "14px 18px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                textAlign: "left",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Plus size={17} /> Create a new question
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowBulkUpload(true)}
+              style={{
+                background: `${T.primary}0d`,
+                border: `1.5px dashed ${T.primary}50`,
+                borderRadius: 12,
+                color: T.primary,
+                fontSize: 14,
+                fontWeight: 600,
+                padding: "14px 18px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Upload size={17} /> Bulk upload questions
+            </button>
+          </div>
         )}
 
         <input
@@ -2208,6 +2299,11 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
           </div>
         </div>
       </div>
+      <BulkUploadQuestionsModal
+        open={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        onSuccess={handleBulkCreated}
+      />
     </Modal>
   );
 }
@@ -3149,6 +3245,7 @@ function QuestionBankPanel() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [viewQuestion, setViewQuestion] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [confirmQuestion, setConfirmQuestion] = useState(null);
@@ -3234,10 +3331,16 @@ function QuestionBankPanel() {
             Question Bank
           </h2>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus size={15} style={{ marginRight: 6 }} />
-          New question
-        </Button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <Button onClick={() => setShowBulkUpload(true)}>
+            <Upload size={15} style={{ marginRight: 6 }} />
+            Bulk upload questions
+          </Button>
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus size={15} style={{ marginRight: 6 }} />
+            New question
+          </Button>
+        </div>
       </div>
 
       <input
@@ -3432,6 +3535,12 @@ function QuestionBankPanel() {
         message="Are you sure you want to delete this question? This action cannot be undone."
         confirmLabel="Delete question"
         loading={deletingId === confirmQuestion?.id}
+      />
+
+      <BulkUploadQuestionsModal
+        open={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        onSuccess={() => fetchQuestions()}
       />
     </div>
   );

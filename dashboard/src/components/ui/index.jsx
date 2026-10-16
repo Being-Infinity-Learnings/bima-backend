@@ -2,6 +2,12 @@
 //
 // Provides buttons, cards, form controls, modals, avatars, and toast notifications.
 import { useState, useEffect, useRef } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+} from "lucide-react";
 import APP_CONFIG from "../../config/app.config.js";
 
 const T = APP_CONFIG.theme;
@@ -999,6 +1005,235 @@ export function ToastContainer() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Pagination ──────────────────────────────────────────────────────────────
+// Reusable pagination bar with page sizes, smart page range numbers, and item summary.
+export function Pagination({
+  currentPage = 1,
+  totalPages = 1,
+  totalItems = 0,
+  pageSize = 10,
+  pageSizeOptions = [10, 25, 50, 100],
+  onPageChange,
+  onPageSizeChange,
+  itemName = "users",
+  style: extraStyle = {},
+}) {
+  if (totalItems <= 0) return null;
+
+  const startItem = (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(currentPage * pageSize, totalItems);
+
+  function getPageNumbers() {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages = [];
+    if (currentPage <= 4) {
+      pages.push(1, 2, 3, 4, 5, "...", totalPages);
+    } else if (currentPage >= totalPages - 3) {
+      pages.push(
+        1,
+        "...",
+        totalPages - 4,
+        totalPages - 3,
+        totalPages - 2,
+        totalPages - 1,
+        totalPages,
+      );
+    } else {
+      pages.push(
+        1,
+        "...",
+        currentPage - 1,
+        currentPage,
+        currentPage + 1,
+        "...",
+        totalPages,
+      );
+    }
+    return pages;
+  }
+
+  const pages = getPageNumbers();
+
+  const navBtnBase = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 32,
+    minWidth: 32,
+    padding: "0 6px",
+    borderRadius: 8,
+    border: `1px solid ${T.cardBorder}`,
+    background: "#0d1527",
+    color: T.textSecondary,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+    userSelect: "none",
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "14px 20px",
+        background: T.pageBg,
+        borderTop: `1px solid ${T.cardBorder}`,
+        borderRadius: "0 0 16px 16px",
+        flexWrap: "wrap",
+        gap: 12,
+        ...extraStyle,
+      }}
+    >
+      {/* Left: Summary text */}
+      <div style={{ fontSize: 13, color: T.textMuted }}>
+        Showing <strong style={{ color: T.textPrimary }}>{startItem}</strong>–
+        <strong style={{ color: T.textPrimary }}>{endItem}</strong> of{" "}
+        <strong style={{ color: T.textPrimary }}>{totalItems}</strong> {itemName}
+      </div>
+
+      {/* Right: Controls (Page size dropdown + Nav buttons) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        {/* Rows per page selector */}
+        {pageSizeOptions && pageSizeOptions.length > 0 && onPageSizeChange && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, color: T.textMuted }}>Per page:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+              style={{
+                background: "#0d1527",
+                border: `1px solid ${T.cardBorder}`,
+                borderRadius: 8,
+                color: T.textPrimary,
+                padding: "5px 10px",
+                fontSize: 12,
+                fontWeight: 600,
+                outline: "none",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {pageSizeOptions.map((opt) => (
+                <option
+                  key={opt}
+                  value={opt}
+                  style={{ background: "#0d1527", color: "#fff" }}
+                >
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Page navigation buttons */}
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          {/* First page */}
+          <button
+            type="button"
+            disabled={currentPage <= 1}
+            onClick={() => onPageChange(1)}
+            title="First page"
+            style={{
+              ...navBtnBase,
+              opacity: currentPage <= 1 ? 0.35 : 1,
+              cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+            }}
+          >
+            <ChevronsLeft size={15} />
+          </button>
+
+          {/* Previous page */}
+          <button
+            type="button"
+            disabled={currentPage <= 1}
+            onClick={() => onPageChange(currentPage - 1)}
+            title="Previous page"
+            style={{
+              ...navBtnBase,
+              opacity: currentPage <= 1 ? 0.35 : 1,
+              cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+            }}
+          >
+            <ChevronLeft size={15} />
+          </button>
+
+          {/* Page numbers */}
+          {pages.map((p, idx) => {
+            if (p === "...") {
+              return (
+                <span
+                  key={`ellipsis-${idx}`}
+                  style={{
+                    color: T.textMuted,
+                    padding: "0 4px",
+                    fontSize: 13,
+                    userSelect: "none",
+                  }}
+                >
+                  …
+                </span>
+              );
+            }
+            const isActive = p === currentPage;
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => onPageChange(p)}
+                style={{
+                  ...navBtnBase,
+                  background: isActive ? T.primary : "#0d1527",
+                  borderColor: isActive ? T.primary : T.cardBorder,
+                  color: isActive ? "#ffffff" : T.textSecondary,
+                  fontWeight: isActive ? 700 : 500,
+                }}
+              >
+                {p}
+              </button>
+            );
+          })}
+
+          {/* Next page */}
+          <button
+            type="button"
+            disabled={currentPage >= totalPages}
+            onClick={() => onPageChange(currentPage + 1)}
+            title="Next page"
+            style={{
+              ...navBtnBase,
+              opacity: currentPage >= totalPages ? 0.35 : 1,
+              cursor: currentPage >= totalPages ? "not-allowed" : "pointer",
+            }}
+          >
+            <ChevronRight size={15} />
+          </button>
+
+          {/* Last page */}
+          <button
+            type="button"
+            disabled={currentPage >= totalPages}
+            onClick={() => onPageChange(totalPages)}
+            title="Last page"
+            style={{
+              ...navBtnBase,
+              opacity: currentPage >= totalPages ? 0.35 : 1,
+              cursor: currentPage >= totalPages ? "not-allowed" : "pointer",
+            }}
+          >
+            <ChevronsRight size={15} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

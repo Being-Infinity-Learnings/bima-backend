@@ -148,8 +148,58 @@ async function deleteQuestion(id) {
   });
 }
 
+async function createQuestionsBulk(questionsList, userId) {
+  return prisma.$transaction(async (tx) => {
+    const createdQuestions = [];
+
+    for (const qData of questionsList) {
+      const question = await tx.question.create({
+        data: {
+          questionText: qData.questionText.trim(),
+          questionType: qData.questionType || "SINGLE_CORRECT",
+          mediaUrl: qData.mediaUrl?.trim() || null,
+          customTimer:
+            qData.customTimer !== undefined &&
+            qData.customTimer !== null &&
+            !isNaN(Number(qData.customTimer)) &&
+            Number(qData.customTimer) > 0
+              ? parseInt(qData.customTimer, 10)
+              : null,
+          createdById: userId,
+        },
+      });
+
+      if (Array.isArray(qData.options) && qData.options.length > 0) {
+        await tx.questionOption.createMany({
+          data: qData.options.map((option, index) => ({
+            questionId: question.id,
+            optionText: option.optionText.trim(),
+            isCorrect: Boolean(option.isCorrect),
+            orderIndex:
+              option.orderIndex !== undefined ? option.orderIndex : index + 1,
+          })),
+        });
+      }
+
+      const fullQuestion = await tx.question.findUnique({
+        where: { id: question.id },
+        include: {
+          options: {
+            orderBy: { orderIndex: "asc" },
+          },
+        },
+      });
+
+      createdQuestions.push(fullQuestion);
+    }
+
+    return createdQuestions;
+  });
+}
+
 module.exports = {
   createQuestion,
+  createQuestionsBulk,
   getQuestions,
   getQuestionById,
   updateQuestion,

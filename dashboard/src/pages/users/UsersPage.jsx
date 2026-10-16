@@ -14,6 +14,7 @@ import {
   Avatar,
   EmptyState,
   Spinner,
+  Pagination,
   toast,
 } from "../../components/ui/index.jsx";
 import APP_CONFIG from "../../config/app.config.js";
@@ -221,15 +222,25 @@ export default function UsersPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
 
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filter]);
+
   async function openUserModal(id) {
+    const existing = users.find((u) => u.id === id);
+    if (existing) {
+      setSelectedUser(existing);
+      return;
+    }
     setModalLoading(true);
     setSelectedUser({ id });
     try {
-      const [data, groups] = await Promise.all([
-        adminApi.getUserById(id),
-        adminApi.getUserGroups(id).catch(() => []),
-      ]);
-      setSelectedUser({ ...data, groups });
+      const data = await adminApi.getUserById(id);
+      setSelectedUser(data);
     } catch (err) {
       toast(
         "Failed to load user details: " + (err.message || "Unknown error"),
@@ -249,14 +260,8 @@ export default function UsersPage() {
       setUsers(list);
       setSelected(new Set()); // clear selection on reload
 
-      const entries = await Promise.all(
-        list.map((u) =>
-          adminApi
-            .getUserGroups(u.id)
-            .then((g) => [u.id, g])
-            .catch(() => [u.id, []]),
-        ),
-      );
+      // Groups are included directly in the getAllUsers response — 0 extra API calls
+      const entries = list.map((u) => [u.id, u.groups ?? []]);
       setUserGroups(Object.fromEntries(entries));
     } catch (err) {
       toast(
@@ -345,23 +350,37 @@ export default function UsersPage() {
     return matchStatus && matchSearch;
   });
 
-  // Select-all logic scoped to currently visible filtered list
-  const filteredIds = filtered.map((u) => u.id);
-  const allFilteredSelected =
-    filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  // Auto-clamp currentPage if out of bounds
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedUsers = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
+
+  // Select-all logic scoped to currently visible page
+  const currentPageIds = paginatedUsers.map((u) => u.id);
+  const allCurrentPageSelected =
+    currentPageIds.length > 0 && currentPageIds.every((id) => selected.has(id));
   const someSelected = selected.size > 0;
 
   function toggleSelectAll() {
-    if (allFilteredSelected) {
+    if (allCurrentPageSelected) {
       setSelected((prev) => {
         const next = new Set(prev);
-        filteredIds.forEach((id) => next.delete(id));
+        currentPageIds.forEach((id) => next.delete(id));
         return next;
       });
     } else {
       setSelected((prev) => {
         const next = new Set(prev);
-        filteredIds.forEach((id) => next.add(id));
+        currentPageIds.forEach((id) => next.add(id));
         return next;
       });
     }
@@ -509,6 +528,24 @@ export default function UsersPage() {
           <span style={{ fontSize: 13, fontWeight: 700, color: T.primaryText }}>
             {selected.size} selected
           </span>
+          {selected.size < filtered.length && (
+            <button
+              type="button"
+              onClick={() => setSelected(new Set(filtered.map((u) => u.id)))}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: T.primaryText,
+                fontSize: 12,
+                textDecoration: "underline",
+                cursor: "pointer",
+                padding: "2px 4px",
+                fontFamily: "inherit",
+              }}
+            >
+              Select all {filtered.length} users
+            </button>
+          )}
           <div style={{ width: 1, height: 18, background: `${T.primary}40` }} />
           <Button
             size="sm"
@@ -561,7 +598,7 @@ export default function UsersPage() {
           <div>
             <input
               type="checkbox"
-              checked={allFilteredSelected}
+              checked={allCurrentPageSelected}
               onChange={toggleSelectAll}
               style={{
                 accentColor: T.primary,
@@ -608,7 +645,7 @@ export default function UsersPage() {
             subtitle="Try adjusting your search or filter"
           />
         ) : (
-          filtered.map((user, index) => {
+          paginatedUsers.map((user, index) => {
             const status = userStatus(user);
             const busy = (key) => actionLoading === user.id + key;
             const isChecked = selected.has(user.id);
@@ -623,7 +660,7 @@ export default function UsersPage() {
                   alignItems: "center",
                   gap: "0 16px",
                   borderBottom:
-                    index < filtered.length - 1
+                    index < paginatedUsers.length - 1
                       ? `1px solid ${T.cardBorder}`
                       : "none",
                   background: isChecked
@@ -856,6 +893,23 @@ export default function UsersPage() {
               </div>
             );
           })
+        )}
+
+        {/* Pagination Controls */}
+        {!loading && filtered.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            pageSizeOptions={[10, 25, 50, 100]}
+            onPageChange={(p) => setCurrentPage(p)}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setCurrentPage(1);
+            }}
+            itemName="users"
+          />
         )}
       </Card>
 

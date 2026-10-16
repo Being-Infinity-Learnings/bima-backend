@@ -3,35 +3,64 @@
 
 const prisma = require("../../config/prisma");
 
-// Return users awaiting approval (not approved, not blocked).
-async function getPendingUsers() {
-  return await prisma.user.findMany({
-    where: {
-      approved: false,
-      blocked: false,
+// Helper to format user record with lean groups array
+function formatUserWithGroups(user) {
+  if (!user) return null;
+  const { groupMemberships, ...rest } = user;
+  return {
+    ...rest,
+    groups: groupMemberships ? groupMemberships.map((m) => m.group) : [],
+  };
+}
+
+const userGroupsInclude = {
+  groupMemberships: {
+    select: {
+      group: {
+        select: { id: true, name: true },
+      },
     },
     orderBy: {
       createdAt: "asc",
     },
+  },
+};
+
+// Return users awaiting approval (not approved, not blocked).
+async function getPendingUsers() {
+  const users = await prisma.user.findMany({
+    where: {
+      approved: false,
+      blocked: false,
+    },
+    include: userGroupsInclude,
+    orderBy: {
+      createdAt: "asc",
+    },
   });
+  return users.map(formatUserWithGroups);
 }
 
-// Return all users ordered by creation time.
+// Return all users ordered by creation time with their groups included.
 async function getAllUsers() {
-  return await prisma.user.findMany({
+  const users = await prisma.user.findMany({
+    include: userGroupsInclude,
     orderBy: {
       createdAt: "desc",
     },
   });
+  return users.map(formatUserWithGroups);
 }
 
-// Return a user by id.
+// Return a user by id with groups included.
 async function getUserById(userId) {
-  return await prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: {
       id: userId,
     },
+    include: userGroupsInclude,
   });
+  return formatUserWithGroups(user);
 }
 
 // Approve a user account by id.

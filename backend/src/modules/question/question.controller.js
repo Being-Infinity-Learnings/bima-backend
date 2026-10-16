@@ -28,6 +28,82 @@ async function createQuestion(req, res) {
   }
 }
 
+async function createQuestionsBulk(req, res) {
+  try {
+    const { questions } = req.body;
+
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "An array of questions is required",
+      });
+    }
+
+    if (questions.length > 500) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot upload more than 500 questions in a single batch",
+      });
+    }
+
+    const errors = [];
+    questions.forEach((q, idx) => {
+      const rowNum = idx + 1;
+      if (!q.questionText || !q.questionText.trim()) {
+        errors.push(`Row ${rowNum}: Question text is required`);
+      }
+      if (!Array.isArray(q.options) || q.options.length < 2) {
+        errors.push(`Row ${rowNum}: At least 2 options are required`);
+      } else {
+        const correctCount = q.options.filter((o) => Boolean(o.isCorrect)).length;
+        if (correctCount !== 1) {
+          errors.push(
+            `Row ${rowNum}: Exactly 1 correct answer is required (found ${correctCount})`,
+          );
+        }
+        const hasEmptyOption = q.options.some(
+          (o) => !o.optionText || !o.optionText.trim(),
+        );
+        if (hasEmptyOption) {
+          errors.push(`Row ${rowNum}: All provided options must have text`);
+        }
+      }
+      if (
+        q.customTimer != null &&
+        (isNaN(Number(q.customTimer)) || Number(q.customTimer) <= 0)
+      ) {
+        errors.push(`Row ${rowNum}: Custom timer must be a positive integer`);
+      }
+    });
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed for one or more questions",
+        errors,
+      });
+    }
+
+    const created = await questionService.createQuestionsBulk(
+      questions,
+      req.dbUser.id,
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: `Successfully created ${created.length} question${created.length > 1 ? "s" : ""}`,
+      data: created,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
 async function getQuestions(req, res) {
   try {
     const questions = await questionService.getQuestions();
@@ -143,6 +219,7 @@ async function deleteQuestion(req, res) {
 
 module.exports = {
   createQuestion,
+  createQuestionsBulk,
   getQuestions,
   getQuestionById,
   updateQuestion,
