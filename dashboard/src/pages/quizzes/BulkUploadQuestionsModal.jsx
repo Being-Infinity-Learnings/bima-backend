@@ -646,12 +646,9 @@ export default function BulkUploadQuestionsModal({
                     fontWeight: 700,
                     color: "#f87171",
                     marginBottom: 6,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
                   }}
                 >
-                  <span style={{ fontSize: 14 }}>🔴</span> Mandatory Fields
+                  Mandatory Fields
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 16, color: T.textSecondary }}>
                   <li>
@@ -679,12 +676,9 @@ export default function BulkUploadQuestionsModal({
                     fontWeight: 700,
                     color: "#4ade80",
                     marginBottom: 6,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
                   }}
                 >
-                  <span style={{ fontSize: 14 }}>🟢</span> Optional Fields
+                  Optional Fields
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 16, color: T.textSecondary }}>
                   <li>
@@ -709,12 +703,9 @@ export default function BulkUploadQuestionsModal({
                 border: "1px solid rgba(245, 158, 11, 0.25)",
                 fontSize: 12,
                 color: "#fde68a",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
+                lineHeight: 1.5,
               }}
             >
-              <AlertCircle size={15} style={{ flexShrink: 0 }} />
               <span>
                 <strong>Single correct answer rule:</strong> Only <strong>one</strong> correct answer is allowed per question. Multi-select answers are currently not supported.
               </span>
