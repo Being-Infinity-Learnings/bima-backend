@@ -618,5 +618,29 @@ router.post(
   authorize("ADMIN"),
   adminController.bulkApproveUsers,
 );
+// Store Admin APIs
 
+// GET /admin/store/items - List all store items
+router.get(
+  "/store/items",
+  authenticate,
+  authorize("ADMIN"),
+  adminController.getAllStoreItems,
+);
+
+// POST /admin/store/items - Create a store item
+router.post(
+  "/store/items",
+  authenticate,
+  authorize("ADMIN"),
+  adminController.createStoreItem,
+);
+
+// PATCH /admin/store/items/:id - Update a store item
+router.patch(
+  "/store/items/:id",
+  authenticate,
+  authorize("ADMIN"),
+  adminController.updateStoreItem,
+);
 module.exports = router;

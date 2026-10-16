@@ -123,3 +123,79 @@ async function bulkApproveUsers(userIds) {
 }
 
 Object.assign(module.exports, { bulkApproveUsers });
+// Store Admin APIs
+
+// Return all store items, including inactive and out-of-stock items.
+async function getAllStoreItems() {
+  return await prisma.storeItem.findMany({
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+}
+
+// Create a new store item.
+async function createStoreItem(data, adminId) {
+  return await prisma.storeItem.create({
+    data: {
+      name: data.name.trim(),
+      description: data.description?.trim() || null,
+      imageUrl: data.imageUrl?.trim() || null,
+      coinCost: data.coinCost,
+      stock: data.stock,
+      createdById: adminId,
+      ...(data.status !== undefined && { status: data.status }),
+    },
+  });
+}
+
+// Update an existing store item.
+async function updateStoreItem(id, data) {
+  const existingItem = await prisma.storeItem.findUnique({
+    where: { id },
+  });
+
+  if (!existingItem) {
+    const error = new Error("Store item not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const updateData = {};
+
+  if (data.name !== undefined) {
+    updateData.name = data.name.trim();
+  }
+
+  if (data.description !== undefined) {
+    updateData.description = data.description?.trim() || null;
+  }
+
+  if (data.imageUrl !== undefined) {
+    updateData.imageUrl = data.imageUrl?.trim() || null;
+  }
+
+  if (data.coinCost !== undefined) {
+    updateData.coinCost = data.coinCost;
+  }
+
+  if (data.stock !== undefined) {
+    updateData.stock = data.stock;
+  }
+
+  if (data.status !== undefined) {
+    updateData.status = data.status;
+  }
+
+  return await prisma.storeItem.update({
+    where: { id },
+    data: updateData,
+  });
+}
+
+// Export the new Store Admin functions.
+Object.assign(module.exports, {
+  getAllStoreItems,
+  createStoreItem,
+  updateStoreItem,
+});
