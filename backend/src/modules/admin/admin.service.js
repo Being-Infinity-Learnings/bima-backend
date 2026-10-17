@@ -2,6 +2,7 @@
 // functions perform queries and updates using Prisma.
 
 const prisma = require("../../config/prisma");
+const imageService = require("../upload/image.service");
 
 // Helper to format user record with lean groups array
 function formatUserWithGroups(user) {
@@ -163,13 +164,29 @@ async function getAllStoreItems() {
   });
 }
 
+// Upload store images to S3 when a new image is provided.
+async function resolveStoreImageUrl(data) {
+  if (data.imageBase64) {
+    return imageService.uploadBase64Image(
+      data.imageBase64,
+      "store-images",
+    );
+  }
+
+  if (data.imageUrl !== undefined) {
+    return data.imageUrl?.trim() || null;
+  }
+
+  return undefined;
+}
 // Create a new store item.
 async function createStoreItem(data, adminId) {
+  const imageUrl = await resolveStoreImageUrl(data);
   return await prisma.storeItem.create({
     data: {
       name: data.name.trim(),
       description: data.description?.trim() || null,
-      imageUrl: data.imageUrl?.trim() || null,
+      imageUrl: imageUrl ?? null,
       coinCost: data.coinCost,
       stock: data.stock,
       createdById: adminId,
@@ -189,6 +206,7 @@ async function updateStoreItem(id, data) {
     error.statusCode = 404;
     throw error;
   }
+  const imageUrl = await resolveStoreImageUrl(data);
 
   const updateData = {};
 
@@ -200,8 +218,8 @@ async function updateStoreItem(id, data) {
     updateData.description = data.description?.trim() || null;
   }
 
-  if (data.imageUrl !== undefined) {
-    updateData.imageUrl = data.imageUrl?.trim() || null;
+  if (imageUrl !== undefined) {
+    updateData.imageUrl = imageUrl;
   }
 
   if (data.coinCost !== undefined) {

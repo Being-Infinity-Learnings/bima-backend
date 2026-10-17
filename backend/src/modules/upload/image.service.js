@@ -8,6 +8,7 @@ const ALLOWED_FOLDERS = [
   "question-images",
   "profile-images",
   "notification-images",
+  "store-images",
 ];
 
 const ALLOWED_TYPES = {

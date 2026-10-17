@@ -264,7 +264,15 @@ async function getAllStoreItems(req, res) {
 // POST /admin/store/items
 async function createStoreItem(req, res) {
   try {
-    const { name, description, imageUrl, coinCost, stock, status } = req.body;
+    const {
+      name,
+      description,
+      imageUrl,
+      imageBase64,
+      coinCost,
+      stock,
+      status,
+    } = req.body;
 
     if (typeof name !== "string" || !name.trim()) {
       return res.status(400).json({
@@ -308,6 +316,16 @@ async function createStoreItem(req, res) {
         message: "imageUrl must be a string or null",
       });
     }
+    if (
+      imageBase64 !== undefined &&
+      imageBase64 !== null &&
+      typeof imageBase64 !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "imageBase64 must be a string",
+      });
+    }
 
     if (
       status !== undefined &&
@@ -320,7 +338,7 @@ async function createStoreItem(req, res) {
     }
 
     const item = await adminService.createStoreItem(
-      { name, description, imageUrl, coinCost, stock, status },
+      { name, description, imageUrl, imageBase64, coinCost, stock, status },
       req.dbUser.id,
     );
 
@@ -339,14 +357,15 @@ async function createStoreItem(req, res) {
 // PATCH /admin/store/items/:id
 async function updateStoreItem(req, res) {
   try {
-    const { name, description, imageUrl, coinCost, stock, status } = req.body;
-
-    if (!req.params.id) {
-      return res.status(400).json({
-        success: false,
-        message: "Store item ID is required",
-      });
-    }
+    const {
+      name,
+      description,
+      imageUrl,
+      imageBase64,
+      coinCost,
+      stock,
+      status,
+    } = req.body;
 
     if (!req.body || Object.keys(req.body).length === 0) {
       return res.status(400).json({
@@ -406,6 +425,16 @@ async function updateStoreItem(req, res) {
         message: "imageUrl must be a string or null",
       });
     }
+    if (
+      imageBase64 !== undefined &&
+      imageBase64 !== null &&
+      typeof imageBase64 !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "imageBase64 must be a string",
+      });
+    }
 
     if (
       status !== undefined &&
@@ -421,6 +450,7 @@ async function updateStoreItem(req, res) {
       name,
       description,
       imageUrl,
+      imageBase64,
       coinCost,
       stock,
       status,
