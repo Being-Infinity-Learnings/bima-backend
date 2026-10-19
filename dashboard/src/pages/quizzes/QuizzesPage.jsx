@@ -16,6 +16,9 @@ import {
   AlertCircle,
   Upload,
   FlaskConical, // TEST-ONLY: used by the "Test Runtime" button, remove import if button is removed
+  LayoutGrid,
+  List,
+  RefreshCw,
 } from "lucide-react";
 import {
   quizApi,
@@ -27,12 +30,14 @@ import {
 import { useAuth } from "../../context/AuthContext.jsx";
 import {
   Button,
+  Card,
   Modal,
   EmptyState,
   Spinner,
   Badge,
   DateTimePicker,
   toast,
+  Pagination,
 } from "../../components/ui/index.jsx";
 import APP_CONFIG from "../../config/app.config.js";
 import BulkUploadQuestionsModal from "./BulkUploadQuestionsModal.jsx";
@@ -231,6 +236,101 @@ function IconBtn({ onClick, disabled, title, danger, children }) {
       }}
     >
       {children}
+    </button>
+  );
+}
+
+function ViewToggle({ viewMode, onChange }) {
+  const btnStyle = (active) => ({
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 12px",
+    borderRadius: 8,
+    border: `1px solid ${active ? T.primary + "60" : "transparent"}`,
+    background: active ? T.primary + "20" : "transparent",
+    color: active ? T.primary : T.textMuted,
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    transition: "all 0.15s ease",
+  });
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        background: "#0d1527",
+        border: `1px solid ${T.cardBorder}`,
+        borderRadius: 10,
+        padding: 3,
+        gap: 3,
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => onChange("cards")}
+        title="Cards grid view"
+        style={btnStyle(viewMode === "cards")}
+      >
+        <LayoutGrid size={14} />
+        <span>Cards</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("list")}
+        title="Table list view"
+        style={btnStyle(viewMode === "list")}
+      >
+        <List size={14} />
+        <span>Table</span>
+      </button>
+    </div>
+  );
+}
+
+function RefreshBtn({ onClick, loading, title = "Refresh" }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      title={title}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: 34,
+        width: 34,
+        borderRadius: 10,
+        border: `1px solid ${T.cardBorder}`,
+        background: "#0d1527",
+        color: T.textSecondary,
+        cursor: loading ? "default" : "pointer",
+        opacity: loading ? 0.6 : 1,
+        transition: "all 0.15s ease",
+      }}
+      onMouseEnter={(e) => {
+        if (!loading) {
+          e.currentTarget.style.borderColor = T.primary + "60";
+          e.currentTarget.style.color = T.primary;
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!loading) {
+          e.currentTarget.style.borderColor = T.cardBorder;
+          e.currentTarget.style.color = T.textSecondary;
+        }
+      }}
+    >
+      <RefreshCw
+        size={14}
+        style={{
+          animation: loading ? "spin 1s linear infinite" : "none",
+        }}
+      />
     </button>
   );
 }
@@ -1007,9 +1107,9 @@ function QuestionModal({ open, onClose, question, onSaved, readOnly = false }) {
   if (!q) return null;
 
   async function handleSave(data) {
-    await questionApi.update(q.id, data);
+    const updated = await questionApi.update(q.id, data);
     toast("Question updated.", "success");
-    onSaved?.();
+    onSaved?.(updated);
     onClose();
   }
 
@@ -2932,9 +3032,25 @@ function QuizDetailModal({ open, onClose, quiz, onQuizUpdated, role }) {
 
 const STATUS_FILTERS = ["ALL", "DRAFT", "SCHEDULED", "LIVE", "COMPLETED"];
 
-function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
+function QuizListPanel({ quizzes, loading, onRefresh, onSelect, onNew, onDeleted, role }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem("bima_quiz_view_mode") || "cards";
+    } catch {
+      return "cards";
+    }
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem("bima_quiz_page_size"));
+      return [12, 24, 48, 96].includes(saved) ? saved : 12;
+    } catch {
+      return 12;
+    }
+  });
   const [deletingId, setDeletingId] = useState(null);
   const [confirmQuiz, setConfirmQuiz] = useState(null);
 
@@ -2942,6 +3058,23 @@ function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
     (q) =>
       q.title.toLowerCase().includes(search.toLowerCase()) &&
       (statusFilter === "ALL" || quizStatus(q) === statusFilter),
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedQuizzes = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
   );
 
   function deleteQuiz(quiz, e) {
@@ -3013,36 +3146,60 @@ function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
       />
 
       <div
-        style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 22 }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 12,
+          marginBottom: 22,
+        }}
       >
-        {STATUS_FILTERS.map((s) => {
-          const active = statusFilter === s;
-          const meta = s === "ALL" ? null : STATUS_META[s];
-          return (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              style={{
-                background: active
-                  ? (meta?.colors.bg ?? T.primary + "20")
-                  : "transparent",
-                border: `1px solid ${active ? (meta?.colors.dot ?? T.primary) + "60" : T.cardBorder}`,
-                borderRadius: 999,
-                color: active ? (meta?.colors.text ?? T.primary) : T.textMuted,
-                fontSize: 11,
-                fontWeight: 700,
-                padding: "4px 14px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                transition: "all 0.12s",
-              }}
-            >
-              {s === "ALL" ? "All" : (meta?.label ?? s)}
-            </button>
-          );
-        })}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          {STATUS_FILTERS.map((s) => {
+            const active = statusFilter === s;
+            const meta = s === "ALL" ? null : STATUS_META[s];
+            return (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                style={{
+                  background: active
+                    ? (meta?.colors.bg ?? T.primary + "20")
+                    : "transparent",
+                  border: `1px solid ${active ? (meta?.colors.dot ?? T.primary) + "60" : T.cardBorder}`,
+                  borderRadius: 999,
+                  color: active ? (meta?.colors.text ?? T.primary) : T.textMuted,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "4px 14px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  transition: "all 0.12s",
+                }}
+              >
+                {s === "ALL" ? "All" : (meta?.label ?? s)}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {onRefresh && (
+            <RefreshBtn onClick={onRefresh} loading={loading} title="Refresh quizzes" />
+          )}
+          <ViewToggle
+            viewMode={viewMode}
+            onChange={(mode) => {
+              setViewMode(mode);
+              try {
+                localStorage.setItem("bima_quiz_view_mode", mode);
+              } catch {}
+            }}
+          />
+        </div>
       </div>
 
       {loading ? (
@@ -3059,118 +3216,388 @@ function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
               : 'Click "New quiz" to get started.'
           }
         />
-      ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))",
-            gap: 16,
-          }}
-        >
-          {filtered.map((quiz) => {
-            const status = quizStatus(quiz);
-            const meta = STATUS_META[status] ?? STATUS_META.DRAFT;
-            return (
-              <div
-                key={quiz.id}
-                onClick={() => onSelect(quiz)}
-                style={{
-                  background: T.cardBg,
-                  border: `1.5px solid ${T.cardBorder}`,
-                  borderRadius: 16,
-                  cursor: "pointer",
-                  transition: "border-color 0.12s, box-shadow 0.12s",
-                  overflow: "hidden",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = T.primary + "60";
-                  e.currentTarget.style.boxShadow = `0 6px 28px ${T.primary}18`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = T.cardBorder;
-                  e.currentTarget.style.boxShadow = "none";
-                }}
-              >
-                {quiz.coverImageUrl ? (
-                  <div style={{ height: 140, overflow: "hidden" }}>
-                    <img
-                      src={quiz.coverImageUrl}
-                      alt=""
+      ) : viewMode === "cards" ? (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))",
+              gap: 16,
+            }}
+          >
+            {paginatedQuizzes.map((quiz) => {
+              const status = quizStatus(quiz);
+              const meta = STATUS_META[status] ?? STATUS_META.DRAFT;
+              return (
+                <div
+                  key={quiz.id}
+                  onClick={() => onSelect(quiz)}
+                  style={{
+                    background: T.cardBg,
+                    border: `1.5px solid ${T.cardBorder}`,
+                    borderRadius: 16,
+                    cursor: "pointer",
+                    transition: "border-color 0.12s, box-shadow 0.12s",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = T.primary + "60";
+                    e.currentTarget.style.boxShadow = `0 6px 28px ${T.primary}18`;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = T.cardBorder;
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                >
+                  {quiz.coverImageUrl ? (
+                    <div style={{ height: 140, overflow: "hidden" }}>
+                      <img
+                        src={quiz.coverImageUrl}
+                        alt=""
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          display: "block",
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div
                       style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        display: "block",
+                        height: 140,
+                        background: T.pageBg,
+                        borderBottom: `1.5px solid ${T.cardBorder}`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                       }}
-                    />
-                  </div>
-                ) : (
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: 8,
+                          opacity: 0.35,
+                        }}
+                      >
+                        <ImageIcon size={32} color={T.textMuted} />
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: T.textMuted,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.07em",
+                          }}
+                        >
+                          No image
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <div
                     style={{
-                      height: 140,
-                      background: T.pageBg,
-                      borderBottom: `1.5px solid ${T.cardBorder}`,
+                      padding: "16px 18px",
+                      flex: 1,
                       display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
+                      flexDirection: "column",
+                      gap: 10,
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
                         gap: 8,
-                        opacity: 0.35,
                       }}
                     >
-                      <ImageIcon size={32} color={T.textMuted} />
-                      <span
+                      <div
                         style={{
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: T.textMuted,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.07em",
+                          fontSize: 15,
+                          fontWeight: 700,
+                          color: T.textPrimary,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          flex: 1,
                         }}
+                        title={quiz.title}
                       >
-                        No image
+                        {quiz.title}
+                      </div>
+                      {role === "ADMIN" && (
+                        <IconBtn
+                          onClick={(e) => meta.canDelete && deleteQuiz(quiz, e)}
+                          disabled={!meta.canDelete || deletingId === quiz.id}
+                          title={
+                            meta.canDelete
+                              ? "Delete quiz"
+                              : `Cannot delete a ${meta.label.toLowerCase()} quiz`
+                          }
+                          danger
+                        >
+                          <Trash2 size={15} />
+                        </IconBtn>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <Badge label={meta.label} customColors={meta.colors} />
+                      <VisibilityBadge visibility={quiz.visibility} />
+                      <span style={{ fontSize: 12, color: T.textMuted }}>
+                        {quiz._count?.quizQuestions ?? 0} Qs
                       </span>
                     </div>
+                    {quiz.scheduledStartTime && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: T.textMuted,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <CalendarClock size={13} />
+                        {formatSchedule(quiz.scheduledStartTime)}
+                      </div>
+                    )}
+                    {quiz.createdBy && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: T.textMuted,
+                          marginTop: "auto",
+                        }}
+                      >
+                        by {quiz.createdBy.fullName}
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
+              );
+            })}
+          </div>
+
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            pageSizeOptions={[12, 24, 48, 96]}
+            onPageChange={(p) => setCurrentPage(p)}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              try {
+                localStorage.setItem("bima_quiz_page_size", String(s));
+              } catch {}
+              setCurrentPage(1);
+            }}
+            itemName="quizzes"
+            style={{
+              marginTop: 20,
+              borderRadius: 16,
+              border: `1px solid ${T.cardBorder}`,
+              background: T.cardBg,
+            }}
+          />
+        </>
+      ) : (
+        <Card>
+          <div style={{ overflowX: "auto" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "minmax(260px, 3fr) 110px 110px 90px 170px 140px 60px",
+                gap: "0 16px",
+                padding: "12px 20px",
+                background: T.pageBg,
+                borderBottom: `1px solid ${T.cardBorder}`,
+                borderRadius: "16px 16px 0 0",
+                alignItems: "center",
+                minWidth: 940,
+              }}
+            >
+              {[
+                "Quiz",
+                "Status",
+                "Visibility",
+                "Questions",
+                "Scheduled Start",
+                "Created By",
+                "Actions",
+              ].map((h) => (
                 <div
+                  key={h}
                   style={{
-                    padding: "16px 18px",
-                    flex: 1,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 10,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: T.textMuted,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  {h}
+                </div>
+              ))}
+            </div>
+
+            {paginatedQuizzes.map((quiz) => {
+              const status = quizStatus(quiz);
+              const meta = STATUS_META[status] ?? STATUS_META.DRAFT;
+              return (
+                <div
+                  key={quiz.id}
+                  onClick={() => onSelect(quiz)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "minmax(260px, 3fr) 110px 110px 90px 170px 140px 60px",
+                    gap: "0 16px",
+                    padding: "14px 20px",
+                    borderBottom: `1px solid ${T.cardBorder}`,
+                    alignItems: "center",
+                    cursor: "pointer",
+                    transition: "background 0.12s",
+                    minWidth: 940,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#131d31";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: 8,
+                      alignItems: "center",
+                      gap: 12,
+                      overflow: "hidden",
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 15,
-                        fontWeight: 700,
-                        color: T.textPrimary,
+                        width: 40,
+                        height: 40,
+                        borderRadius: 8,
                         overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        flex: 1,
+                        background: T.pageBg,
+                        border: `1px solid ${T.cardBorder}`,
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                       }}
                     >
-                      {quiz.title}
+                      {quiz.coverImageUrl ? (
+                        <img
+                          src={quiz.coverImageUrl}
+                          alt=""
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                        />
+                      ) : (
+                        <ImageIcon
+                          size={18}
+                          color={T.textMuted}
+                          style={{ opacity: 0.5 }}
+                        />
+                      )}
                     </div>
+                    <div style={{ overflow: "hidden" }}>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 700,
+                          color: T.textPrimary,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={quiz.title}
+                      >
+                        {quiz.title}
+                      </div>
+                      {quiz.description && (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: T.textMuted,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            marginTop: 2,
+                          }}
+                          title={quiz.description}
+                        >
+                          {quiz.description}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Badge label={meta.label} customColors={meta.colors} />
+                  </div>
+
+                  <div>
+                    <VisibilityBadge visibility={quiz.visibility} />
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: T.textSecondary,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {quiz._count?.quizQuestions ?? 0} Qs
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: quiz.scheduledStartTime
+                        ? T.textSecondary
+                        : T.textMuted,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    {quiz.scheduledStartTime ? (
+                      <>
+                        <CalendarClock size={13} color={T.textMuted} />
+                        <span>{formatSchedule(quiz.scheduledStartTime)}</span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: T.textMuted,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={quiz.createdBy?.fullName || ""}
+                  >
+                    {quiz.createdBy ? quiz.createdBy.fullName : "—"}
+                  </div>
+
+                  <div>
                     {role === "ADMIN" && (
                       <IconBtn
                         onClick={(e) => meta.canDelete && deleteQuiz(quiz, e)}
@@ -3186,43 +3613,28 @@ function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
                       </IconBtn>
                     )}
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <Badge label={meta.label} customColors={meta.colors} />
-                    <VisibilityBadge visibility={quiz.visibility} />
-                    <span style={{ fontSize: 12, color: T.textMuted }}>
-                      {quiz._count?.quizQuestions ?? 0} Qs
-                    </span>
-                  </div>
-                  {quiz.scheduledStartTime && (
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: T.textMuted,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 5,
-                      }}
-                    >
-                      <CalendarClock size={13} />
-                      {formatSchedule(quiz.scheduledStartTime)}
-                    </div>
-                  )}
-                  {quiz.createdBy && (
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: T.textMuted,
-                        marginTop: "auto",
-                      }}
-                    >
-                      by {quiz.createdBy.fullName}
-                    </div>
-                  )}
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            pageSizeOptions={[12, 24, 48, 96]}
+            onPageChange={(p) => setCurrentPage(p)}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              try {
+                localStorage.setItem("bima_quiz_page_size", String(s));
+              } catch {}
+              setCurrentPage(1);
+            }}
+            itemName="quizzes"
+          />
+        </Card>
       )}
 
       <ConfirmModal
@@ -3240,30 +3652,74 @@ function QuizListPanel({ quizzes, loading, onSelect, onNew, onDeleted, role }) {
 
 // ─── Question Bank Panel ──────────────────────────────────────────────────────
 
-function QuestionBankPanel() {
+function QuestionBankPanel({ active = true }) {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem("bima_questions_view_mode") || "cards";
+    } catch {
+      return "cards";
+    }
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem("bima_questions_page_size"));
+      return [12, 24, 48, 96].includes(saved) ? saved : 12;
+    } catch {
+      return 12;
+    }
+  });
   const [showCreate, setShowCreate] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [viewQuestion, setViewQuestion] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [confirmQuestion, setConfirmQuestion] = useState(null);
 
-  const fetchQuestions = useCallback(async () => {
+  const hasLoadedRef = useRef(false);
+
+  const fetchQuestions = useCallback(async (force = false) => {
+    if (hasLoadedRef.current && !force) return;
     setLoading(true);
     try {
-      setQuestions((await questionApi.getAll()) ?? []);
-    } catch {
-      /* non-fatal */
+      const data = await questionApi.getAll();
+      setQuestions(data ?? []);
+      hasLoadedRef.current = true;
+    } catch (err) {
+      toast(err.message || "Failed to load questions.", "error");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchQuestions();
-  }, [fetchQuestions]);
+    if (active && !hasLoadedRef.current) {
+      fetchQuestions();
+    }
+  }, [active, fetchQuestions]);
+
+  const filtered = questions.filter((q) =>
+    q.questionText.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedQuestions = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
 
   async function handleCreate(data) {
     const q = await questionApi.create(data);
@@ -3291,10 +3747,6 @@ function QuestionBankPanel() {
       setDeletingId(null);
     }
   }
-
-  const filtered = questions.filter((q) =>
-    q.questionText.toLowerCase().includes(search.toLowerCase()),
-  );
 
   return (
     <div>
@@ -3347,8 +3799,54 @@ function QuestionBankPanel() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search questions…"
-        style={{ ...INPUT_BASE, fontSize: 14, marginBottom: 22 }}
+        style={{ ...INPUT_BASE, fontSize: 14, marginBottom: 16 }}
       />
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 12,
+          marginBottom: 20,
+        }}
+      >
+        <div style={{ fontSize: 13, color: T.textMuted }}>
+          {search ? (
+            <span>
+              Found{" "}
+              <strong style={{ color: T.textPrimary }}>{filtered.length}</strong>{" "}
+              matching questions
+            </span>
+          ) : (
+            <span>
+              Total{" "}
+              <strong style={{ color: T.textPrimary }}>
+                {questions.length}
+              </strong>{" "}
+              questions in bank
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <RefreshBtn
+            onClick={() => fetchQuestions(true)}
+            loading={loading}
+            title="Refresh question bank"
+          />
+          <ViewToggle
+            viewMode={viewMode}
+            onChange={(mode) => {
+              setViewMode(mode);
+              try {
+                localStorage.setItem("bima_questions_view_mode", mode);
+              } catch {}
+            }}
+          />
+        </div>
+      </div>
 
       {loading ? (
         <div style={{ textAlign: "center", padding: 80 }}>
@@ -3362,145 +3860,394 @@ function QuestionBankPanel() {
             search ? "No matches." : 'Click "New question" to create one.'
           }
         />
-      ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))",
-            gap: 16,
-          }}
-        >
-          {filtered.map((q) => (
-            <div
-              key={q.id}
-              onClick={() => setViewQuestion(q)}
-              style={{
-                padding: "18px",
-                background: T.cardBg,
-                border: `1.5px solid ${T.cardBorder}`,
-                borderRadius: 16,
-                cursor: "pointer",
-                transition: "border-color 0.12s, box-shadow 0.12s",
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = T.primary + "60";
-                e.currentTarget.style.boxShadow = `0 4px 20px ${T.primary}18`;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = T.cardBorder;
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            >
-              {q.mediaUrl && (
-                <div
-                  style={{
-                    borderRadius: 10,
-                    overflow: "hidden",
-                    border: `1px solid ${T.cardBorder}`,
-                  }}
-                >
-                  <img
-                    src={q.mediaUrl}
-                    alt=""
-                    style={{
-                      width: "100%",
-                      height: 120,
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
-                </div>
-              )}
+      ) : viewMode === "cards" ? (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))",
+              gap: 16,
+            }}
+          >
+            {paginatedQuestions.map((q) => (
               <div
+                key={q.id}
+                onClick={() => setViewQuestion(q)}
                 style={{
+                  padding: "18px",
+                  background: T.cardBg,
+                  border: `1.5px solid ${T.cardBorder}`,
+                  borderRadius: 16,
+                  cursor: "pointer",
+                  transition: "border-color 0.12s, box-shadow 0.12s",
                   display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  gap: 10,
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = T.primary + "60";
+                  e.currentTarget.style.boxShadow = `0 4px 20px ${T.primary}18`;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = T.cardBorder;
+                  e.currentTarget.style.boxShadow = "none";
                 }}
               >
+                {q.mediaUrl && (
+                  <div
+                    style={{
+                      borderRadius: 10,
+                      overflow: "hidden",
+                      border: `1px solid ${T.cardBorder}`,
+                    }}
+                  >
+                    <img
+                      src={q.mediaUrl}
+                      alt=""
+                      style={{
+                        width: "100%",
+                        height: 120,
+                        objectFit: "cover",
+                        display: "block",
+                      }}
+                    />
+                  </div>
+                )}
                 <div
                   style={{
-                    fontSize: 14,
-                    color: T.textPrimary,
-                    lineHeight: 1.6,
-                    flex: 1,
-                    display: "-webkit-box",
-                    WebkitLineClamp: 3,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                    wordBreak: "break-word",
-                  }}
-                  title={q.questionText}
-                >
-                  {q.questionText}
-                </div>
-                <IconBtn
-                  onClick={(e) => deleteQuestion(q, e)}
-                  disabled={deletingId === q.id}
-                  title="Delete"
-                  danger
-                >
-                  <Trash2 size={15} />
-                </IconBtn>
-              </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Badge
-                  label={typeLabel(q.questionType)}
-                  customColors={T.neutral}
-                />
-                <span
-                  style={{
-                    fontSize: 12,
-                    color: T.textMuted,
                     display: "flex",
-                    alignItems: "center",
-                    gap: 4,
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 10,
                   }}
                 >
-                  <Clock size={12} />
-                  {q.customTimer != null ? `${q.customTimer}s` : "quiz default"}
-                </span>
-                {q.options?.length > 0 && (
-                  <span style={{ fontSize: 12, color: T.textMuted }}>
-                    {q.options.filter((o) => o.isCorrect).length}/
-                    {q.options.length} correct
+                  <div
+                    style={{
+                      fontSize: 14,
+                      color: T.textPrimary,
+                      lineHeight: 1.6,
+                      flex: 1,
+                      display: "-webkit-box",
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                      wordBreak: "break-word",
+                    }}
+                    title={q.questionText}
+                  >
+                    {q.questionText}
+                  </div>
+                  <IconBtn
+                    onClick={(e) => deleteQuestion(q, e)}
+                    disabled={deletingId === q.id}
+                    title="Delete"
+                    danger
+                  >
+                    <Trash2 size={15} />
+                  </IconBtn>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Badge
+                    label={typeLabel(q.questionType)}
+                    customColors={T.neutral}
+                  />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: T.textMuted,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <Clock size={12} />
+                    {q.customTimer != null
+                      ? `${q.customTimer}s`
+                      : "quiz default"}
                   </span>
+                  {q.options?.length > 0 && (
+                    <span style={{ fontSize: 12, color: T.textMuted }}>
+                      {q.options.filter((o) => o.isCorrect).length}/
+                      {q.options.length} correct
+                    </span>
+                  )}
+                </div>
+                {q.options?.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {q.options.map((opt) => (
+                      <span
+                        key={opt.id}
+                        title={opt.optionText}
+                        style={{
+                          fontSize: 12,
+                          padding: "3px 10px",
+                          borderRadius: 7,
+                          background: opt.isCorrect
+                            ? `${T.success.dot}20`
+                            : T.pageBg,
+                          color: opt.isCorrect ? T.success.text : T.textMuted,
+                          border: `1px solid ${opt.isCorrect ? T.success.dot + "40" : T.cardBorder}`,
+                          maxWidth: 120,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          display: "inline-block",
+                        }}
+                      >
+                        {opt.optionText}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
-              {q.options?.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                  {q.options.map((opt) => (
-                    <span
-                      key={opt.id}
-                      title={opt.optionText}
+            ))}
+          </div>
+
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            pageSizeOptions={[12, 24, 48, 96]}
+            onPageChange={(p) => setCurrentPage(p)}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              try {
+                localStorage.setItem("bima_questions_page_size", String(s));
+              } catch {}
+              setCurrentPage(1);
+            }}
+            itemName="questions"
+            style={{
+              marginTop: 20,
+              borderRadius: 16,
+              border: `1px solid ${T.cardBorder}`,
+              background: T.cardBg,
+            }}
+          />
+        </>
+      ) : (
+        <Card>
+          <div style={{ overflowX: "auto" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "minmax(280px, 3fr) 140px 110px minmax(220px, 2.5fr) 70px",
+                gap: "0 16px",
+                padding: "12px 20px",
+                background: T.pageBg,
+                borderBottom: `1px solid ${T.cardBorder}`,
+                borderRadius: "16px 16px 0 0",
+                alignItems: "center",
+                minWidth: 860,
+              }}
+            >
+              {[
+                "Question",
+                "Type",
+                "Timer",
+                "Options / Correct Answer",
+                "Actions",
+              ].map((h) => (
+                <div
+                  key={h}
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: T.textMuted,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  {h}
+                </div>
+              ))}
+            </div>
+
+            {paginatedQuestions.map((q) => {
+              const correctOptions =
+                q.options?.filter((o) => o.isCorrect) ?? [];
+              return (
+                <div
+                  key={q.id}
+                  onClick={() => setViewQuestion(q)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "minmax(280px, 3fr) 140px 110px minmax(220px, 2.5fr) 70px",
+                    gap: "0 16px",
+                    padding: "14px 20px",
+                    borderBottom: `1px solid ${T.cardBorder}`,
+                    alignItems: "center",
+                    cursor: "pointer",
+                    transition: "background 0.12s",
+                    minWidth: 860,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#131d31";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {q.mediaUrl && (
+                      <div
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 6,
+                          overflow: "hidden",
+                          border: `1px solid ${T.cardBorder}`,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <img
+                          src={q.mediaUrl}
+                          alt=""
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                        />
+                      </div>
+                    )}
+                    <div
                       style={{
-                        fontSize: 12,
-                        padding: "3px 10px",
-                        borderRadius: 7,
-                        background: opt.isCorrect
-                          ? `${T.success.dot}20`
-                          : T.pageBg,
-                        color: opt.isCorrect ? T.success.text : T.textMuted,
-                        border: `1px solid ${opt.isCorrect ? T.success.dot + "40" : T.cardBorder}`,
-                        maxWidth: 120,
+                        fontSize: 14,
+                        color: T.textPrimary,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
-                        display: "inline-block",
+                        fontWeight: 500,
                       }}
+                      title={q.questionText}
                     >
-                      {opt.optionText}
+                      {q.questionText}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Badge
+                      label={typeLabel(q.questionType)}
+                      customColors={T.neutral}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: T.textMuted,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <Clock size={12} />
+                    <span>
+                      {q.customTimer != null
+                        ? `${q.customTimer}s`
+                        : "Default"}
                     </span>
-                  ))}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {q.options?.length > 0 ? (
+                      <>
+                        <span style={{ fontSize: 12, color: T.textMuted }}>
+                          {q.options.length} options
+                        </span>
+                        {correctOptions.map((opt) => (
+                          <span
+                            key={opt.id}
+                            title={`Correct: ${opt.optionText}`}
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              padding: "2px 8px",
+                              borderRadius: 6,
+                              background: `${T.success.dot}20`,
+                              color: T.success.text,
+                              border: `1px solid ${T.success.dot}40`,
+                              maxWidth: 160,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              display: "inline-block",
+                            }}
+                          >
+                            ✓ {opt.optionText}
+                          </span>
+                        ))}
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 12, color: T.textMuted }}>
+                        {q.questionType === "TEXT" ||
+                        q.questionType === "NUMERIC"
+                          ? "Input answer"
+                          : "No options"}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <IconBtn
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setViewQuestion(q);
+                      }}
+                      title="View / Edit question"
+                    >
+                      <Pencil size={14} />
+                    </IconBtn>
+                    <IconBtn
+                      onClick={(e) => deleteQuestion(q, e)}
+                      disabled={deletingId === q.id}
+                      title="Delete question"
+                      danger
+                    >
+                      <Trash2 size={14} />
+                    </IconBtn>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            pageSizeOptions={[12, 24, 48, 96]}
+            onPageChange={(p) => setCurrentPage(p)}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              try {
+                localStorage.setItem("bima_questions_page_size", String(s));
+              } catch {}
+              setCurrentPage(1);
+            }}
+            itemName="questions"
+          />
+        </Card>
       )}
 
       {/* Create modal */}
@@ -3521,8 +4268,14 @@ function QuestionBankPanel() {
         open={!!viewQuestion}
         onClose={() => setViewQuestion(null)}
         question={viewQuestion}
-        onSaved={() => {
-          fetchQuestions();
+        onSaved={(updated) => {
+          if (updated && updated.id) {
+            setQuestions((prev) =>
+              prev.map((item) => (item.id === updated.id ? updated : item)),
+            );
+          } else {
+            fetchQuestions(true);
+          }
           setViewQuestion(null);
         }}
       />
@@ -3540,7 +4293,7 @@ function QuestionBankPanel() {
       <BulkUploadQuestionsModal
         open={showBulkUpload}
         onClose={() => setShowBulkUpload(false)}
-        onSuccess={() => fetchQuestions()}
+        onSuccess={() => fetchQuestions(true)}
       />
     </div>
   );
@@ -3561,20 +4314,20 @@ export default function QuizzesPage() {
     try {
       const data = await quizApi.getAll();
       setQuizzes(data ?? []);
-      if (selectedQuiz) {
-        const updated = (data ?? []).find((q) => q.id === selectedQuiz.id);
-        setSelectedQuiz(updated ?? selectedQuiz);
-      }
+      setSelectedQuiz((curr) => {
+        if (!curr) return null;
+        return (data ?? []).find((q) => q.id === curr.id) ?? curr;
+      });
     } catch (err) {
       toast(err.message || "Failed to load quizzes.", "error");
     } finally {
       setLoading(false);
     }
-  }, [selectedQuiz?.id]);
+  }, []);
 
   useEffect(() => {
     fetchQuizzes();
-  }, []);
+  }, [fetchQuizzes]);
 
   return (
     <div
@@ -3643,20 +4396,24 @@ export default function QuizzesPage() {
         ))}
       </div>
 
-      {activeTab === "quizzes" && (
+      <div style={{ display: activeTab === "quizzes" ? "block" : "none" }}>
         <QuizListPanel
           quizzes={quizzes}
           loading={loading}
+          onRefresh={fetchQuizzes}
           onSelect={setSelectedQuiz}
           onNew={() => setShowNewQuiz(true)}
           onDeleted={(id) => {
             setQuizzes((p) => p.filter((q) => q.id !== id));
-            if (selectedQuiz?.id === id) setSelectedQuiz(null);
+            setSelectedQuiz((curr) => (curr?.id === id ? null : curr));
           }}
           role={role}
         />
-      )}
-      {activeTab === "bank" && <QuestionBankPanel />}
+      </div>
+
+      <div style={{ display: activeTab === "bank" ? "block" : "none" }}>
+        <QuestionBankPanel active={activeTab === "bank"} />
+      </div>
 
       <QuizFormModal
         open={showNewQuiz}
