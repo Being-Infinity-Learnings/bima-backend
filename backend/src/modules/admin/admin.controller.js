@@ -264,6 +264,17 @@ async function getAllStoreItems(req, res) {
 // POST /admin/store/items
 async function createStoreItem(req, res) {
   try {
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      Array.isArray(req.body) ||
+      Object.keys(req.body).length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is required",
+      });
+    }
     const {
       name,
       description,
@@ -365,10 +376,15 @@ async function updateStoreItem(req, res) {
       status,
     } = req.body;
 
-    if (!req.body || Object.keys(req.body).length === 0) {
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      Array.isArray(req.body) ||
+      Object.keys(req.body).length === 0
+    ) {
       return res.status(400).json({
         success: false,
-        message: "At least one field must be provided",
+        message: "Request body is required",
       });
     }
 
