@@ -366,16 +366,7 @@ async function createStoreItem(req, res) {
 // PATCH /admin/store/items/:id
 async function updateStoreItem(req, res) {
   try {
-    const {
-      name,
-      description,
-      imageUrl,
-      imageBase64,
-      coinCost,
-      stock,
-      status,
-    } = req.body;
-
+    // Validate request body before destructuring
     if (
       !req.body ||
       typeof req.body !== "object" ||
@@ -388,6 +379,17 @@ async function updateStoreItem(req, res) {
       });
     }
 
+    const {
+      name,
+      description,
+      imageUrl,
+      imageBase64,
+      coinCost,
+      stock,
+      status,
+    } = req.body;
+
+    // Validate name
     if (
       name !== undefined &&
       (typeof name !== "string" || !name.trim())
@@ -398,6 +400,7 @@ async function updateStoreItem(req, res) {
       });
     }
 
+    // Validate coinCost
     if (
       coinCost !== undefined &&
       (!Number.isInteger(coinCost) || coinCost < 0)
@@ -408,6 +411,7 @@ async function updateStoreItem(req, res) {
       });
     }
 
+    // Validate stock
     if (
       stock !== undefined &&
       (!Number.isInteger(stock) || stock < 0)
@@ -418,6 +422,7 @@ async function updateStoreItem(req, res) {
       });
     }
 
+    // Validate description
     if (
       description !== undefined &&
       description !== null &&
@@ -429,6 +434,7 @@ async function updateStoreItem(req, res) {
       });
     }
 
+    // Validate imageUrl
     if (
       imageUrl !== undefined &&
       imageUrl !== null &&
@@ -439,6 +445,7 @@ async function updateStoreItem(req, res) {
         message: "imageUrl must be a string or null",
       });
     }
+    // Validate imageBase64
     if (imageBase64 !== undefined && imageBase64 !== null) {
       if (typeof imageBase64 !== "string" || !imageBase64.trim()) {
         return res.status(400).json({
@@ -447,7 +454,7 @@ async function updateStoreItem(req, res) {
         });
       }
     }
-
+    // Validate status
     if (
       status !== undefined &&
       !["ACTIVE", "INACTIVE"].includes(status)
@@ -457,7 +464,7 @@ async function updateStoreItem(req, res) {
         message: "status must be ACTIVE or INACTIVE",
       });
     }
-
+    // Update store item
     const item = await adminService.updateStoreItem(req.params.id, {
       name,
       description,
