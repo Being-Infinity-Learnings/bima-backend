@@ -179,20 +179,39 @@ async function resolveStoreImageUrl(data) {
 
   return undefined;
 }
-// Create a new store item.
+// Create a new store item and clean up the uploaded image if database creation fails.
 async function createStoreItem(data, adminId) {
-  const imageUrl = await resolveStoreImageUrl(data);
-  return await prisma.storeItem.create({
-    data: {
-      name: data.name.trim(),
-      description: data.description?.trim() || null,
-      imageUrl: imageUrl ?? null,
-      coinCost: data.coinCost,
-      stock: data.stock,
-      createdById: adminId,
-      ...(data.status !== undefined && { status: data.status }),
-    },
-  });
+  let imageUrl;
+
+  try {
+    imageUrl = await resolveStoreImageUrl(data);
+
+    return await prisma.storeItem.create({
+      data: {
+        name: data.name.trim(),
+        description: data.description?.trim() || null,
+        imageUrl: imageUrl ?? null,
+        coinCost: data.coinCost,
+        stock: data.stock,
+        createdById: adminId,
+        ...(data.status !== undefined && { status: data.status }),
+      },
+    });
+  } catch (error) {
+    // Remove the newly uploaded image if database creation fails.
+    if (data.imageBase64 && imageUrl) {
+      try {
+        await imageService.deleteImageByUrl(imageUrl);
+      } catch (cleanupError) {
+        console.error(
+          "Failed to clean up new store image after database creation failure:",
+          cleanupError,
+        );
+      }
+    }
+
+    throw error;
+  }
 }
 
 // Update an existing store item.
@@ -206,8 +225,8 @@ async function updateStoreItem(id, data) {
     error.statusCode = 404;
     throw error;
   }
-  const imageUrl = await resolveStoreImageUrl(data);
 
+  const imageUrl = await resolveStoreImageUrl(data);
   const updateData = {};
 
   if (data.name !== undefined) {
@@ -234,10 +253,50 @@ async function updateStoreItem(id, data) {
     updateData.status = data.status;
   }
 
-  return await prisma.storeItem.update({
-    where: { id },
-    data: updateData,
-  });
+  let updatedItem;
+
+  try {
+    updatedItem = await prisma.storeItem.update({
+      where: { id },
+      data: updateData,
+    });
+  } catch (error) {
+    // The new image was uploaded, but the database update failed.
+    if (
+      data.imageBase64 &&
+      imageUrl &&
+      imageUrl !== existingItem.imageUrl
+    ) {
+      try {
+        await imageService.deleteImageByUrl(imageUrl);
+      } catch (cleanupError) {
+        console.error(
+          "Failed to clean up new store image after database update failure:",
+          cleanupError,
+        );
+      }
+    }
+
+    throw error;
+  }
+
+  // Delete the previous image only after the database update succeeds.
+  if (
+    (data.imageBase64 || data.imageUrl !== undefined) &&
+    existingItem.imageUrl &&
+    existingItem.imageUrl !== updatedItem.imageUrl
+  ) {
+    try {
+      await imageService.deleteImageByUrl(existingItem.imageUrl);
+    } catch (cleanupError) {
+      console.error(
+        "Failed to delete previous store image:",
+        cleanupError,
+      );
+    }
+  }
+
+  return updatedItem;
 }
 
 // Export the new Store Admin functions.

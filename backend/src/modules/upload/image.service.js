@@ -1,5 +1,8 @@
 const crypto = require("crypto");
-const { PutObjectCommand } = require("@aws-sdk/client-s3");
+const {
+  PutObjectCommand,
+  DeleteObjectCommand,
+} = require("@aws-sdk/client-s3");
 
 const s3 = require("../../config/s3");
 
@@ -82,8 +85,53 @@ async function uploadBase64Image(dataUrl, folder) {
   return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
 }
 
+/**
+ * Deletes an image from S3 using its public URL.
+ * Only deletes objects belonging to the configured bucket.
+ */
+async function deleteImageByUrl(imageUrl) {
+  if (!imageUrl) {
+    return;
+  }
+
+  const bucket = process.env.AWS_S3_BUCKET;
+  const region = process.env.AWS_REGION;
+
+  if (!bucket || !region) {
+    throw new Error("S3 bucket or region is not configured");
+  }
+
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(imageUrl);
+  } catch {
+    throw new Error("Invalid image URL");
+  }
+
+  const expectedHost = `${bucket}.s3.${region}.amazonaws.com`;
+
+  if (parsedUrl.hostname !== expectedHost) {
+    throw new Error("Image URL does not belong to the configured S3 bucket");
+  }
+
+  const key = decodeURIComponent(parsedUrl.pathname.slice(1));
+
+  if (!key.startsWith("bima/store-images/")) {
+    throw new Error("Invalid S3 store image key");
+  }
+
+  await s3.send(
+    new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    }),
+  );
+}
+
 module.exports = {
   ALLOWED_FOLDERS,
   ALLOWED_TYPES,
   uploadBase64Image,
+  deleteImageByUrl,
 };

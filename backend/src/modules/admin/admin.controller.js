@@ -316,15 +316,13 @@ async function createStoreItem(req, res) {
         message: "imageUrl must be a string or null",
       });
     }
-    if (
-      imageBase64 !== undefined &&
-      imageBase64 !== null &&
-      typeof imageBase64 !== "string"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "imageBase64 must be a string",
-      });
+    if (imageBase64 !== undefined && imageBase64 !== null) {
+      if (typeof imageBase64 !== "string" || !imageBase64.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "imageBase64 must be a non-empty string",
+        });
+      }
     }
 
     if (
@@ -425,15 +423,13 @@ async function updateStoreItem(req, res) {
         message: "imageUrl must be a string or null",
       });
     }
-    if (
-      imageBase64 !== undefined &&
-      imageBase64 !== null &&
-      typeof imageBase64 !== "string"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "imageBase64 must be a string",
-      });
+    if (imageBase64 !== undefined && imageBase64 !== null) {
+      if (typeof imageBase64 !== "string" || !imageBase64.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "imageBase64 must be a non-empty string",
+        });
+      }
     }
 
     if (
