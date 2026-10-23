@@ -60,28 +60,96 @@ async function createQuiz(data, userId) {
   });
 }
 
-/** Retrieve all quizzes */
-async function getQuizzes() {
-  return prisma.quiz.findMany({
-    include: {
-      createdBy: {
-        select: {
-          id: true,
-          fullName: true,
+/** Retrieve quizzes with server-side pagination and filters */
+async function getQuizzes(options = {}) {
+  const { page, limit, search, status, all } = options;
+
+  const where = {};
+
+  if (search && typeof search === "string" && search.trim()) {
+    where.title = {
+      contains: search.trim(),
+      mode: "insensitive",
+    };
+  }
+
+  if (
+    status &&
+    status !== "ALL" &&
+    ["DRAFT", "SCHEDULED", "LIVE", "COMPLETED"].includes(status)
+  ) {
+    where.status = status;
+  }
+
+  // If `all: true` or `all === "true"` is explicitly requested, return all matching items without pagination
+  if (all === true || all === "true") {
+    const quizzes = await prisma.quiz.findMany({
+      where,
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+        _count: {
+          select: {
+            quizQuestions: true,
+          },
         },
       },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
 
-      _count: {
-        select: {
-          quizQuestions: true,
+    return {
+      results: quizzes,
+      pagination: null,
+    };
+  }
+
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+  const skip = (safePage - 1) * safeLimit;
+
+  const [quizzes, total] = await Promise.all([
+    prisma.quiz.findMany({
+      where,
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+        _count: {
+          select: {
+            quizQuestions: true,
+          },
         },
       },
-    },
+      orderBy: {
+        createdAt: "desc",
+      },
+      skip,
+      take: safeLimit,
+    }),
+    prisma.quiz.count({ where }),
+  ]);
 
-    orderBy: {
-      createdAt: "desc",
+  const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+
+  return {
+    results: quizzes,
+    pagination: {
+      page: safePage,
+      limit: safeLimit,
+      total,
+      totalPages,
+      hasMore: skip + quizzes.length < total,
     },
-  });
+  };
 }
 
 /** Retrieve a quiz by its ID */
