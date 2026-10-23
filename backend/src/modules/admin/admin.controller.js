@@ -242,3 +242,253 @@ async function bulkApproveUsers(req, res) {
 }
 
 Object.assign(module.exports, { bulkApproveUsers });
+// Store Admin API controllers
+
+// GET /admin/store/items
+async function getAllStoreItems(req, res) {
+  try {
+    const items = await adminService.getAllStoreItems();
+
+    return res.status(200).json({
+      success: true,
+      data: items,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
+// POST /admin/store/items
+async function createStoreItem(req, res) {
+  try {
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      Array.isArray(req.body) ||
+      Object.keys(req.body).length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is required",
+      });
+    }
+    const {
+      name,
+      description,
+      imageUrl,
+      imageBase64,
+      coinCost,
+      stock,
+      status,
+    } = req.body;
+
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "name is required and must be a non-empty string",
+      });
+    }
+
+    if (!Number.isInteger(coinCost) || coinCost < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "coinCost must be a non-negative integer",
+      });
+    }
+
+    if (!Number.isInteger(stock) || stock < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "stock must be a non-negative integer",
+      });
+    }
+
+    if (
+      description !== undefined &&
+      description !== null &&
+      typeof description !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "description must be a string or null",
+      });
+    }
+
+    if (
+      imageUrl !== undefined &&
+      imageUrl !== null &&
+      typeof imageUrl !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "imageUrl must be a string or null",
+      });
+    }
+    if (imageBase64 !== undefined && imageBase64 !== null) {
+      if (typeof imageBase64 !== "string" || !imageBase64.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "imageBase64 must be a non-empty string",
+        });
+      }
+    }
+
+    if (
+      status !== undefined &&
+      !["ACTIVE", "INACTIVE"].includes(status)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "status must be ACTIVE or INACTIVE",
+      });
+    }
+
+    const item = await adminService.createStoreItem(
+      { name, description, imageUrl, imageBase64, coinCost, stock, status },
+      req.dbUser.id,
+    );
+
+    return res.status(201).json({
+      success: true,
+      data: item,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
+// PATCH /admin/store/items/:id
+async function updateStoreItem(req, res) {
+  try {
+    // Validate request body before destructuring
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      Array.isArray(req.body) ||
+      Object.keys(req.body).length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is required",
+      });
+    }
+
+    const {
+      name,
+      description,
+      imageUrl,
+      imageBase64,
+      coinCost,
+      stock,
+      status,
+    } = req.body;
+
+    // Validate name
+    if (
+      name !== undefined &&
+      (typeof name !== "string" || !name.trim())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "name must be a non-empty string",
+      });
+    }
+
+    // Validate coinCost
+    if (
+      coinCost !== undefined &&
+      (!Number.isInteger(coinCost) || coinCost < 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "coinCost must be a non-negative integer",
+      });
+    }
+
+    // Validate stock
+    if (
+      stock !== undefined &&
+      (!Number.isInteger(stock) || stock < 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "stock must be a non-negative integer",
+      });
+    }
+
+    // Validate description
+    if (
+      description !== undefined &&
+      description !== null &&
+      typeof description !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "description must be a string or null",
+      });
+    }
+
+    // Validate imageUrl
+    if (
+      imageUrl !== undefined &&
+      imageUrl !== null &&
+      typeof imageUrl !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "imageUrl must be a string or null",
+      });
+    }
+    // Validate imageBase64
+    if (imageBase64 !== undefined && imageBase64 !== null) {
+      if (typeof imageBase64 !== "string" || !imageBase64.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "imageBase64 must be a non-empty string",
+        });
+      }
+    }
+    // Validate status
+    if (
+      status !== undefined &&
+      !["ACTIVE", "INACTIVE"].includes(status)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "status must be ACTIVE or INACTIVE",
+      });
+    }
+    // Update store item
+    const item = await adminService.updateStoreItem(req.params.id, {
+      name,
+      description,
+      imageUrl,
+      imageBase64,
+      coinCost,
+      stock,
+      status,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: item,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
+Object.assign(module.exports, {
+  getAllStoreItems,
+  createStoreItem,
+  updateStoreItem,
+});

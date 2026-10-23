@@ -618,5 +618,160 @@ router.post(
   authorize("ADMIN"),
   adminController.bulkApproveUsers,
 );
+/**
+ * @swagger
+ * /admin/store/items:
+ *   get:
+ *     summary: Get all store items
+ *     description: Retrieves all store items. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Store items retrieved successfully
+ *       401:
+ *         description: Missing or invalid authentication token
+ *       403:
+ *         description: Requires ADMIN role
+ *       500:
+ *         description: Unexpected server error
+ */
+router.get(
+  "/store/items",
+  authenticate,
+  authorize("ADMIN"),
+  adminController.getAllStoreItems,
+);
 
+/**
+ * @swagger
+ * /admin/store/items:
+ *   post:
+ *     summary: Create a store item
+ *     description: Creates a new store item. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - coinCost
+ *               - stock
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Premium Notebook
+ *               description:
+ *                 type: string
+ *                 nullable: true
+ *                 example: A premium notebook
+ *               imageUrl:
+ *                 type: string
+ *                 nullable: true
+ *                 example: https://example.com/notebook.png
+ *               imageBase64:
+ *                 type: string
+ *                 description: Optional base64-encoded image data URL
+ *                 example: data:image/png;base64,<base64-data>
+ *               coinCost:
+ *                 type: integer
+ *                 minimum: 0
+ *                 example: 100
+ *               stock:
+ *                 type: integer
+ *                 minimum: 0
+ *                 example: 25
+ *               status:
+ *                 type: string
+ *                 enum: [ACTIVE, INACTIVE]
+ *                 example: ACTIVE
+ *     responses:
+ *       201:
+ *         description: Store item created successfully
+ *       400:
+ *         description: Invalid request body or image data
+ *       401:
+ *         description: Missing or invalid authentication token
+ *       403:
+ *         description: Requires ADMIN role
+ *       500:
+ *         description: Unexpected server error
+ */
+router.post(
+  "/store/items",
+  authenticate,
+  authorize("ADMIN"),
+  adminController.createStoreItem,
+);
+
+/**
+ * @swagger
+ * /admin/store/items/{id}:
+ *   patch:
+ *     summary: Update a store item
+ *     description: Updates an existing store item. Requires ADMIN role.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID of the store item
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Premium Notebook
+ *               description:
+ *                 type: string
+ *                 nullable: true
+ *               imageUrl:
+ *                 type: string
+ *                 nullable: true
+ *               imageBase64:
+ *                 type: string
+ *                 description: Optional base64-encoded image data URL
+ *               coinCost:
+ *                 type: integer
+ *                 minimum: 0
+ *               stock:
+ *                 type: integer
+ *                 minimum: 0
+ *               status:
+ *                 type: string
+ *                 enum: [ACTIVE, INACTIVE]
+ *     responses:
+ *       200:
+ *         description: Store item updated successfully
+ *       400:
+ *         description: Invalid request body or image data
+ *       401:
+ *         description: Missing or invalid authentication token
+ *       403:
+ *         description: Requires ADMIN role
+ *       404:
+ *         description: Store item not found
+ *       500:
+ *         description: Unexpected server error
+ */
+router.patch(
+  "/store/items/:id",
+  authenticate,
+  authorize("ADMIN"),
+  adminController.updateStoreItem,
+);
 module.exports = router;
