@@ -95,24 +95,30 @@ export default function StorePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
 
-  // Load store items
+  // Load store items directly from backend API
   const loadItems = useCallback(async () => {
     setLoading(true);
     try {
       const data = await storeApi.getItems();
       setItems(Array.isArray(data) ? data : []);
-    } catch {
-      toast("Failed to load store items", "error");
+    } catch (err) {
+      toast(err?.message || "Failed to load store items", "error");
+      setItems([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    try {
+      localStorage.removeItem("bima_store_items_dummy_v1");
+    } catch {
+      // ignore
+    }
     loadItems();
   }, [loadItems]);
 
-  // Compute summary metrics
+  // Compute summary metrics dynamically from live items
   const metrics = useMemo(() => {
     const total = items.length;
     const active = items.filter(
@@ -121,8 +127,10 @@ export default function StorePage() {
     const outOfStock = items.filter(
       (item) => Number(item.stock) <= 0
     ).length;
-    // Total redemptions metric (from mock store / telemetry, defaults to 27 as in mockup)
-    const redemptions = 27;
+    const redemptions = items.reduce(
+      (acc, it) => acc + (it._count?.redemptions ?? it.redemptions?.length ?? 0),
+      0
+    );
 
     return { total, active, outOfStock, redemptions };
   }, [items]);
@@ -133,7 +141,7 @@ export default function StorePage() {
       // Update
       const updated = await storeApi.updateItem(editingItem.id, itemData);
       setItems((prev) =>
-        prev.map((it) => (it.id === editingItem.id ? updated : it))
+        prev.map((it) => (it.id === editingItem.id ? (updated || it) : it))
       );
       toast("Reward item updated successfully!", "success");
     } else {
@@ -142,6 +150,8 @@ export default function StorePage() {
       setItems((prev) => [created, ...prev]);
       toast("Reward item added successfully!", "success");
     }
+    // Sync with backend state
+    loadItems();
   }
 
   function openCreateModal() {
