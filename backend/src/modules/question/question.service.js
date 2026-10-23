@@ -50,28 +50,95 @@ async function createQuestion(data, userId) {
     return question;
   });
 }
+/** Retrieve questions with server-side pagination and filters */
+async function getQuestions(options = {}) {
+  const { page, limit, search, type, all } = options;
 
-async function getQuestions() {
-  return prisma.question.findMany({
-    include: {
-      options: {
-        orderBy: {
-          orderIndex: "asc",
+  const where = {};
+
+  if (search && typeof search === "string" && search.trim()) {
+    where.questionText = {
+      contains: search.trim(),
+      mode: "insensitive",
+    };
+  }
+
+  if (
+    type &&
+    ["SINGLE_CORRECT", "MULTI_CORRECT", "TEXT", "NUMERIC"].includes(type)
+  ) {
+    where.questionType = type;
+  }
+
+  // If `all: true` or `all === "true"` is explicitly requested, return all matching items without pagination
+  if (all === true || all === "true") {
+    const questions = await prisma.question.findMany({
+      where,
+      include: {
+        options: {
+          orderBy: {
+            orderIndex: "asc",
+          },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+          },
         },
       },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
 
-      createdBy: {
-        select: {
-          id: true,
-          fullName: true,
+    return {
+      results: questions,
+      pagination: null,
+    };
+  }
+
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+  const skip = (safePage - 1) * safeLimit;
+
+  const [questions, total] = await Promise.all([
+    prisma.question.findMany({
+      where,
+      include: {
+        options: {
+          orderBy: {
+            orderIndex: "asc",
+          },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+          },
         },
       },
-    },
+      orderBy: {
+        createdAt: "desc",
+      },
+      skip,
+      take: safeLimit,
+    }),
+    prisma.question.count({ where }),
+  ]);
 
-    orderBy: {
-      createdAt: "desc",
+  const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+
+  return {
+    results: questions,
+    pagination: {
+      page: safePage,
+      limit: safeLimit,
+      total,
+      totalPages,
+      hasMore: skip + questions.length < total,
     },
-  });
+  };
 }
 
 async function getQuestionById(id) {

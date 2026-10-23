@@ -106,12 +106,18 @@ async function createQuestionsBulk(req, res) {
 
 async function getQuestions(req, res) {
   try {
-    const questions = await questionService.getQuestions();
+    const { results, pagination } = await questionService.getQuestions(req.query);
 
-    return res.json({
+    const response = {
       success: true,
-      data: questions,
-    });
+      data: results,
+    };
+
+    if (pagination) {
+      response.pagination = pagination;
+    }
+
+    return res.json(response);
   } catch (error) {
     console.error(error);
 

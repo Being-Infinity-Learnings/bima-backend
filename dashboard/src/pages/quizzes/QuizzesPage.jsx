@@ -1352,7 +1352,9 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
   async function loadBank() {
     setLoadingBank(true);
     try {
-      setBankQuestions((await questionApi.getAll()) ?? []);
+      const res = await questionApi.getAll({ all: true });
+      const list = Array.isArray(res) ? res : (res?.data ?? []);
+      setBankQuestions(list ?? []);
     } catch {
       /* silent */
     } finally {
@@ -2117,8 +2119,11 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
     setShowCreate(false);
     setShowBulkUpload(false);
     questionApi
-      .getAll()
-      .then((q) => setQuestions(q ?? []))
+      .getAll({ all: true })
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res?.data ?? []);
+        setQuestions(list ?? []);
+      })
       .catch((e) => setError(e.message || "Failed."))
       .finally(() => setLoading(false));
   }, [open]);
@@ -3032,8 +3037,11 @@ function QuizDetailModal({ open, onClose, quiz, onQuizUpdated, role }) {
 
 const STATUS_FILTERS = ["ALL", "DRAFT", "SCHEDULED", "LIVE", "COMPLETED"];
 
-function QuizListPanel({ quizzes, loading, onRefresh, onSelect, onNew, onDeleted, role }) {
+function QuizListPanel({ onRegisterRefresh, onSelect, onNew, onDeleted, role }) {
+  const [quizzes, setQuizzes] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [viewMode, setViewMode] = useState(() => {
     try {
@@ -3051,31 +3059,57 @@ function QuizListPanel({ quizzes, loading, onRefresh, onSelect, onNew, onDeleted
       return 12;
     }
   });
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [deletingId, setDeletingId] = useState(null);
   const [confirmQuiz, setConfirmQuiz] = useState(null);
 
-  const filtered = quizzes.filter(
-    (q) =>
-      q.title.toLowerCase().includes(search.toLowerCase()) &&
-      (statusFilter === "ALL" || quizStatus(q) === statusFilter),
-  );
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter]);
+  }, [debouncedSearch, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const fetchQuizzes = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await quizApi.getAll({
+        page: currentPage,
+        limit: pageSize,
+        search: debouncedSearch.trim() || undefined,
+        status: statusFilter === "ALL" ? undefined : statusFilter,
+      });
+
+      const list = Array.isArray(res) ? res : (res?.data ?? []);
+      const pagination = res?.pagination;
+
+      setQuizzes(list);
+      setTotalItems(pagination?.total ?? list.length);
+      setTotalPages(
+        pagination?.totalPages ??
+          Math.max(1, Math.ceil((pagination?.total ?? list.length) / pageSize)),
+      );
+    } catch (err) {
+      toast(err.message || "Failed to load quizzes.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, pageSize, debouncedSearch, statusFilter]);
 
   useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
+    fetchQuizzes();
+  }, [fetchQuizzes]);
 
-  const paginatedQuizzes = filtered.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
-  );
+  useEffect(() => {
+    if (onRegisterRefresh) {
+      onRegisterRefresh(fetchQuizzes);
+    }
+  }, [onRegisterRefresh, fetchQuizzes]);
 
   function deleteQuiz(quiz, e) {
     e.stopPropagation();
@@ -3088,8 +3122,9 @@ function QuizListPanel({ quizzes, loading, onRefresh, onSelect, onNew, onDeleted
     try {
       await quizApi.delete(confirmQuiz.id);
       toast("Quiz deleted.", "success");
-      onDeleted(confirmQuiz.id);
+      onDeleted?.(confirmQuiz.id);
       setConfirmQuiz(null);
+      fetchQuizzes();
     } catch (err) {
       toast(err.message || "Failed.", "error");
     } finally {
@@ -3187,9 +3222,7 @@ function QuizListPanel({ quizzes, loading, onRefresh, onSelect, onNew, onDeleted
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {onRefresh && (
-            <RefreshBtn onClick={onRefresh} loading={loading} title="Refresh quizzes" />
-          )}
+          <RefreshBtn onClick={fetchQuizzes} loading={loading} title="Refresh quizzes" />
           <ViewToggle
             viewMode={viewMode}
             onChange={(mode) => {
@@ -3206,7 +3239,7 @@ function QuizListPanel({ quizzes, loading, onRefresh, onSelect, onNew, onDeleted
         <div style={{ textAlign: "center", padding: 80 }}>
           <Spinner />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : quizzes.length === 0 ? (
         <EmptyState
           icon=""
           title="No quizzes"
@@ -3225,7 +3258,7 @@ function QuizListPanel({ quizzes, loading, onRefresh, onSelect, onNew, onDeleted
               gap: 16,
             }}
           >
-            {paginatedQuizzes.map((quiz) => {
+            {quizzes.map((quiz) => {
               const status = quizStatus(quiz);
               const meta = STATUS_META[status] ?? STATUS_META.DRAFT;
               return (
@@ -3386,7 +3419,7 @@ function QuizListPanel({ quizzes, loading, onRefresh, onSelect, onNew, onDeleted
           <Pagination
             currentPage={currentPage}
             totalPages={totalPages}
-            totalItems={filtered.length}
+            totalItems={totalItems}
             pageSize={pageSize}
             pageSizeOptions={[12, 24, 48, 96]}
             onPageChange={(p) => setCurrentPage(p)}
@@ -3447,7 +3480,7 @@ function QuizListPanel({ quizzes, loading, onRefresh, onSelect, onNew, onDeleted
               ))}
             </div>
 
-            {paginatedQuizzes.map((quiz) => {
+            {quizzes.map((quiz) => {
               const status = quizStatus(quiz);
               const meta = STATUS_META[status] ?? STATUS_META.DRAFT;
               return (
@@ -3621,7 +3654,7 @@ function QuizListPanel({ quizzes, loading, onRefresh, onSelect, onNew, onDeleted
           <Pagination
             currentPage={currentPage}
             totalPages={totalPages}
-            totalItems={filtered.length}
+            totalItems={totalItems}
             pageSize={pageSize}
             pageSizeOptions={[12, 24, 48, 96]}
             onPageChange={(p) => setCurrentPage(p)}
@@ -3656,6 +3689,7 @@ function QuestionBankPanel({ active = true }) {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [viewMode, setViewMode] = useState(() => {
     try {
       return localStorage.getItem("bima_questions_view_mode") || "cards";
@@ -3672,60 +3706,62 @@ function QuestionBankPanel({ active = true }) {
       return 12;
     }
   });
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [viewQuestion, setViewQuestion] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [confirmQuestion, setConfirmQuestion] = useState(null);
 
-  const hasLoadedRef = useRef(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-  const fetchQuestions = useCallback(async (force = false) => {
-    if (hasLoadedRef.current && !force) return;
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch]);
+
+  const fetchQuestions = useCallback(async () => {
+    if (!active) return;
     setLoading(true);
     try {
-      const data = await questionApi.getAll();
-      setQuestions(data ?? []);
-      hasLoadedRef.current = true;
+      const res = await questionApi.getAll({
+        page: currentPage,
+        limit: pageSize,
+        search: debouncedSearch.trim() || undefined,
+      });
+
+      const list = Array.isArray(res) ? res : (res?.data ?? []);
+      const pagination = res?.pagination;
+
+      setQuestions(list);
+      setTotalItems(pagination?.total ?? list.length);
+      setTotalPages(
+        pagination?.totalPages ??
+          Math.max(1, Math.ceil((pagination?.total ?? list.length) / pageSize)),
+      );
     } catch (err) {
       toast(err.message || "Failed to load questions.", "error");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [active, currentPage, pageSize, debouncedSearch]);
 
   useEffect(() => {
-    if (active && !hasLoadedRef.current) {
+    if (active) {
       fetchQuestions();
     }
   }, [active, fetchQuestions]);
 
-  const filtered = questions.filter((q) =>
-    q.questionText.toLowerCase().includes(search.toLowerCase()),
-  );
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
-
-  const paginatedQuestions = filtered.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
-  );
-
   async function handleCreate(data) {
-    const q = await questionApi.create(data);
+    await questionApi.create(data);
     toast("Question created.", "success");
-    setQuestions((prev) => [q, ...prev]);
     setShowCreate(false);
+    fetchQuestions();
   }
 
   function deleteQuestion(q, e) {
@@ -3739,8 +3775,8 @@ function QuestionBankPanel({ active = true }) {
     try {
       await questionApi.delete(confirmQuestion.id);
       toast("Deleted.", "success");
-      setQuestions((prev) => prev.filter((x) => x.id !== confirmQuestion.id));
       setConfirmQuestion(null);
+      fetchQuestions();
     } catch (err) {
       toast(err.message || "Failed.", "error");
     } finally {
@@ -3816,14 +3852,14 @@ function QuestionBankPanel({ active = true }) {
           {search ? (
             <span>
               Found{" "}
-              <strong style={{ color: T.textPrimary }}>{filtered.length}</strong>{" "}
+              <strong style={{ color: T.textPrimary }}>{totalItems}</strong>{" "}
               matching questions
             </span>
           ) : (
             <span>
               Total{" "}
               <strong style={{ color: T.textPrimary }}>
-                {questions.length}
+                {totalItems}
               </strong>{" "}
               questions in bank
             </span>
@@ -3832,7 +3868,7 @@ function QuestionBankPanel({ active = true }) {
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <RefreshBtn
-            onClick={() => fetchQuestions(true)}
+            onClick={fetchQuestions}
             loading={loading}
             title="Refresh question bank"
           />
@@ -3852,7 +3888,7 @@ function QuestionBankPanel({ active = true }) {
         <div style={{ textAlign: "center", padding: 80 }}>
           <Spinner />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : questions.length === 0 ? (
         <EmptyState
           icon=""
           title="No questions"
@@ -3869,7 +3905,7 @@ function QuestionBankPanel({ active = true }) {
               gap: 16,
             }}
           >
-            {paginatedQuestions.map((q) => (
+            {questions.map((q) => (
               <div
                 key={q.id}
                 onClick={() => setViewQuestion(q)}
@@ -4006,7 +4042,7 @@ function QuestionBankPanel({ active = true }) {
           <Pagination
             currentPage={currentPage}
             totalPages={totalPages}
-            totalItems={filtered.length}
+            totalItems={totalItems}
             pageSize={pageSize}
             pageSizeOptions={[12, 24, 48, 96]}
             onPageChange={(p) => setCurrentPage(p)}
@@ -4065,7 +4101,7 @@ function QuestionBankPanel({ active = true }) {
               ))}
             </div>
 
-            {paginatedQuestions.map((q) => {
+            {questions.map((q) => {
               const correctOptions =
                 q.options?.filter((o) => o.isCorrect) ?? [];
               return (
@@ -4234,7 +4270,7 @@ function QuestionBankPanel({ active = true }) {
           <Pagination
             currentPage={currentPage}
             totalPages={totalPages}
-            totalItems={filtered.length}
+            totalItems={totalItems}
             pageSize={pageSize}
             pageSizeOptions={[12, 24, 48, 96]}
             onPageChange={(p) => setCurrentPage(p)}
@@ -4274,7 +4310,7 @@ function QuestionBankPanel({ active = true }) {
               prev.map((item) => (item.id === updated.id ? updated : item)),
             );
           } else {
-            fetchQuestions(true);
+            fetchQuestions();
           }
           setViewQuestion(null);
         }}
@@ -4293,7 +4329,7 @@ function QuestionBankPanel({ active = true }) {
       <BulkUploadQuestionsModal
         open={showBulkUpload}
         onClose={() => setShowBulkUpload(false)}
-        onSuccess={() => fetchQuestions(true)}
+        onSuccess={() => fetchQuestions()}
       />
     </div>
   );
@@ -4303,31 +4339,20 @@ function QuestionBankPanel({ active = true }) {
 
 export default function QuizzesPage() {
   const { role } = useAuth();
-  const [quizzes, setQuizzes] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [selectedQuiz, setSelectedQuiz] = useState(null);
   const [showNewQuiz, setShowNewQuiz] = useState(false);
   const [activeTab, setActiveTab] = useState("quizzes");
+  const refreshQuizListRef = useRef(null);
 
-  const fetchQuizzes = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await quizApi.getAll();
-      setQuizzes(data ?? []);
-      setSelectedQuiz((curr) => {
-        if (!curr) return null;
-        return (data ?? []).find((q) => q.id === curr.id) ?? curr;
-      });
-    } catch (err) {
-      toast(err.message || "Failed to load quizzes.", "error");
-    } finally {
-      setLoading(false);
+  const handleQuizUpdated = useCallback(async () => {
+    if (selectedQuiz?.id) {
+      try {
+        const updated = await quizApi.getById(selectedQuiz.id);
+        if (updated) setSelectedQuiz(updated);
+      } catch {}
     }
-  }, []);
-
-  useEffect(() => {
-    fetchQuizzes();
-  }, [fetchQuizzes]);
+    refreshQuizListRef.current?.();
+  }, [selectedQuiz?.id]);
 
   return (
     <div
@@ -4398,14 +4423,13 @@ export default function QuizzesPage() {
 
       <div style={{ display: activeTab === "quizzes" ? "block" : "none" }}>
         <QuizListPanel
-          quizzes={quizzes}
-          loading={loading}
-          onRefresh={fetchQuizzes}
+          onRegisterRefresh={(fn) => {
+            refreshQuizListRef.current = fn;
+          }}
           onSelect={setSelectedQuiz}
           onNew={() => setShowNewQuiz(true)}
           onDeleted={(id) => {
-            setQuizzes((p) => p.filter((q) => q.id !== id));
-            setSelectedQuiz((curr) => (curr?.id === id ? null : curr));
+            if (selectedQuiz?.id === id) setSelectedQuiz(null);
           }}
           role={role}
         />
@@ -4419,13 +4443,13 @@ export default function QuizzesPage() {
         open={showNewQuiz}
         onClose={() => setShowNewQuiz(false)}
         quiz={null}
-        onSaved={fetchQuizzes}
+        onSaved={() => refreshQuizListRef.current?.()}
       />
       <QuizDetailModal
         open={!!selectedQuiz}
         onClose={() => setSelectedQuiz(null)}
         quiz={selectedQuiz}
-        onQuizUpdated={fetchQuizzes}
+        onQuizUpdated={handleQuizUpdated}
         role={role}
       />
     </div>
