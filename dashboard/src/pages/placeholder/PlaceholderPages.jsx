@@ -64,4 +64,14 @@ function ComingSoon({ title, section, description }) {
   );
 }
 
+export function RedemptionsPage() {
+  return (
+    <ComingSoon
+      title="Redemptions"
+      section="Store Management"
+      description="Track and process student reward redemption requests, shipping addresses, delivery statuses, and fulfillment notes."
+    />
+  );
+}
+
 export { default as NotificationsPage } from "../notifications/NotificationsPage.jsx";

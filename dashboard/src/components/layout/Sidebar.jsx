@@ -3,6 +3,7 @@
 // Shows the app logo, menu links filtered by role, and logout controls.
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { ShoppingBag } from "lucide-react";
 import APP_CONFIG from "../../config/app.config.js";
 import { Avatar } from "../ui/index.jsx";
 
@@ -13,6 +14,7 @@ const NAV = [
   { to: "/users", label: "Users", icon: "◉", roles: ["ADMIN"] },
   { to: "/groups", label: "Groups", icon: "⬟", roles: ["ADMIN", "AUTHOR"] },
   { to: "/quizzes", label: "Quizzes", icon: "◈", roles: ["ADMIN", "AUTHOR"] },
+  { to: "/store", label: "Store", icon: ShoppingBag, roles: ["ADMIN"] },
   { to: "/notifications", label: "Notifications", icon: "◎", roles: ["ADMIN"] },
   {
     to: "/analytics",
@@ -115,7 +117,22 @@ export default function Sidebar() {
               transition: "all 0.1s",
             })}
           >
-            <span style={{ fontSize: 16, lineHeight: 1 }}>{item.icon}</span>
+            <span
+              style={{
+                fontSize: 16,
+                lineHeight: 1,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 18,
+              }}
+            >
+              {typeof item.icon === "string" ? (
+                item.icon
+              ) : (
+                <item.icon size={16} strokeWidth={1.8} />
+              )}
+            </span>
             {item.label}
           </NavLink>
         ))}

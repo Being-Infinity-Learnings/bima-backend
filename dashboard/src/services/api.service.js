@@ -179,3 +179,5 @@ export const quizCompositionApi = {
       questionIds,
     }),
 };
+
+export { storeApi } from "./store.service.js";
