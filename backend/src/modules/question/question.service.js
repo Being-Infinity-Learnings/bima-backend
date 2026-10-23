@@ -47,7 +47,7 @@ async function createQuestion(data, userId) {
       })),
     });
 
-    return question;
+    return getQuestionById(question.id, tx);
   });
 }
 /** Retrieve questions with server-side pagination and filters */
@@ -141,14 +141,20 @@ async function getQuestions(options = {}) {
   };
 }
 
-async function getQuestionById(id) {
-  return prisma.question.findUnique({
+async function getQuestionById(id, client = prisma) {
+  return client.question.findUnique({
     where: { id },
 
     include: {
       options: {
         orderBy: {
           orderIndex: "asc",
+        },
+      },
+      createdBy: {
+        select: {
+          id: true,
+          fullName: true,
         },
       },
     },
@@ -193,7 +199,7 @@ async function updateQuestion(id, data) {
       });
     }
 
-    return getQuestionById(id);
+    return getQuestionById(id, tx);
   });
 }
 

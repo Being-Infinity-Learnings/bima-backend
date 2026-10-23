@@ -718,11 +718,13 @@ function QuestionForm({
   }
 
   return (
-    <div style={{ display: "flex", gap: 36 }}>
+    <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
       {/* ── Left panel: question text + image ── */}
       <div
         style={{
-          flex: "0 0 360px",
+          flex: "1 1 340px",
+          maxWidth: 380,
+          minWidth: 280,
           display: "flex",
           flexDirection: "column",
           gap: 22,
@@ -800,13 +802,19 @@ function QuestionForm({
 
       {/* ── Right panel: type + timer + options ── */}
       <div
-        style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20 }}
+        style={{
+          flex: "1 1 360px",
+          minWidth: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 20,
+        }}
       >
         {/* Type + Timer */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 170px",
+            gridTemplateColumns: "1fr minmax(130px, 170px)",
             gap: 16,
             alignItems: "end",
           }}
@@ -927,6 +935,7 @@ function QuestionForm({
                     maxLength={LIMITS.optionText}
                     style={{
                       flex: 1,
+                      minWidth: 0,
                       background: "transparent",
                       border: "none",
                       color: T.textPrimary,
@@ -2139,7 +2148,7 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
 
   async function handleInlineCreate(data) {
     const q = await questionApi.create(data);
-    toast("Question created.", "success");
+    toast("Question created and selected.", "success");
     setQuestions((prev) => [q, ...prev]);
     setSelected((prev) => new Set([...prev, q.id]));
     setShowCreate(false);
@@ -2180,79 +2189,71 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Add questions" width={820}>
+    <Modal open={open} onClose={onClose} title="Add questions" width={860}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {showCreate ? (
-          <div
+        <div style={{ display: "flex", gap: 12 }}>
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
             style={{
-              background: T.pageBg,
-              border: `1.5px solid ${T.primary}40`,
-              borderRadius: 14,
-              padding: 22,
+              flex: 1,
+              background: `${T.primary}0d`,
+              border: `1.5px dashed ${T.primary}50`,
+              borderRadius: 12,
+              color: T.primary,
+              fontSize: 14,
+              fontWeight: 600,
+              padding: "14px 18px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              textAlign: "left",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              transition: "border-color 0.15s, background 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = T.primary;
+              e.currentTarget.style.background = `${T.primary}18`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = `${T.primary}50`;
+              e.currentTarget.style.background = `${T.primary}0d`;
             }}
           >
-            <div
-              style={{
-                ...SECTION_LABEL_STYLE,
-                color: T.primary,
-                marginBottom: 16,
-              }}
-            >
-              Create new question
-            </div>
-            <QuestionForm
-              onSave={handleInlineCreate}
-              onCancel={() => setShowCreate(false)}
-              saveLabel="Create & select"
-            />
-          </div>
-        ) : (
-          <div style={{ display: "flex", gap: 12 }}>
-            <button
-              type="button"
-              onClick={() => setShowCreate(true)}
-              style={{
-                flex: 1,
-                background: `${T.primary}0d`,
-                border: `1.5px dashed ${T.primary}50`,
-                borderRadius: 12,
-                color: T.primary,
-                fontSize: 14,
-                fontWeight: 600,
-                padding: "14px 18px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                textAlign: "left",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <Plus size={17} /> Create a new question
-            </button>
+            <Plus size={17} /> Create a new question
+          </button>
 
-            <button
-              type="button"
-              onClick={() => setShowBulkUpload(true)}
-              style={{
-                background: `${T.primary}0d`,
-                border: `1.5px dashed ${T.primary}50`,
-                borderRadius: 12,
-                color: T.primary,
-                fontSize: 14,
-                fontWeight: 600,
-                padding: "14px 18px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <Upload size={17} /> Bulk upload questions
-            </button>
-          </div>
-        )}
+          <button
+            type="button"
+            onClick={() => setShowBulkUpload(true)}
+            style={{
+              background: `${T.primary}0d`,
+              border: `1.5px dashed ${T.primary}50`,
+              borderRadius: 12,
+              color: T.primary,
+              fontSize: 14,
+              fontWeight: 600,
+              padding: "14px 18px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              transition: "border-color 0.15s, background 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = T.primary;
+              e.currentTarget.style.background = `${T.primary}18`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = `${T.primary}50`;
+              e.currentTarget.style.background = `${T.primary}0d`;
+            }}
+          >
+            <Upload size={17} /> Bulk upload questions
+          </button>
+        </div>
 
         <input
           value={search}
@@ -2404,6 +2405,19 @@ function AddQuestionsModal({ open, onClose, quiz, alreadyInQuiz, onSaved }) {
           </div>
         </div>
       </div>
+      <Modal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        title="Create new question"
+        width={940}
+      >
+        <QuestionForm
+          onSave={handleInlineCreate}
+          onCancel={() => setShowCreate(false)}
+          saveLabel="Create & select"
+        />
+      </Modal>
+
       <BulkUploadQuestionsModal
         open={showBulkUpload}
         onClose={() => setShowBulkUpload(false)}
@@ -4309,9 +4323,8 @@ function QuestionBankPanel({ active = true }) {
             setQuestions((prev) =>
               prev.map((item) => (item.id === updated.id ? updated : item)),
             );
-          } else {
-            fetchQuestions();
           }
+          fetchQuestions();
           setViewQuestion(null);
         }}
       />
