@@ -98,9 +98,10 @@ async function getQuizzes(options = {}) {
           },
         },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: [
+        { createdAt: "desc" },
+        { id: "desc" },
+      ],
     });
 
     return {
@@ -129,9 +130,10 @@ async function getQuizzes(options = {}) {
           },
         },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: [
+        { createdAt: "desc" },
+        { id: "desc" },
+      ],
       skip,
       take: safeLimit,
     }),

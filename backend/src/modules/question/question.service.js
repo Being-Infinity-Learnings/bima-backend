@@ -87,9 +87,10 @@ async function getQuestions(options = {}) {
           },
         },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: [
+        { createdAt: "desc" },
+        { id: "desc" },
+      ],
     });
 
     return {
@@ -118,9 +119,10 @@ async function getQuestions(options = {}) {
           },
         },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: [
+        { createdAt: "desc" },
+        { id: "desc" },
+      ],
       skip,
       take: safeLimit,
     }),

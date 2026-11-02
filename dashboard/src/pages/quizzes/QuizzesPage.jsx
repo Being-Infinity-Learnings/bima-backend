@@ -3089,35 +3089,54 @@ function QuizListPanel({ onRegisterRefresh, onSelect, onNew, onDeleted, role }) 
     setCurrentPage(1);
   }, [debouncedSearch, statusFilter]);
 
-  const fetchQuizzes = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await quizApi.getAll({
-        page: currentPage,
-        limit: pageSize,
-        search: debouncedSearch.trim() || undefined,
-        status: statusFilter === "ALL" ? undefined : statusFilter,
-      });
+  const fetchQuizzes = useCallback(
+    async (pageOverride) => {
+      setLoading(true);
+      const targetPage =
+        typeof pageOverride === "number" ? pageOverride : currentPage;
+      try {
+        const res = await quizApi.getAll({
+          page: targetPage,
+          limit: pageSize,
+          search: debouncedSearch.trim() || undefined,
+          status: statusFilter === "ALL" ? undefined : statusFilter,
+        });
 
-      const list = Array.isArray(res) ? res : (res?.data ?? []);
-      const pagination = res?.pagination;
+        const list = Array.isArray(res) ? res : (res?.data ?? []);
+        const pagination = res?.pagination;
+        const total = pagination?.total ?? list.length;
+        const computedTotalPages =
+          pagination?.totalPages ??
+          Math.max(1, Math.ceil(total / pageSize));
 
-      setQuizzes(list);
-      setTotalItems(pagination?.total ?? list.length);
-      setTotalPages(
-        pagination?.totalPages ??
-          Math.max(1, Math.ceil((pagination?.total ?? list.length) / pageSize)),
-      );
-    } catch (err) {
-      toast(err.message || "Failed to load quizzes.", "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [currentPage, pageSize, debouncedSearch, statusFilter]);
+        // Auto-recover if current page is beyond available items (e.g. after deletion)
+        if (list.length === 0 && total > 0 && targetPage > 1) {
+          const lastValidPage = Math.max(1, computedTotalPages);
+          setCurrentPage(lastValidPage);
+          return;
+        }
+
+        setQuizzes(list);
+        setTotalItems(total);
+        setTotalPages(computedTotalPages);
+      } catch (err) {
+        toast(err.message || "Failed to load quizzes.", "error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [currentPage, pageSize, debouncedSearch, statusFilter],
+  );
 
   useEffect(() => {
     fetchQuizzes();
   }, [fetchQuizzes]);
+
+  useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   useEffect(() => {
     if (onRegisterRefresh) {
@@ -3138,7 +3157,11 @@ function QuizListPanel({ onRegisterRefresh, onSelect, onNew, onDeleted, role }) 
       toast("Quiz deleted.", "success");
       onDeleted?.(confirmQuiz.id);
       setConfirmQuiz(null);
-      fetchQuizzes();
+      if (quizzes.length === 1 && currentPage > 1) {
+        setCurrentPage((prev) => Math.max(1, prev - 1));
+      } else {
+        fetchQuizzes();
+      }
     } catch (err) {
       toast(err.message || "Failed.", "error");
     } finally {
@@ -3254,15 +3277,53 @@ function QuizListPanel({ onRegisterRefresh, onSelect, onNew, onDeleted, role }) 
           <Spinner />
         </div>
       ) : quizzes.length === 0 ? (
-        <EmptyState
-          icon=""
-          title="No quizzes"
-          subtitle={
-            search || statusFilter !== "ALL"
-              ? "No matches found."
-              : 'Click "New quiz" to get started.'
-          }
-        />
+        totalItems > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <EmptyState
+              icon=""
+              title="No quizzes on this page"
+              subtitle="This page is empty. Use the page controls below to navigate back."
+            >
+              <div
+                style={{
+                  marginTop: 12,
+                  display: "flex",
+                  justifyContent: "center",
+                }}
+              >
+                <Button variant="secondary" onClick={() => setCurrentPage(1)}>
+                  Go to page 1
+                </Button>
+              </div>
+            </EmptyState>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              pageSizeOptions={[12, 24, 48, 96]}
+              onPageChange={(p) => setCurrentPage(p)}
+              onPageSizeChange={(s) => {
+                setPageSize(s);
+                try {
+                  localStorage.setItem("bima_quiz_page_size", String(s));
+                } catch {}
+                setCurrentPage(1);
+              }}
+              itemName="quizzes"
+            />
+          </div>
+        ) : (
+          <EmptyState
+            icon=""
+            title="No quizzes"
+            subtitle={
+              search || statusFilter !== "ALL"
+                ? "No matches found."
+                : 'Click "New quiz" to get started.'
+            }
+          />
+        )
       ) : viewMode === "cards" ? (
         <>
           <div
@@ -3739,37 +3800,56 @@ function QuestionBankPanel({ active = true }) {
     setCurrentPage(1);
   }, [debouncedSearch]);
 
-  const fetchQuestions = useCallback(async () => {
-    if (!active) return;
-    setLoading(true);
-    try {
-      const res = await questionApi.getAll({
-        page: currentPage,
-        limit: pageSize,
-        search: debouncedSearch.trim() || undefined,
-      });
+  const fetchQuestions = useCallback(
+    async (pageOverride) => {
+      if (!active) return;
+      setLoading(true);
+      const targetPage =
+        typeof pageOverride === "number" ? pageOverride : currentPage;
+      try {
+        const res = await questionApi.getAll({
+          page: targetPage,
+          limit: pageSize,
+          search: debouncedSearch.trim() || undefined,
+        });
 
-      const list = Array.isArray(res) ? res : (res?.data ?? []);
-      const pagination = res?.pagination;
+        const list = Array.isArray(res) ? res : (res?.data ?? []);
+        const pagination = res?.pagination;
+        const total = pagination?.total ?? list.length;
+        const computedTotalPages =
+          pagination?.totalPages ??
+          Math.max(1, Math.ceil(total / pageSize));
 
-      setQuestions(list);
-      setTotalItems(pagination?.total ?? list.length);
-      setTotalPages(
-        pagination?.totalPages ??
-          Math.max(1, Math.ceil((pagination?.total ?? list.length) / pageSize)),
-      );
-    } catch (err) {
-      toast(err.message || "Failed to load questions.", "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [active, currentPage, pageSize, debouncedSearch]);
+        // Auto-recover if current page is beyond available items (e.g. after deletion)
+        if (list.length === 0 && total > 0 && targetPage > 1) {
+          const lastValidPage = Math.max(1, computedTotalPages);
+          setCurrentPage(lastValidPage);
+          return;
+        }
+
+        setQuestions(list);
+        setTotalItems(total);
+        setTotalPages(computedTotalPages);
+      } catch (err) {
+        toast(err.message || "Failed to load questions.", "error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [active, currentPage, pageSize, debouncedSearch],
+  );
 
   useEffect(() => {
     if (active) {
       fetchQuestions();
     }
   }, [active, fetchQuestions]);
+
+  useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   async function handleCreate(data) {
     await questionApi.create(data);
@@ -3790,7 +3870,11 @@ function QuestionBankPanel({ active = true }) {
       await questionApi.delete(confirmQuestion.id);
       toast("Deleted.", "success");
       setConfirmQuestion(null);
-      fetchQuestions();
+      if (questions.length === 1 && currentPage > 1) {
+        setCurrentPage((prev) => Math.max(1, prev - 1));
+      } else {
+        fetchQuestions();
+      }
     } catch (err) {
       toast(err.message || "Failed.", "error");
     } finally {
@@ -3903,13 +3987,56 @@ function QuestionBankPanel({ active = true }) {
           <Spinner />
         </div>
       ) : questions.length === 0 ? (
-        <EmptyState
-          icon=""
-          title="No questions"
-          subtitle={
-            search ? "No matches." : 'Click "New question" to create one.'
-          }
-        />
+        totalItems > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <EmptyState
+              icon=""
+              title="No questions on this page"
+              subtitle="This page is empty. Use the page controls below to navigate back."
+            >
+              <div
+                style={{
+                  marginTop: 12,
+                  display: "flex",
+                  justifyContent: "center",
+                }}
+              >
+                <Button variant="secondary" onClick={() => setCurrentPage(1)}>
+                  Go to page 1
+                </Button>
+              </div>
+            </EmptyState>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              pageSizeOptions={[12, 24, 48, 96]}
+              onPageChange={(p) => setCurrentPage(p)}
+              onPageSizeChange={(s) => {
+                setPageSize(s);
+                try {
+                  localStorage.setItem("bima_questions_page_size", String(s));
+                } catch {}
+                setCurrentPage(1);
+              }}
+              itemName="questions"
+              style={{
+                borderRadius: 16,
+                border: `1px solid ${T.cardBorder}`,
+                background: T.cardBg,
+              }}
+            />
+          </div>
+        ) : (
+          <EmptyState
+            icon=""
+            title="No questions"
+            subtitle={
+              search ? "No matches." : 'Click "New question" to create one.'
+            }
+          />
+        )
       ) : viewMode === "cards" ? (
         <>
           <div
