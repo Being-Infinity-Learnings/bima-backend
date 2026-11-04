@@ -18,25 +18,30 @@ function sendError(res, err) {
   });
 }
 
-// Initialize a runtime for a scheduled quiz (debug/admin only — in normal
+// Initialize a runtime for a quiz (debug/admin only — in normal
 // operation this happens automatically via the quiz-start BullMQ job).
+// If a runtime already exists (e.g. from a previous test run), it is
+// destroyed first so the new run always starts from a clean WAITING state.
+// Also bypasses the SCHEDULED-only status check so a quiz that was left
+// in LIVE or COMPLETED by a previous test can be re-initialized without
+// needing to republish it.
 async function initialize(req, res) {
   try {
     const { quizId } = req.params;
 
+    // Tear down any leftover runtime (cancels pending phase jobs too).
     if (await manager.exists(quizId)) {
-      return res.status(409).json({
-        success: false,
-        message: "Runtime already initialized",
-      });
+      await manager.destroy(quizId);
     }
 
-    const initialState = await loader.load(quizId);
+    // ignoreStatus: true so this works on LIVE/COMPLETED quizzes that a
+    // previous test run left in a non-SCHEDULED state.
+    const initialState = await loader.load(quizId, { ignoreStatus: true });
 
     await manager.create(initialState);
 
-    // A manual initialize should also cancel the automatic BullMQ start
-    // job, since we don't want both racing to start the same quiz.
+    // Cancel the automatic BullMQ start job so it doesn't race with
+    // the admin's manual start call.
     await cancelQuizStart(quizId);
 
     return res.json({

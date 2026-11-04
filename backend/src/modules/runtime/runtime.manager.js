@@ -12,6 +12,7 @@ const store = require("./runtime.store");
 const RuntimeEngine = require("./runtime.engine");
 const { NotFoundError, ConflictError } = require("./runtime.state");
 const socketBroadcast = require("../socket/socket.broadcast");
+const { cancelPhaseAction } = require("./runtime.queue");
 
 // Check whether a runtime exists for the given quiz id.
 async function exists(quizId) {
@@ -87,8 +88,11 @@ async function broadcastIfCurrent(quizId, expectedVersion, snapshot) {
 }
 
 // Destroy every Redis key associated with a quiz's runtime (core state,
-// leaderboard, submissions, connected users).
+// leaderboard, submissions, connected users) and cancel any pending
+// BullMQ phase job so stale jobs don't fire into a future re-initialized
+// runtime.
 async function destroy(quizId) {
+  await cancelPhaseAction(quizId);
   await store.deleteAll(quizId);
 }
 
