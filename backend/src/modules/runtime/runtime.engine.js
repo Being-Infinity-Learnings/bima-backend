@@ -127,17 +127,20 @@ class RuntimeEngine {
       return;
     }
 
-    await prisma.quiz.update({
-      where: {
-        id: this.quizId,
-      },
-
-      data: {
-        status: "LIVE",
-
-        actualStartTime: new Date(),
-      },
-    });
+    try {
+      await prisma.quiz.update({
+        where: { id: this.quizId },
+        data: { status: "LIVE", actualStartTime: new Date() },
+      });
+    } catch (err) {
+      if (err?.code !== "P2025") throw err;
+      // Quiz was deleted between initialization and start — abort cleanly.
+      console.warn(
+        `[Runtime] start(): quiz ${this.quizId} not found in DB, aborting`,
+      );
+      this._dirtyup = false;
+      return;
+    }
 
     this.runtime.startedAt = new Date();
 
@@ -619,19 +622,34 @@ class RuntimeEngine {
       return;
     }
 
-    await prisma.quizSubmission.createMany({
-      data: allSubmissions.map(([, submission]) => ({
-        quizId: this.quizId,
-        userId: submission.userId,
-        questionId: submission.questionId,
-        selectedOptionIds: submission.selectedOptionIds,
-        correct: submission.correct,
-        score: submission.score,
-        elapsedMs: submission.elapsedMs,
-        submittedAt: new Date(submission.submittedAt),
-      })),
-      skipDuplicates: true,
-    });
+    try {
+      await prisma.quizSubmission.createMany({
+        data: allSubmissions.map(([, submission]) => ({
+          quizId: this.quizId,
+          userId: submission.userId,
+          questionId: submission.questionId,
+          selectedOptionIds: submission.selectedOptionIds,
+          correct: submission.correct,
+          score: submission.score,
+          elapsedMs: submission.elapsedMs,
+          submittedAt: new Date(submission.submittedAt),
+        })),
+        skipDuplicates: true,
+      });
+    } catch (err) {
+      // P2003 = foreign key constraint failed. This happens when the quiz
+      // (or a referenced question) was deleted while a finishQuestion job
+      // was already running. The submissions cannot be saved anywhere useful,
+      // so skip rather than failing the whole job and blocking phase
+      // transitions.
+      if (err?.code === "P2003") {
+        console.warn(
+          `[Runtime] persistAllSubmissions: quiz ${this.quizId} no longer exists, skipping submission persist`,
+        );
+        return;
+      }
+      throw err;
+    }
   }
 
   // Returns remaining time (ms) in the current phase, or null if none.
@@ -862,17 +880,26 @@ class RuntimeEngine {
   // Mark the quiz completed in the DB, broadcast final state, cancel any
   // dangling phase job, and destroy all Redis keys for this runtime.
   async complete() {
-    await prisma.quiz.update({
-      where: {
-        id: this.quizId,
-      },
+    try {
+      await prisma.quiz.update({
+        where: {
+          id: this.quizId,
+        },
 
-      data: {
-        status: "COMPLETED",
+        data: {
+          status: "COMPLETED",
 
-        completedAt: new Date(),
-      },
-    });
+          completedAt: new Date(),
+        },
+      });
+    } catch (err) {
+      // P2025 = record not found. Quiz was deleted while the runtime was
+      // still running — skip the status update and let cleanup proceed.
+      if (err?.code !== "P2025") throw err;
+      console.warn(
+        `[Runtime] complete(): quiz ${this.quizId} not found in DB, skipping status update`,
+      );
+    }
 
     this.changePhase(QuizPhase.COMPLETED);
 
