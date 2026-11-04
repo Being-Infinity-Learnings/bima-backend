@@ -37,25 +37,33 @@ const RuntimeEngine = require("./runtime.engine");
 const QUEUE_NAME = "quiz-runtime";
 
 async function handleStartQuiz(quizId) {
-  // Already initialized (e.g. an admin manually started it, or a retry
-  // landed after a previous attempt partially succeeded) — nothing to do.
-  if (await manager.exists(quizId)) {
-    return;
+  if (!(await manager.exists(quizId))) {
+    // loader.load() throws ValidationError if the quiz is no longer
+    // SCHEDULED (e.g. it was moved back to DRAFT after this job was
+    // enqueued but before it fired) — that's a legitimate "skip", not a
+    // job failure worth retrying, so we swallow that specific case.
+    let initialState;
+    try {
+      initialState = await loader.load(quizId);
+    } catch (err) {
+      console.warn(
+        `[quiz-runtime] skipping start for ${quizId}: ${err.message}`,
+      );
+      return;
+    }
+
+    await manager.create(initialState);
   }
 
-  // loader.load() throws ValidationError if the quiz is no longer
-  // SCHEDULED (e.g. it was moved back to DRAFT after this job was
-  // enqueued but before it fired) — that's a legitimate "skip", not a
-  // job failure worth retrying, so we swallow that specific case.
-  let initialState;
-  try {
-    initialState = await loader.load(quizId);
-  } catch (err) {
-    console.warn(`[quiz-runtime] skipping start for ${quizId}: ${err.message}`);
+  // Runtime exists now — either just created above, or already present from
+  // a prior attempt. If start() already completed successfully the phase will
+  // be past WAITING; skip to avoid double-starting. If it's still WAITING,
+  // start() failed on the prior attempt (the guard above short-circuited it)
+  // so we must retry it here, otherwise the quiz is permanently stuck.
+  const snapshot = await manager.getRuntimeSnapshot(quizId);
+  if (!snapshot || snapshot.phase !== "WAITING") {
     return;
   }
-
-  await manager.create(initialState);
 
   await manager.withEngine(quizId, (engine) => engine.start());
 }
