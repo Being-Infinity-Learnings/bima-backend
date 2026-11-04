@@ -9,7 +9,10 @@ const { QuizPhase } = require("./runtime.constants");
 const { NotFoundError, ValidationError } = require("./runtime.state");
 
 // Load quiz + questions and build the initial core runtime state.
-async function load(quizId) {
+// `options.ignoreStatus` skips the SCHEDULED-only check — only for the
+// admin initialize endpoint, which must be able to re-load a quiz that a
+// previous test run left in LIVE or COMPLETED status.
+async function load(quizId, { ignoreStatus = false } = {}) {
   const quiz = await prisma.quiz.findUnique({
     where: {
       id: quizId,
@@ -46,7 +49,7 @@ async function load(quizId) {
     throw new NotFoundError("Quiz not found");
   }
 
-  if (quiz.status !== "SCHEDULED") {
+  if (!ignoreStatus && quiz.status !== "SCHEDULED") {
     throw new ValidationError("Only scheduled quizzes can be initialized");
   }
 

@@ -2422,16 +2422,13 @@ function QuizDetailModal({ open, onClose, quiz, onQuizUpdated, role }) {
   // Hits the backend's /runtime routes directly, bypassing the normal
   // scheduled LIVE flow, purely so the runtime can be exercised from the
   // dashboard during testing. Delete this whole function to remove.
+  //
+  // initialize now always resets any previous runtime first, so no need
+  // to swallow a 409 here — each call always starts from a clean state.
   async function handleTestRuntime() {
     setTestRuntimeLoading(true);
     try {
-      try {
-        await runtimeApi.initialize(quiz.id);
-      } catch (err) {
-        // If it's already initialized (e.g. from a previous test run),
-        // that's fine — just proceed to start it.
-        if (!/already initialized/i.test(err.message || "")) throw err;
-      }
+      await runtimeApi.initialize(quiz.id);
       await runtimeApi.start(quiz.id);
       toast("Runtime initialized & started (test).", "success");
     } catch (err) {

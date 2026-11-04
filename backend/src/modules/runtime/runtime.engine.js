@@ -114,6 +114,19 @@ class RuntimeEngine {
   // duration collapses to 0 and we move on to the first question right
   // away instead of waiting the full configured duration.
   async start() {
+    // Guard against being called more than once (e.g. a race between the
+    // auto-start BullMQ job and the admin "Test Runtime" button, or a
+    // duplicate job retry). Calling start() on an already-running runtime
+    // would re-enter the LOBBY without resetting state, corrupting the
+    // question index and scheduling stale phase jobs.
+    if (this.runtime.phase !== QuizPhase.WAITING) {
+      this._dirty = false;
+      console.warn(
+        `[Runtime] start() called on quiz ${this.quizId} in phase ${this.runtime.phase} — skipping`,
+      );
+      return;
+    }
+
     await prisma.quiz.update({
       where: {
         id: this.quizId,
