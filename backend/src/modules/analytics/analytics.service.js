@@ -10,21 +10,71 @@ const prisma = require("../../config/prisma");
  * - average score
  * - completion date
  */
-async function getCompletedQuizzes() {
-  const quizzes = await prisma.quiz.findMany({
-    where: { status: "COMPLETED" },
-    include: {
-      _count: { select: { quizQuestions: true } },
-      submissions: {
-        select: { userId: true, score: true },
-      },
-    },
-    orderBy: { completedAt: "desc" },
-  });
+async function getCompletedQuizzes(page = 1, limit = 10, search = "") {
+  const skip = (page - 1) * limit;
 
-  return quizzes.map((q) => {
-    const uniqueParticipants = new Set(q.submissions.map((s) => s.userId)).size;
-    const totalScore = q.submissions.reduce((sum, s) => sum + s.score, 0);
+  const where = {
+    status: "COMPLETED",
+    ...(search && {
+      title: {
+        contains: search,
+        mode: "insensitive",
+      },
+    }),
+  };
+
+  const [quizzes, totalRecords, globalQuizCount, globalSubmissions] =
+    await Promise.all([
+      prisma.quiz.findMany({
+        where,
+        include: {
+          _count: { select: { quizQuestions: true } },
+          submissions: {
+            select: { userId: true, score: true },
+          },
+        },
+        orderBy: { completedAt: "desc" },
+        skip,
+        take: limit,
+      }),
+
+      prisma.quiz.count({
+        where,
+      }),
+
+      prisma.quiz.count({
+        where: { status: "COMPLETED" },
+      }),
+
+      prisma.quizSubmission.findMany({
+        where: {
+          quiz: {
+            status: "COMPLETED",
+          },
+        },
+        select: {
+          userId: true,
+        },
+      }),
+    ]);
+  const globalStats = {
+    completedQuizzes: globalQuizCount,
+    totalParticipants: new Set(
+      globalSubmissions.map((submission) => submission.userId),
+    ).size,
+    totalSubmissions: globalSubmissions.length,
+  };
+
+  const data = quizzes.map((q) => {
+    const uniqueParticipants = new Set(
+      q.submissions.map((s) => s.userId),
+    ).size;
+
+    const totalScore = q.submissions.reduce(
+      (sum, s) => sum + s.score,
+      0,
+    );
+
     const avgScore =
       q.submissions.length > 0
         ? Math.round(totalScore / q.submissions.length)
@@ -44,8 +94,18 @@ async function getCompletedQuizzes() {
       totalSubmissions: q.submissions.length,
     };
   });
-}
 
+  return {
+    items: data,
+    globalStats,
+    pagination: {
+      currentPage: page,
+      pageSize: limit,
+      totalRecords,
+      totalPages: Math.ceil(totalRecords / limit),
+    },
+  };
+}
 /**
  * Returns full analytics for a single completed quiz:
  * - Quiz metadata
@@ -53,7 +113,10 @@ async function getCompletedQuizzes() {
  * - Leaderboard (top scorers with rank, user info, score, time)
  * - Per-participant answer trail
  */
-async function getQuizAnalytics(quizId) {
+async function getQuizAnalytics(
+  quizId,
+  { section = "all", page = 1, limit = 10 } = {},
+) {
   const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },
     include: {
@@ -171,8 +234,8 @@ async function getQuizAnalytics(quizId) {
       avgElapsedMs:
         totalAnswered > 0
           ? Math.round(
-              qSubmissions.reduce((s, x) => s + x.elapsedMs, 0) / totalAnswered,
-            )
+            qSubmissions.reduce((s, x) => s + x.elapsedMs, 0) / totalAnswered,
+          )
           : 0,
       options: question.options.map((opt) => ({
         id: opt.id,
@@ -217,6 +280,35 @@ async function getQuizAnalytics(quizId) {
     };
   });
 
+  const totalLeaderboardRecords = participantTrail.length;
+  const totalQuestionRecords = questions.length;
+
+  const totalLeaderboardPages = Math.ceil(
+    totalLeaderboardRecords / limit,
+  );
+
+  const totalQuestionPages = Math.ceil(
+    totalQuestionRecords / limit,
+  );
+
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+
+  const paginatedLeaderboard = leaderboard
+  .slice(startIndex, endIndex)
+  .map((participant) => ({
+    ...participant,
+    trail:
+      participantTrail.find(
+        (p) => p.userId === participant.userId,
+      )?.trail ?? [],
+  }));
+
+  const paginatedQuestions = questions.slice(
+    startIndex,
+    endIndex,
+  );
+
   return {
     quiz: {
       id: quiz.id,
@@ -229,6 +321,7 @@ async function getQuizAnalytics(quizId) {
       completedAt: quiz.completedAt,
       defaultTimer: quiz.defaultTimer,
     },
+
     summary: {
       participantCount: uniqueParticipants.length,
       totalQuestions: questions.length,
@@ -236,15 +329,57 @@ async function getQuizAnalytics(quizId) {
       avgScore:
         leaderboard.length > 0
           ? Math.round(
-              leaderboard.reduce((s, p) => s + p.totalScore, 0) /
-                leaderboard.length,
-            )
+            leaderboard.reduce((sum, participant) => {
+              return sum + participant.totalScore;
+            }, 0) / leaderboard.length,
+          )
           : 0,
       topScore: leaderboard[0]?.totalScore ?? 0,
     },
-    leaderboard,
-    questions,
-    participantTrail,
+
+    leaderboard:
+      section === "questions"
+        ? []
+        : section === "leaderboard"
+          ? leaderboard.slice(startIndex, endIndex)
+          : leaderboard,
+
+    questions:
+      section === "leaderboard"
+        ? []
+        : section === "questions"
+          ? paginatedQuestions
+          : questions,
+
+    participantTrail:
+      section === "leaderboard"
+        ? paginatedLeaderboard
+        : section === "questions"
+          ? []
+          : participantTrail,
+
+    pagination: {
+      section,
+      currentPage: page,
+      pageSize: limit,
+
+      totalRecords:
+        section === "leaderboard"
+          ? totalLeaderboardRecords
+          : section === "questions"
+            ? totalQuestionRecords
+            : Math.max(totalLeaderboardRecords, totalQuestionRecords),
+
+      totalPages:
+        section === "leaderboard"
+          ? totalLeaderboardPages
+          : section === "questions"
+            ? totalQuestionPages
+            : Math.ceil(
+              Math.max(totalLeaderboardRecords, totalQuestionRecords) /
+              limit,
+            ),
+    },
   };
 }
 

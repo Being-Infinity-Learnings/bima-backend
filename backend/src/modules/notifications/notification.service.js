@@ -209,11 +209,56 @@ async function dispatchPendingScheduled() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Return the notification history for admin and author views.
-async function listNotifications() {
-  return prisma.notification.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { createdBy: { select: { fullName: true, email: true } } },
-  });
+// Return paginated notification history for admin and author views.
+async function listNotifications({ page = 1, limit = 10 } = {}) {
+  const currentPage = Math.max(1, Number(page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(limit) || 10));
+
+  const skip = (currentPage - 1) * pageSize;
+
+  // Fetch the current page, total record count, and dashboard statistics.
+  const [items, totalRecords, sentCount, pendingCount] = await Promise.all([
+    prisma.notification.findMany({
+      skip,
+      take: pageSize,
+      orderBy: { createdAt: "desc" },
+      include: {
+        createdBy: {
+          select: {
+            fullName: true,
+            email: true,
+          },
+        },
+      },
+    }),
+
+    prisma.notification.count(),
+
+    prisma.notification.count({
+      where: { status: "SENT" },
+    }),
+
+    prisma.notification.count({
+      where: { status: "PENDING" },
+    }),
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+
+  return {
+    items,
+    pagination: {
+      currentPage,
+      pageSize,
+      totalRecords,
+      totalPages,
+    },
+    stats: {
+      total: totalRecords,
+      sent: sentCount,
+      pending: pendingCount,
+    },
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ import {
   Avatar,
   EmptyState,
   Modal,
+  Pagination,
 } from "../../components/ui/index.jsx";
 import { analyticsApi } from "../../services/api.service.js";
 import APP_CONFIG from "../../config/app.config.js";
@@ -1071,16 +1072,81 @@ function QuizDetailView({ quizId, onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("leaderboard");
+  const [leaderboardPage, setLeaderboardPage] = useState(1);
+  const [leaderboardPageSize, setLeaderboardPageSize] = useState(10);
+
+  const [leaderboardPagination, setLeaderboardPagination] = useState({
+    currentPage: 1,
+    pageSize: 10,
+    totalRecords: 0,
+    totalPages: 0,
+  });
+
+  const [questionPage, setQuestionPage] = useState(1);
+  const [questionPageSize, setQuestionPageSize] = useState(10);
+
+  const [questionPagination, setQuestionPagination] = useState({
+    currentPage: 1,
+    pageSize: 10,
+    totalRecords: 0,
+    totalPages: 0,
+  });
 
   useEffect(() => {
     setLoading(true);
     setError(null);
+
     analyticsApi
-      .getQuizAnalytics(quizId)
-      .then(setData)
+      .getQuizAnalytics(quizId, {
+        section: "leaderboard",
+        page: leaderboardPage,
+        limit: leaderboardPageSize,
+      })
+      .then((response) => {
+        setData(response.data);
+        setLeaderboardPagination(
+          response.data?.pagination ?? {
+            currentPage: leaderboardPage,
+            pageSize: leaderboardPageSize,
+            totalRecords: 0,
+            totalPages: 0,
+          },
+        );
+      })
       .catch((e) => setError(e.message || "Failed to load analytics"))
       .finally(() => setLoading(false));
-  }, [quizId]);
+  }, [quizId, leaderboardPage, leaderboardPageSize]);
+
+  useEffect(() => {
+    analyticsApi
+      .getQuizAnalytics(quizId, {
+        section: "questions",
+        page: questionPage,
+        limit: questionPageSize,
+      })
+      .then((response) => {
+        setData((prev) =>
+          prev
+            ? {
+              ...prev,
+              questions: response.data?.questions ?? [],
+            }
+            : prev,
+        );
+
+        setQuestionPagination(
+          response.data?.pagination ?? {
+            currentPage: questionPage,
+            pageSize: questionPageSize,
+            totalRecords: 0,
+            totalPages: 0,
+          },
+        );
+      })
+      .catch((e) =>
+        console.error("Failed to load quiz questions:", e),
+      );
+  }, [quizId, questionPage, questionPageSize]);
 
   if (loading) {
     return (
@@ -1118,7 +1184,13 @@ function QuizDetailView({ quizId, onBack }) {
     );
   }
 
-  const { quiz, summary, questions, participantTrail } = data;
+  const {
+    quiz,
+    summary,
+    questions,
+    participantTrail = [],
+    leaderboard = [],
+  } = data;
 
   const tabs = [
     { id: "leaderboard", label: `Leaderboard (${participantTrail.length})` },
@@ -1233,61 +1305,129 @@ function QuizDetailView({ quizId, onBack }) {
         />
       </div>
 
+
       {/* Tabs */}
       <TabBar tabs={tabs} active={tab} onChange={setTab} />
 
       {/* Tab content */}
       {tab === "leaderboard" && (
-        <Card>
-          <SectionHeader
-            title="Leaderboard"
-            sub="Ranked by total score, then fastest total response time. Search or view a participant's full answer trail."
-          />
-          {participantTrail.length === 0 ? (
-            <EmptyState subtitle="No submissions recorded for this quiz" />
-          ) : (
-            <LeaderboardTable
-              entries={participantTrail}
-              questions={questions}
+        <>
+          <Card>
+            <SectionHeader
+              title="Leaderboard"
+              sub="Ranked by total score, then fastest total response time. Search or view a participant's full answer trail."
+            />
+
+            {participantTrail.length === 0 ? (
+              <EmptyState subtitle="No submissions recorded for this quiz" />
+            ) : (
+              <LeaderboardTable
+                entries={participantTrail}
+                questions={questions}
+              />
+            )}
+          </Card>
+
+          {leaderboardPagination.totalRecords > 0 && (
+            <Pagination
+              currentPage={leaderboardPagination.currentPage}
+              totalPages={leaderboardPagination.totalPages}
+              totalItems={leaderboardPagination.totalRecords}
+              pageSize={leaderboardPagination.pageSize}
+              onPageChange={setLeaderboardPage}
+              onPageSizeChange={(newSize) => {
+                setLeaderboardPageSize(newSize);
+                setLeaderboardPage(1);
+              }}
+              itemName="participants"
+              style={{ marginTop: 20 }}
             />
           )}
-        </Card>
+        </>
       )}
 
       {tab === "questions" && (
-        <Card>
-          <SectionHeader
-            title="Question Breakdown"
-            sub="Click a question to see the answer distribution"
-          />
-          {questions.length === 0 ? (
-            <EmptyState subtitle="No questions found" />
-          ) : (
-            <QuestionBreakdown questions={questions} />
+        <>
+          <Card>
+            <SectionHeader
+              title="Question Breakdown"
+              sub="Click a question to see the answer distribution"
+            />
+            {questions.length === 0 ? (
+              <EmptyState subtitle="No questions found" />
+            ) : (
+              <QuestionBreakdown questions={questions} />
+            )}
+          </Card>
+
+          {questionPagination.totalRecords > 0 && (
+            <Pagination
+              currentPage={questionPagination.currentPage}
+              totalPages={questionPagination.totalPages}
+              totalItems={questionPagination.totalRecords}
+              pageSize={questionPagination.pageSize}
+              onPageChange={setQuestionPage}
+              onPageSizeChange={(newSize) => {
+                setQuestionPageSize(newSize);
+                setQuestionPage(1);
+              }}
+              itemName="questions"
+              style={{ marginTop: 20 }}
+            />
           )}
-        </Card>
+        </>
       )}
     </div>
   );
 }
-
 // ── Main Analytics Page ────────────────────────────────────────────────────
 export default function AnalyticsPage() {
   const [quizzes, setQuizzes] = useState([]);
+  const [globalStats, setGlobalStats] = useState({
+    completedQuizzes: 0,
+    totalParticipants: 0,
+    totalSubmissions: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedQuizId, setSelectedQuizId] = useState(null);
   const [search, setSearch] = useState("");
+  const [quizPage, setQuizPage] = useState(1);
+  const [quizPageSize, setQuizPageSize] = useState(10);
+  const [quizPagination, setQuizPagination] = useState({
+    currentPage: 1,
+    pageSize: 10,
+    totalRecords: 0,
+    totalPages: 0,
+  });
 
   const loadQuizzes = useCallback(() => {
     setLoading(true);
     setError(null);
+
     analyticsApi
-      .getCompletedQuizzes()
-      .then(setQuizzes)
+      .getCompletedQuizzes(quizPage, quizPageSize, search)
+      .then((response) => {
+        setQuizzes(response.data ?? []);
+        setGlobalStats(
+          response.globalStats ?? {
+            completedQuizzes: 0,
+            totalParticipants: 0,
+            totalSubmissions: 0,
+          },
+        );
+        setQuizPagination(
+          response.pagination ?? {
+            currentPage: quizPage,
+            pageSize: quizPageSize,
+            totalRecords: 0,
+            totalPages: 0,
+          },
+        );
+      })
       .catch((e) => setError(e.message || "Failed to load quizzes"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [quizPage, quizPageSize, search]);
 
   useEffect(() => {
     loadQuizzes();
@@ -1341,7 +1481,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Summary bar */}
-      {!loading && !error && (
+      {!error && (
         <div
           style={{
             display: "flex",
@@ -1350,29 +1490,30 @@ export default function AnalyticsPage() {
             marginBottom: 36,
           }}
         >
+
           <StatCard
             icon={BarChart2}
             label="Completed Quizzes"
-            value={quizzes.length}
+            value={globalStats.completedQuizzes}
             accent={T.primary}
           />
           <StatCard
             icon={Users}
             label="Total Participants"
-            value={quizzes.reduce((s, q) => s + q.participantCount, 0)}
+            value={globalStats.totalParticipants}
             accent="#7c3aed"
           />
           <StatCard
             icon={ClipboardList}
             label="Total Submissions"
-            value={quizzes.reduce((s, q) => s + q.totalSubmissions, 0)}
+            value={globalStats.totalSubmissions}
             accent={T.info.dot}
           />
         </div>
       )}
 
       {/* Search */}
-      {!loading && !error && quizzes.length > 0 && (
+      {!error && (
         <div style={{ marginBottom: 24, position: "relative", maxWidth: 360 }}>
           <Search
             size={14}
@@ -1389,7 +1530,10 @@ export default function AnalyticsPage() {
             type="text"
             placeholder="Search quizzes…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setQuizPage(1);
+            }}
             style={{
               background: T.cardBg,
               border: `1px solid ${T.cardBorder}`,
@@ -1463,11 +1607,31 @@ export default function AnalyticsPage() {
 
       {/* Quiz list */}
       {!loading && !error && filtered.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {filtered.map((q) => (
-            <QuizListCard key={q.id} quiz={q} onSelect={setSelectedQuizId} />
-          ))}
-        </div>
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {filtered.map((q) => (
+              <QuizListCard
+                key={q.id}
+                quiz={q}
+                onSelect={setSelectedQuizId}
+              />
+            ))}
+          </div>
+
+          <Pagination
+            currentPage={quizPagination.currentPage}
+            totalPages={quizPagination.totalPages}
+            totalItems={quizPagination.totalRecords}
+            pageSize={quizPagination.pageSize}
+            onPageChange={setQuizPage}
+            onPageSizeChange={(newSize) => {
+              setQuizPageSize(newSize);
+              setQuizPage(1);
+            }}
+            itemName="quizzes"
+            style={{ marginTop: 20 }}
+          />
+        </>
       )}
     </div>
   );

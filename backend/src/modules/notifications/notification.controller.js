@@ -82,10 +82,37 @@ async function sendNotification(req, res) {
 // - Returns the full notification history for admins and authors.
 async function listNotifications(req, res) {
   try {
-    const data = await svc.listNotifications();
-    return res.json({ success: true, data });
+    const page = Number(req.query.page ?? 1);
+    const limit = Number(req.query.limit ?? 10);
+
+    if (
+      !Number.isInteger(page) ||
+      !Number.isInteger(limit) ||
+      page < 1 ||
+      limit < 1
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "page and limit must be positive integers",
+      });
+    }
+
+    const result = await svc.listNotifications({
+      page,
+      limit: Math.min(limit, 100),
+    });
+
+    return res.json({
+      success: true,
+      data: result,
+    });
   } catch (e) {
-    return res.status(500).json({ success: false, message: e.message });
+    console.error("[Notifications] Failed to load history:", e);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load notifications",
+    });
   }
 }
 

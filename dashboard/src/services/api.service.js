@@ -36,7 +36,12 @@ function createApiError(status, payload) {
 }
 
 // Perform a request against the backend API with JSON body support and auth headers.
-async function request(method, path, body = null) {
+async function request(
+  method,
+  path,
+  body = null,
+  { preserveResponse = false } = {},
+) {
   const token = await getToken();
   const opts = {
     method,
@@ -64,7 +69,7 @@ async function request(method, path, body = null) {
     throw createApiError(res.status, parsed);
   }
 
-  return normalizeResponse(parsed);
+  return preserveResponse ? parsed : normalizeResponse(parsed);
 }
 
 export const authApi = {
@@ -162,8 +167,37 @@ export const runtimeApi = {
 // ── Analytics API ───────────────────────────────────────────────────────────
 // Read-only — fetches analytics for completed quizzes from quiz submissions.
 export const analyticsApi = {
-  getCompletedQuizzes: () => request("GET", "/analytics/quizzes"),
-  getQuizAnalytics: (quizId) => request("GET", `/analytics/quizzes/${quizId}`),
+  getCompletedQuizzes: (page = 1, limit = 10, search = "") => {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+      search,
+    });
+
+    return request(
+      "GET",
+      `/analytics/quizzes?${params.toString()}`,
+      null,
+      { preserveResponse: true },
+    );
+  },
+
+  getQuizAnalytics: (quizId, options = {}) => {
+    const { section = "all", page = 1, limit = 10 } = options;
+
+    const params = new URLSearchParams({
+      section,
+      page: String(page),
+      limit: String(limit),
+    });
+
+    return request(
+      "GET",
+      `/analytics/quizzes/${quizId}?${params.toString()}`,
+      null,
+      { preserveResponse: true },
+    );
+  },
 };
 
 // ── Quiz Composition API ────────────────────────────────────────────────────
