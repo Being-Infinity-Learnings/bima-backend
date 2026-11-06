@@ -13,6 +13,7 @@ import {
   Spinner,
   EmptyState,
   DateTimePicker,
+  Pagination,
   toast,
 } from "../../components/ui/index.jsx";
 import APP_CONFIG from "../../config/app.config.js";
@@ -75,7 +76,7 @@ const STATUS_COLORS = {
 };
 
 // How many history rows to show per page before the "Load more" button.
-const PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 // ── Compose Modal ──────────────────────────────────────────────────────────
 
@@ -414,7 +415,17 @@ export default function NotificationsPage() {
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  const [stats, setStats] = useState({
+    total: 0,
+    sent: 0,
+    pending: 0,
+  });
 
   const getToken = useCallback(async () => {
     if (!firebaseUser) throw new Error("Not authenticated");
@@ -423,27 +434,44 @@ export default function NotificationsPage() {
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
+
     try {
-      const data = await notifRequest("GET", "/notifications", null, getToken);
-      setHistory(Array.isArray(data) ? data : []);
-      setVisibleCount(PAGE_SIZE);
+      const result = await notifRequest(
+        "GET",
+        `/notifications?page=${currentPage}&limit=${pageSize}`,
+        null,
+        getToken,
+      );
+
+      const items = Array.isArray(result?.items) ? result.items : [];
+      const pagination = result?.pagination ?? {};
+      const nextStats = result?.stats ?? {};
+
+      setHistory(items);
+      setTotalRecords(pagination.totalRecords ?? 0);
+      setTotalPages(pagination.totalPages ?? 1);
+
+      setStats({
+        total: nextStats.total ?? 0,
+        sent: nextStats.sent ?? 0,
+        pending: nextStats.pending ?? 0,
+      });
     } catch (e) {
       toast(e.message || "Failed to load notifications", "error");
     } finally {
       setHistoryLoading(false);
     }
-  }, [getToken]);
-
+  }, [currentPage, pageSize, getToken]);
   useEffect(() => {
     loadHistory();
+  }, [loadHistory]);
+
+  useEffect(() => {
     groupsApi
       .getAll()
       .then(setGroups)
-      .catch(() => {});
-  }, [loadHistory]);
-
-  const pendingCount = history.filter((n) => n.status === "PENDING").length;
-  const sentCount = history.filter((n) => n.status === "SENT").length;
+      .catch(() => { });
+  }, []);
 
   return (
     <div style={{ padding: "32px 40px", maxWidth: 900 }}>
@@ -492,9 +520,9 @@ export default function NotificationsPage() {
         }}
       >
         {[
-          { label: "Total Sent", value: sentCount, color: T.success },
-          { label: "Scheduled", value: pendingCount, color: T.warning },
-          { label: "Total", value: history.length, color: T.info },
+          { label: "Total Sent", value: stats.sent, color: T.success },
+          { label: "Scheduled", value: stats.pending, color: T.warning },
+          { label: "Total", value: stats.total, color: T.info },
         ].map((s) => (
           <Card key={s.label} style={{ padding: "16px 20px" }}>
             <div
@@ -555,18 +583,25 @@ export default function NotificationsPage() {
           />
         ) : (
           <>
-            {history.slice(0, visibleCount).map((n) => (
+            {history.map((n) => (
               <HistoryRow key={n.id} notif={n} />
             ))}
-            {visibleCount < history.length && (
-              <div style={{ padding: "14px 16px", textAlign: "center" }}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-                >
-                  Load more ({history.length - visibleCount} remaining)
-                </Button>
+
+            {totalRecords > 0 && (
+              <div style={{ padding: "8px 16px 16px" }}>
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={totalRecords}
+                  pageSize={pageSize}
+                  pageSizeOptions={PAGE_SIZE_OPTIONS}
+                  onPageChange={setCurrentPage}
+                  onPageSizeChange={(size) => {
+                    setPageSize(size);
+                    setCurrentPage(1);
+                  }}
+                  itemName="notifications"
+                />
               </div>
             )}
           </>
