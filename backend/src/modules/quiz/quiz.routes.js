@@ -94,13 +94,42 @@ router.post("/", auth, allowRoles("ADMIN", "AUTHOR"), controller.createQuiz);
  * @swagger
  * /quiz:
  *   get:
- *     summary: Retrieve all quizzes
+ *     summary: Retrieve quizzes with server-side pagination and filters
  *     tags: [Quiz]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of quizzes per page (max 100)
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search query to filter by quiz title
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [ALL, DRAFT, SCHEDULED, LIVE, COMPLETED]
+ *         description: Filter quizzes by status
+ *       - in: query
+ *         name: all
+ *         schema:
+ *           type: boolean
+ *         description: Set to true to retrieve all quizzes without pagination
  *     responses:
  *       200:
- *         description: List of all quizzes across all statuses
+ *         description: List of quizzes across statuses with pagination info
  *         content:
  *           application/json:
  *             schema:

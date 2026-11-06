@@ -125,13 +125,42 @@ router.post(
  * @swagger
  * /question:
  *   get:
- *     summary: Retrieve all questions in the question bank
+ *     summary: Retrieve questions with server-side pagination and filters
  *     tags: [Question]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of questions per page (max 100)
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search query to filter by question text
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [SINGLE_CORRECT, MULTI_CORRECT, TEXT, NUMERIC]
+ *         description: Filter questions by type
+ *       - in: query
+ *         name: all
+ *         schema:
+ *           type: boolean
+ *         description: Set to true to retrieve all questions without pagination
  *     responses:
  *       200:
- *         description: List of all questions with their options
+ *         description: List of questions with pagination info
  *         content:
  *           application/json:
  *             schema:

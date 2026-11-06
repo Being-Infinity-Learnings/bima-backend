@@ -42,15 +42,21 @@ async function createQuiz(req, res) {
   }
 }
 
-/** Retrieve all quizzes */
+/** Retrieve quizzes with optional server-side pagination and filters */
 async function getQuizzes(req, res) {
   try {
-    const quizzes = await quizService.getQuizzes();
+    const { results, pagination } = await quizService.getQuizzes(req.query);
 
-    return res.json({
+    const response = {
       success: true,
-      data: quizzes,
-    });
+      data: results,
+    };
+
+    if (pagination) {
+      response.pagination = pagination;
+    }
+
+    return res.json(response);
   } catch (error) {
     console.error(error);
 

@@ -85,15 +85,16 @@ export default function DashboardPage() {
 
     try {
       const groupsPromise = groupsApi.getAll();
-      const allQuizzesPromise = quizApi.getAll();
+      const allQuizzesPromise = quizApi.getAll({ all: true });
 
       if (role === "ADMIN") {
-        const [allUsers, pendingUsers, groups, allQuizzes] = await Promise.all([
+        const [allUsers, pendingUsers, groups, rawQuizzes] = await Promise.all([
           adminApi.getAllUsers(),
           adminApi.getPendingUsers(),
           groupsPromise,
           allQuizzesPromise,
         ]);
+        const allQuizzes = Array.isArray(rawQuizzes) ? rawQuizzes : (rawQuizzes?.data ?? []);
 
         const scheduledQuizzes = allQuizzes.filter(
           (q) => q.status === "SCHEDULED",
@@ -112,10 +113,11 @@ export default function DashboardPage() {
           completedQuizzes: String(completedQuizzes.length),
         });
       } else {
-        const [groups, allQuizzes] = await Promise.all([
+        const [groups, rawQuizzes] = await Promise.all([
           groupsPromise,
           allQuizzesPromise,
         ]);
+        const allQuizzes = Array.isArray(rawQuizzes) ? rawQuizzes : (rawQuizzes?.data ?? []);
 
         const scheduledQuizzes = allQuizzes.filter(
           (q) => q.status === "SCHEDULED",
@@ -152,7 +154,8 @@ export default function DashboardPage() {
     setUpcomingError("");
 
     try {
-      const allQuizzes = await quizApi.getAll();
+      const rawQuizzes = await quizApi.getAll({ all: true });
+      const allQuizzes = Array.isArray(rawQuizzes) ? rawQuizzes : (rawQuizzes?.data ?? []);
       const upcoming = allQuizzes.filter((q) => q.status === "SCHEDULED");
 
       // Sort by scheduled start time, earliest first
