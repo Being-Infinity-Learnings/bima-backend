@@ -15,9 +15,27 @@ async function getToken() {
 // Normalize backend JSON payloads to return the underlying data field when present.
 function normalizeResponse(payload) {
   if (payload && typeof payload === "object" && "data" in payload) {
+    if ("pagination" in payload) {
+      return {
+        data: payload.data,
+        pagination: payload.pagination,
+      };
+    }
     return payload.data;
   }
   return payload;
+}
+
+function buildQueryString(params) {
+  if (!params) return "";
+  const sp = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") {
+      sp.append(k, v);
+    }
+  });
+  const str = sp.toString();
+  return str ? `?${str}` : "";
 }
 
 // Create a standardized API error object for all failed backend calls.
@@ -113,7 +131,7 @@ export const notificationsApi = {
 // unpublish() moves SCHEDULED  → DRAFT
 // LIVE and COMPLETED are set by the backend scheduler — not editable from dashboard.
 export const quizApi = {
-  getAll: () => request("GET", "/quiz"),
+  getAll: (params) => request("GET", `/quiz${buildQueryString(params)}`),
   getById: (id) => request("GET", `/quiz/${id}`),
   // Required fields: title, defaultTimer (seconds), scheduledStartTime (ISO string)
   create: (body) => request("POST", "/quiz", body),
@@ -133,7 +151,7 @@ export const quizApi = {
 // ── Question Bank API ───────────────────────────────────────────────────────
 // customTimer is optional (null = use quiz defaultTimer during playback)
 export const questionApi = {
-  getAll: () => request("GET", "/question"),
+  getAll: (params) => request("GET", `/question${buildQueryString(params)}`),
   getById: (id) => request("GET", `/question/${id}`),
   // body: { questionText, questionType, options[], customTimer? }
   create: (body) => request("POST", "/question", body),

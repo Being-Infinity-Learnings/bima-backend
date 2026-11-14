@@ -921,10 +921,15 @@ export function Avatar({ name = "?", size = 36 }) {
 }
 
 // ── Empty State ────────────────────────────────────────────────────────────
-export function EmptyState({ icon = "📭", title = "Nothing here", subtitle }) {
+export function EmptyState({
+  icon = "📭",
+  title = "Nothing here",
+  subtitle,
+  children,
+}) {
   return (
     <div style={{ textAlign: "center", padding: "48px 24px" }}>
-      <div style={{ fontSize: 40, marginBottom: 12 }}>{icon}</div>
+      {icon ? <div style={{ fontSize: 40, marginBottom: 12 }}>{icon}</div> : null}
       <div
         style={{
           fontSize: 15,
@@ -936,8 +941,17 @@ export function EmptyState({ icon = "📭", title = "Nothing here", subtitle }) 
         {title}
       </div>
       {subtitle && (
-        <div style={{ fontSize: 13, color: T.textMuted }}>{subtitle}</div>
+        <div
+          style={{
+            fontSize: 13,
+            color: T.textMuted,
+            marginBottom: children ? 16 : 0,
+          }}
+        >
+          {subtitle}
+        </div>
       )}
+      {children}
     </div>
   );
 }
@@ -1024,8 +1038,12 @@ export function Pagination({
 }) {
   if (totalItems <= 0) return null;
 
-  const startItem = (currentPage - 1) * pageSize + 1;
-  const endItem = Math.min(currentPage * pageSize, totalItems);
+  const isOutOfBounds =
+    totalItems <= 0 || (currentPage - 1) * pageSize >= totalItems;
+  const startItem = isOutOfBounds ? 0 : (currentPage - 1) * pageSize + 1;
+  const endItem = isOutOfBounds
+    ? 0
+    : Math.min(currentPage * pageSize, totalItems);
 
   function getPageNumbers() {
     if (totalPages <= 7) {
@@ -1095,9 +1113,18 @@ export function Pagination({
     >
       {/* Left: Summary text */}
       <div style={{ fontSize: 13, color: T.textMuted }}>
-        Showing <strong style={{ color: T.textPrimary }}>{startItem}</strong>–
-        <strong style={{ color: T.textPrimary }}>{endItem}</strong> of{" "}
-        <strong style={{ color: T.textPrimary }}>{totalItems}</strong> {itemName}
+        {startItem === 0 || startItem > endItem ? (
+          <span>
+            Showing <strong style={{ color: T.textPrimary }}>0</strong> of{" "}
+            <strong style={{ color: T.textPrimary }}>{totalItems}</strong> {itemName}
+          </span>
+        ) : (
+          <span>
+            Showing <strong style={{ color: T.textPrimary }}>{startItem}</strong>–
+            <strong style={{ color: T.textPrimary }}>{endItem}</strong> of{" "}
+            <strong style={{ color: T.textPrimary }}>{totalItems}</strong> {itemName}
+          </span>
+        )}
       </div>
 
       {/* Right: Controls (Page size dropdown + Nav buttons) */}
