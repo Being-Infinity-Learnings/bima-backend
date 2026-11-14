@@ -17,6 +17,7 @@ dashboard/   React + Vite admin dashboard
 ```
 
 - **Auth:** Users sign in through Firebase Phone OTP. The backend verifies the Firebase ID token and loads the user's role from Postgres. Roles are `ADMIN` > `AUTHOR` > `STUDENT`, and only admins and authors can use the dashboard.
+- **Approval:** By default, new users are approved at sign-up and can use the app right away. Set `NEED_ADMIN_APPROVAL=true` to make new users wait until an admin approves them from the dashboard. While it's off, users who are still pending are approved automatically the next time they sign in.
 - **Live quizzes:** BullMQ jobs start each quiz on schedule and move it through its phases. Redis holds the quiz state, and Socket.IO pushes updates to clients. The Redis adapter lets the backend run as several instances.
 - **Notifications:** Push notifications are sent through Firebase Cloud Messaging. Scheduled notifications are checked and sent every minute.
 
@@ -45,7 +46,7 @@ Copy the example env file and fill in your values:
 cp backend/.env.example backend/.env
 ```
 
-[backend/.env.example](backend/.env.example) lists every variable the backend reads: the Postgres and Redis URLs, the Firebase Admin service account fields (from the service account JSON), and the AWS S3 credentials and bucket. With the Docker containers above, use:
+[backend/.env.example](backend/.env.example) lists every variable the backend reads: the Postgres and Redis URLs, the Firebase Admin service account fields (from the service account JSON), the AWS S3 credentials and bucket, and `NEED_ADMIN_APPROVAL` (whether new users need admin approval, default `false`). With the Docker containers above, use:
 
 ```dotenv
 DATABASE_URL="postgresql://bima:bima@localhost:5432/bima?schema=public"
