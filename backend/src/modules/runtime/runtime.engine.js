@@ -53,7 +53,9 @@ class RuntimeEngine {
 
   // Return the duration (ms) for a question, using a custom timer if set.
   getQuestionDuration(question) {
-    return (question.customTimer ?? this.runtime.quiz.defaultTimer) * 1000;
+    // Use || (not ??) so a customTimer of 0 falls back to the quiz default
+    // instead of producing a 0-ms duration that breaks score calculation.
+    return (question.customTimer || this.runtime.quiz.defaultTimer) * 1000;
   }
 
   // Broadcast the current runtime state to all clients in the quiz room.
