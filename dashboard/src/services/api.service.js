@@ -36,7 +36,7 @@ function createApiError(status, payload) {
 }
 
 // Perform a request against the backend API with JSON body support and auth headers.
-async function request(method, path, body = null) {
+export async function request(method, path, body = null) {
   const token = await getToken();
   const opts = {
     method,
@@ -179,3 +179,5 @@ export const quizCompositionApi = {
       questionIds,
     }),
 };
+
+export { storeApi } from "./store.service.js";
