@@ -81,17 +81,26 @@ async function registerProfile(req, res) {
 
 //   Handler: me(req, res)
 // - Returns the database profile attached by the `authenticate` middleware as `req.dbUser`.
+// - When NEED_ADMIN_APPROVAL is off, approves the user first if they are still pending.
 async function me(req, res) {
   try {
     const firebaseUid = req.user.uid;
 
-    const user = req.dbUser;
+    let user = req.dbUser;
 
     if (!user) {
       return res.status(404).json({
         success: false,
         message: "Profile not found",
       });
+    }
+
+    try {
+      user = (await authService.autoApprovePendingUser(user)) ?? user;
+    } catch (error) {
+      // Best effort: a failed auto-approval shouldn't fail sign-in. The user
+      // stays pending for now and is approved on their next /auth/me call.
+      console.error("[Auth] Auto-approval failed for user", user.id, error);
     }
 
     return res.status(200).json({

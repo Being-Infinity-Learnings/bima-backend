@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const http = require("http");
 const app = require("./src/app");
+const appConfig = require("./src/config/app.config");
 
 const { initializeSocket } = require("./src/modules/socket");
 
@@ -21,6 +22,7 @@ async function start() {
 
   server.listen(PORT, () => {
     console.log(`Server running on ${PORT}`);
+    console.log(`[Config] NEED_ADMIN_APPROVAL=${appConfig.needAdminApproval}`);
   });
 }
 

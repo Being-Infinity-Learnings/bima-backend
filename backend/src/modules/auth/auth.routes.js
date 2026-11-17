@@ -20,6 +20,10 @@ const authController = require("./auth.controller");
  * /auth/register-profile:
  *   post:
  *     summary: Create the authenticated user's profile
+ *     description: |
+ *       New profiles are created with `approved: true` unless the server sets
+ *       `NEED_ADMIN_APPROVAL=true`, in which case they start with
+ *       `approved: false` and wait for an admin to approve them.
  *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
@@ -72,6 +76,10 @@ router.post(
  * /auth/me:
  *   get:
  *     summary: Get the authenticated user's profile
+ *     description: |
+ *       When `NEED_ADMIN_APPROVAL` is not `true`, a pending (unapproved,
+ *       unblocked) user is approved by this call, and the returned profile
+ *       has `approved: true`.
  *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
