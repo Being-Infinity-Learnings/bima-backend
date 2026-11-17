@@ -7,13 +7,11 @@
 // - Add & Edit item modal with full support for image upload, coin pricing, and stock management
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Plus, Pencil, Package, RefreshCw } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 import { storeApi } from "../../services/store.service.js";
 import StoreItemModal from "./StoreItemModal.jsx";
 import { Spinner, EmptyState, toast } from "../../components/ui/index.jsx";
 import APP_CONFIG from "../../config/app.config.js";
-
-const T = APP_CONFIG.theme;
 
 // Metric Card with colored ring indicator and top accent border
 function StoreMetricCard({ label, value, accentColor, ringColor, loading = false }) {
@@ -110,11 +108,6 @@ export default function StorePage() {
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.removeItem("bima_store_items_dummy_v1");
-    } catch {
-      // ignore
-    }
     loadItems();
   }, [loadItems]);
 
@@ -138,19 +131,12 @@ export default function StorePage() {
   // Handle create or update item
   async function handleSaveItem(itemData) {
     if (editingItem && editingItem.id) {
-      // Update
-      const updated = await storeApi.updateItem(editingItem.id, itemData);
-      setItems((prev) =>
-        prev.map((it) => (it.id === editingItem.id ? (updated || it) : it))
-      );
+      await storeApi.updateItem(editingItem.id, itemData);
       toast("Reward item updated successfully!", "success");
     } else {
-      // Create
-      const created = await storeApi.createItem(itemData);
-      setItems((prev) => [created, ...prev]);
+      await storeApi.createItem(itemData);
       toast("Reward item added successfully!", "success");
     }
-    // Sync with backend state
     loadItems();
   }
 

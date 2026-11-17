@@ -9,11 +9,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { X, Image as ImageIcon, Trash2 } from "lucide-react";
-import APP_CONFIG from "../../config/app.config.js";
-
-const T = APP_CONFIG.theme;
-
-const ALLOWED_MIME = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
+const ALLOWED_MIME = ["image/png", "image/jpeg", "image/webp"];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 export default function StoreItemModal({
