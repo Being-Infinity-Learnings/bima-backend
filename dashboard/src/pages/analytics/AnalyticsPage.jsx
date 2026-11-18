@@ -12,6 +12,7 @@ import {
 } from "../../components/ui/index.jsx";
 import { analyticsApi } from "../../services/api.service.js";
 import APP_CONFIG from "../../config/app.config.js";
+import becoinIcon from "../../config/assets/becoin.webp";
 import {
   BarChart2,
   Users,
@@ -35,6 +36,23 @@ import {
 
 const T = APP_CONFIG.theme;
 
+function BECoin({ size = 16, style }) {
+  return (
+    <img
+      src={becoinIcon}
+      alt="BECoin"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        verticalAlign: "middle",
+        flexShrink: 0,
+        ...style,
+      }}
+    />
+  );
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function fmtDate(iso) {
@@ -43,6 +61,16 @@ function fmtDate(iso) {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+function fmtDateOnly(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-IN", { dateStyle: "medium" });
+}
+
+function fmtTimeOnly(iso) {
+  if (!iso) return "";
+  return "at " + new Date(iso).toLocaleTimeString("en-IN", { timeStyle: "short" });
 }
 
 function fmtMs(ms) {
@@ -380,6 +408,7 @@ function LeaderboardTable({ entries, questions }) {
                   "Participant",
                   "College / Roll",
                   "Score",
+                  "BECoins",
                   "Correct",
                   "Avg Time",
                   "",
@@ -472,6 +501,25 @@ function LeaderboardTable({ entries, questions }) {
                     >
                       {e.totalScore}
                     </span>
+                  </td>
+                  <td style={{ padding: "14px 16px" }}>
+                    {e.coinsEarned > 0 ? (
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          fontWeight: 700,
+                          fontSize: 14,
+                          color: "#f59e0b",
+                        }}
+                      >
+                        <BECoin size={16} />
+                        {e.coinsEarned}
+                      </span>
+                    ) : (
+                      <span style={{ color: T.textMuted, fontSize: 13 }}>—</span>
+                    )}
                   </td>
                   <td style={{ padding: "14px 16px" }}>
                     <span style={{ color: T.success.text, fontWeight: 600 }}>
@@ -809,6 +857,16 @@ function ParticipantTrailModal({ open, onClose, participant, questions }) {
             value: fmtDuration(participant.totalElapsedMs),
             color: T.textPrimary,
           },
+          ...(participant.coinsEarned > 0
+            ? [
+                {
+                  label: "BECoins",
+                  value: participant.coinsEarned,
+                  color: "#f59e0b",
+                  icon: true,
+                },
+              ]
+            : []),
         ].map((item) => (
           <div key={item.label}>
             <div
@@ -822,7 +880,17 @@ function ParticipantTrailModal({ open, onClose, participant, questions }) {
             >
               {item.label}
             </div>
-            <div style={{ fontWeight: 700, fontSize: 15, color: item.color }}>
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: 15,
+                color: item.color,
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              {item.icon && <BECoin size={16} />}
               {item.value}
             </div>
           </div>
@@ -1228,9 +1296,19 @@ function QuizDetailView({ quizId, onBack }) {
         <StatCard
           icon={Flag}
           label="Completed"
-          value={fmtDate(quiz.completedAt)}
+          value={fmtDateOnly(quiz.completedAt)}
+          sub={fmtTimeOnly(quiz.completedAt)}
           accent={T.success.dot}
         />
+        {quiz.coinRewardsEnabled && (
+          <StatCard
+            icon={() => <BECoin size={14} />}
+            label="BECoins Awarded"
+            value={summary.coinsMinted}
+            sub={`${summary.coinsRewardedCount} rewarded`}
+            accent="#f59e0b"
+          />
+        )}
       </div>
 
       {/* Tabs */}
@@ -1367,6 +1445,12 @@ export default function AnalyticsPage() {
             label="Total Submissions"
             value={quizzes.reduce((s, q) => s + q.totalSubmissions, 0)}
             accent={T.info.dot}
+          />
+          <StatCard
+            icon={() => <BECoin size={14} />}
+            label="BECoins Awarded"
+            value={quizzes.reduce((s, q) => s + (q.coinsMinted ?? 0), 0)}
+            accent="#f59e0b"
           />
         </div>
       )}

@@ -35,6 +35,7 @@ import {
   toast,
 } from "../../components/ui/index.jsx";
 import APP_CONFIG from "../../config/app.config.js";
+import becoinIcon from "../../config/assets/becoin.webp";
 import BulkUploadQuestionsModal from "./BulkUploadQuestionsModal.jsx";
 
 // The DateTimePicker works with naive "YYYY-MM-DDTHH:MM" strings (no timezone
@@ -66,6 +67,24 @@ function utcIsoToNaiveLocal(iso) {
 }
 
 const T = APP_CONFIG.theme;
+
+function BECoin({ size = 16, style }) {
+  return (
+    <img
+      src={becoinIcon}
+      alt="BECoin"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        verticalAlign: "middle",
+        flexShrink: 0,
+        ...style,
+      }}
+    />
+  );
+}
+
 const LIMITS = APP_CONFIG.quiz?.limits ?? {
   questionText: 120,
   optionText: 50,
@@ -1219,6 +1238,9 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
   const [defaultTimer, setDefaultTimer] = useState("30");
   const [scheduledStartTime, setScheduledStartTime] = useState(null);
   const [coverImageUrl, setCoverImageUrl] = useState(null);
+  const [coinRewardsEnabled, setCoinRewardsEnabled] = useState(true);
+  const [coinRewardMin, setCoinRewardMin] = useState("5");
+  const [coinRewardMax, setCoinRewardMax] = useState("25");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -1243,6 +1265,9 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
         utcIsoToNaiveLocal(quiz?.scheduledStartTime) ?? null,
       );
       setCoverImageUrl(quiz?.coverImageUrl ?? null);
+      setCoinRewardsEnabled(quiz?.coinRewardsEnabled ?? true);
+      setCoinRewardMin(String(quiz?.coinRewardMin ?? 5));
+      setCoinRewardMax(String(quiz?.coinRewardMax ?? 25));
       setSelectedIds(new Set());
       setShowInlineCreate(false);
       setShowBulkUpload(false);
@@ -1288,6 +1313,22 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
       setError("Scheduled start time must be in the future.");
       return;
     }
+    if (coinRewardsEnabled) {
+      const minVal = parseInt(coinRewardMin, 10);
+      const maxVal = parseInt(coinRewardMax, 10);
+      if (isNaN(minVal) || minVal < 0) {
+        setError("Min coins must be a non-negative number.");
+        return;
+      }
+      if (isNaN(maxVal) || maxVal < 0) {
+        setError("Max coins must be a non-negative number.");
+        return;
+      }
+      if (minVal > maxVal) {
+        setError("Min coins cannot be greater than max coins.");
+        return;
+      }
+    }
     setSaving(true);
     setError("");
     try {
@@ -1297,6 +1338,11 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
         visibility,
         defaultTimer: timer,
         scheduledStartTime: naiveLocalToUtcIso(scheduledStartTime),
+        coinRewardsEnabled,
+        ...(coinRewardsEnabled && {
+          coinRewardMin: parseInt(coinRewardMin, 10),
+          coinRewardMax: parseInt(coinRewardMax, 10),
+        }),
         ...(isLocalImage(coverImageUrl)
           ? { coverImageBase64: coverImageUrl }
           : { coverImageUrl: coverImageUrl ?? null }),
@@ -1566,6 +1612,131 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
                 onChange={setScheduledStartTime}
                 placeholder="Pick a date & time…"
               />
+            </div>
+
+            {/* Coin Rewards */}
+            <div
+              style={{
+                padding: "16px 18px",
+                borderRadius: 12,
+                border: `1.5px solid ${coinRewardsEnabled ? T.primary + "40" : T.cardBorder}`,
+                background: coinRewardsEnabled ? `${T.primary}08` : T.pageBg,
+                transition: "all 0.15s",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: T.textPrimary,
+                      marginBottom: 3,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <BECoin size={18} /> BECoin rewards
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textMuted }}>
+                    Award BECoins to participants based on score
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCoinRewardsEnabled((v) => !v)}
+                  style={{
+                    width: 44,
+                    height: 24,
+                    borderRadius: 12,
+                    border: "none",
+                    background: coinRewardsEnabled ? T.primary : T.cardBorder,
+                    cursor: "pointer",
+                    position: "relative",
+                    transition: "background 0.15s",
+                    flexShrink: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      background: "#fff",
+                      position: "absolute",
+                      top: 3,
+                      left: coinRewardsEnabled ? 23 : 3,
+                      transition: "left 0.15s",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                    }}
+                  />
+                </button>
+              </div>
+
+              {coinRewardsEnabled && (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 12,
+                    marginTop: 14,
+                    paddingTop: 14,
+                    borderTop: `1px solid ${T.cardBorder}`,
+                  }}
+                >
+                  <div>
+                    <label style={{ ...FIELD_LABEL, fontSize: 13 }}>
+                      Min coins
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={coinRewardMin}
+                      onChange={(e) => setCoinRewardMin(e.target.value)}
+                      placeholder="5"
+                      style={{ ...INPUT_BASE, fontSize: 14 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ ...FIELD_LABEL, fontSize: 13 }}>
+                      Max coins
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={coinRewardMax}
+                      onChange={(e) => setCoinRewardMax(e.target.value)}
+                      placeholder="25"
+                      style={{ ...INPUT_BASE, fontSize: 14 }}
+                    />
+                  </div>
+                  <ul
+                    style={{
+                      gridColumn: "1 / -1",
+                      fontSize: 12,
+                      color: T.textMuted,
+                      lineHeight: 1.7,
+                      margin: 0,
+                      paddingLeft: 16,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 2,
+                    }}
+                  >
+                    <li>Score 0 = 0 coins</li>
+                    <li>Perfect score earns max coins</li>
+                    <li>Top 3 get <strong style={{ color: T.textSecondary }}>+5 / +3 / +1</strong> bonus when &gt;3 participants</li>
+                  </ul>
+                </div>
+              )}
             </div>
 
             {error && (
@@ -2512,6 +2683,23 @@ function QuizDetailModal({ open, onClose, quiz, onQuizUpdated, role }) {
               <Clock size={13} />
               {quiz.defaultTimer}s default
             </span>
+            {quiz.coinRewardsEnabled ? (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontSize: 13,
+                  color: "#f59e0b",
+                  fontWeight: 600,
+                }}
+              >
+                <BECoin size={16} />
+                {quiz.coinRewardMin}–{quiz.coinRewardMax}
+              </span>
+            ) : (
+              <Badge label="No coins" customColors={T.neutral} />
+            )}
             <span
               style={{
                 fontSize: 13,
