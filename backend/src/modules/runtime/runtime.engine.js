@@ -373,16 +373,14 @@ class RuntimeEngine {
   }
 
   // Enter results phase, compute final results, award coins, and broadcast.
+  // Coin awarding runs BEFORE changePhase so the DB work doesn't eat into
+  // the results timer clients see — changePhase and broadcast stay back-to-back.
   async enterResults() {
     console.log("[Runtime] Results");
 
-    this.changePhase(QuizPhase.RESULTS, RuntimeConfig.RESULTS_DURATION_MS);
-
-    // Fetch leaderboard once and pass to both buildFinalResults and awardQuizCoins.
     const leaderboard = await this.getLeaderboard();
 
     const finalResults = await this.buildFinalResults(leaderboard);
-    this.runtime.finalResults = mapToObject(finalResults);
 
     // Award BECoins based on quiz config and score percentage.
     const maxPossibleScore =
@@ -408,10 +406,16 @@ class RuntimeEngine {
         if (existing) {
           existing.coinsEarned = reward.totalCoins;
           existing.coinBonus = reward.bonus;
+          existing.coinBalance =
+            coinResult.balances.get(reward.userId) ?? null;
         }
       }
-      this.runtime.finalResults = mapToObject(finalResults);
     }
+
+    this.runtime.finalResults = mapToObject(finalResults);
+
+    // changePhase and broadcast back-to-back — no async work in between.
+    this.changePhase(QuizPhase.RESULTS, RuntimeConfig.RESULTS_DURATION_MS);
 
     socketBroadcast.broadcastLeaderboard(
       this.quizId,

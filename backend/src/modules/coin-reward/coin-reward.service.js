@@ -1,3 +1,4 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../../config/prisma");
 
 // Coin reward formula: coins = min + (scorePercent × (max - min)).
@@ -13,13 +14,13 @@ function calculateCoins(scorePercent, min, max) {
 /**
  * Award BECoins to all participants of a completed quiz.
  *
- * Idempotent — checks for existing CoinTransaction records before
- * inserting, so BullMQ retries never double-award.
+ * Race-safe and idempotent — the unique constraint on CoinTransaction
+ * decides who gets paid, so concurrent workers can't double-award.
  *
  * @param {string} quizId
  * @param {Array<{userId: string, totalScore: number, rank: number}>} leaderboard
  * @param {number} maxPossibleScore
- * @returns {{ rewards: Array, totalMinted: number } | null}
+ * @returns {{ rewards: Array, balances: Map<string, number> } | null}
  */
 async function awardQuizCoins(quizId, leaderboard, maxPossibleScore) {
   const quiz = await prisma.quiz.findUnique({
@@ -68,29 +69,15 @@ async function awardQuizCoins(quizId, leaderboard, maxPossibleScore) {
   }
 
   if (rewards.length === 0) {
-    return { rewards: [], totalMinted: 0 };
+    return { rewards: [], balances: new Map() };
   }
 
-  // Check which users already received coins for this quiz (idempotency).
-  const existing = await prisma.coinTransaction.findMany({
-    where: {
-      referenceType: "QUIZ",
-      referenceId: quizId,
-      type: "QUIZ_REWARD",
-    },
-    select: { userId: true },
-  });
-
-  const alreadyAwarded = new Set(existing.map((e) => e.userId));
-  const newRewards = rewards.filter((r) => !alreadyAwarded.has(r.userId));
-
-  if (newRewards.length === 0) {
-    return { rewards, totalMinted: 0 };
-  }
-
-  await prisma.$transaction(async (tx) => {
-    await tx.coinTransaction.createMany({
-      data: newRewards.map((r) => ({
+  // Race-safe: let the unique constraint decide who gets paid.
+  // Only users whose ledger row is actually inserted get their balance bumped,
+  // so overlapping runs from concurrent workers can't double-pay.
+  const balances = await prisma.$transaction(async (tx) => {
+    const inserted = await tx.coinTransaction.createManyAndReturn({
+      data: rewards.map((r) => ({
         userId: r.userId,
         amount: r.totalCoins,
         type: "QUIZ_REWARD",
@@ -102,19 +89,30 @@ async function awardQuizCoins(quizId, leaderboard, maxPossibleScore) {
             : `Quiz reward: ${r.coins} coins`,
       })),
       skipDuplicates: true,
+      select: { userId: true, amount: true },
     });
 
-    for (const r of newRewards) {
-      await tx.user.update({
-        where: { id: r.userId },
-        data: { coinBalance: { increment: r.totalCoins } },
-      });
+    if (inserted.length > 0) {
+      const values = Prisma.join(
+        inserted.map(
+          (r) => Prisma.sql`(${r.userId}::text, ${r.amount}::int)`,
+        ),
+      );
+      await tx.$executeRaw`
+        UPDATE "User" AS u SET "coinBalance" = u."coinBalance" + v.amount
+        FROM (VALUES ${values}) AS v(id, amount)
+        WHERE u.id = v.id`;
     }
-  });
 
-  const totalMinted = newRewards.reduce((sum, r) => sum + r.totalCoins, 0);
+    return tx.user.findMany({
+      where: { id: { in: rewards.map((r) => r.userId) } },
+      select: { id: true, coinBalance: true },
+    });
+  }, { timeout: 15000 });
 
-  return { rewards, totalMinted };
+  const balanceMap = new Map(balances.map((b) => [b.id, b.coinBalance]));
+
+  return { rewards, balances: balanceMap };
 }
 
 module.exports = { awardQuizCoins, calculateCoins };
