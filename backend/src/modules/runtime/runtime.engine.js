@@ -29,6 +29,8 @@ const {
   cancelPhaseAction,
 } = require("./runtime.queue");
 
+const { awardQuizCoins } = require("../coin-reward/coin-reward.service");
+
 // RuntimeEngine: encapsulates an active quiz runtime's core state and
 // exposes methods to start and progress the quiz, accept submissions,
 // and compute results.
@@ -370,14 +372,46 @@ class RuntimeEngine {
     );
   }
 
-  // Enter results phase, compute final results and broadcast them.
+  // Enter results phase, compute final results, award coins, and broadcast.
   async enterResults() {
     console.log("[Runtime] Results");
 
     this.changePhase(QuizPhase.RESULTS, RuntimeConfig.RESULTS_DURATION_MS);
 
-    const finalResults = await this.buildFinalResults();
+    // Fetch leaderboard once and pass to both buildFinalResults and awardQuizCoins.
+    const leaderboard = await this.getLeaderboard();
+
+    const finalResults = await this.buildFinalResults(leaderboard);
     this.runtime.finalResults = mapToObject(finalResults);
+
+    // Award BECoins based on quiz config and score percentage.
+    const maxPossibleScore =
+      this.runtime.questions.length * RuntimeConfig.MAX_SCORE_PER_QUESTION;
+
+    let coinResult = null;
+    try {
+      coinResult = await awardQuizCoins(
+        this.quizId,
+        leaderboard,
+        maxPossibleScore,
+      );
+    } catch (err) {
+      console.error(
+        `[Runtime] Failed to award coins for quiz ${this.quizId}:`,
+        err,
+      );
+    }
+
+    if (coinResult?.rewards) {
+      for (const reward of coinResult.rewards) {
+        const existing = finalResults.get(reward.userId);
+        if (existing) {
+          existing.coinsEarned = reward.totalCoins;
+          existing.coinBonus = reward.bonus;
+        }
+      }
+      this.runtime.finalResults = mapToObject(finalResults);
+    }
 
     socketBroadcast.broadcastLeaderboard(
       this.quizId,
@@ -721,19 +755,24 @@ class RuntimeEngine {
   }
 
   // Construct final results map for broadcast/storage.
-  async buildFinalResults() {
+  // Accepts an optional pre-fetched leaderboard to avoid a redundant Redis call
+  // when the caller (enterResults) already has it.
+  async buildFinalResults(leaderboard) {
     const results = new Map();
 
-    const leaderboard = await this.getLeaderboard();
+    const lb = leaderboard ?? (await this.getLeaderboard());
     const totalParticipants = await store.leaderboardSize(this.quizId);
 
-    for (const entry of leaderboard) {
+    for (const entry of lb) {
       results.set(entry.userId, {
         rank: entry.rank,
 
         totalScore: entry.totalScore,
 
         totalParticipants,
+
+        coinsEarned: 0,
+        coinBonus: 0,
       });
     }
 
