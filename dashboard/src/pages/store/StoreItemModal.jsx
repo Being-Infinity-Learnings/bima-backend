@@ -110,14 +110,31 @@ export default function StoreItemModal({
     setSubmitting(true);
 
     try {
-      await onSave({
+      const allFields = {
         name: name.trim(),
         description: description.trim() || null,
         imageUrl: imagePreview || null,
         coinCost: costNum,
         stock: stockNum,
         status,
-      });
+      };
+
+      if (isEditing) {
+        const changed = {};
+        if (allFields.name !== (initialData.name || "")) changed.name = allFields.name;
+        if (allFields.description !== (initialData.description || null)) changed.description = allFields.description;
+        if (allFields.imageUrl !== (initialData.imageUrl || null)) changed.imageUrl = allFields.imageUrl;
+        if (allFields.coinCost !== Number(initialData.coinCost)) changed.coinCost = allFields.coinCost;
+        if (allFields.stock !== Number(initialData.stock)) changed.stock = allFields.stock;
+        if (allFields.status !== (initialData.status || "ACTIVE")) changed.status = allFields.status;
+        if (Object.keys(changed).length === 0) {
+          onClose();
+          return;
+        }
+        await onSave(changed);
+      } else {
+        await onSave(allFields);
+      }
       onClose();
     } catch (err) {
       setError(err.message || "Failed to save store item.");

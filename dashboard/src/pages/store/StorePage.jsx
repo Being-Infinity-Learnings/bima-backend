@@ -118,7 +118,7 @@ export default function StorePage() {
       (item) => item.status === "ACTIVE" && Number(item.stock) > 0
     ).length;
     const outOfStock = items.filter(
-      (item) => Number(item.stock) <= 0
+      (item) => item.status === "ACTIVE" && Number(item.stock) <= 0
     ).length;
     const redemptions = items.reduce(
       (acc, it) => acc + (it._count?.redemptions ?? it.redemptions?.length ?? 0),
@@ -324,7 +324,8 @@ export default function StorePage() {
           }}
         >
           {items.map((item, index) => {
-            const isOutOfStock = Number(item.stock) <= 0;
+            const isInactive = item.status === "INACTIVE";
+            const isOutOfStock = !isInactive && Number(item.stock) <= 0;
             const isActive = item.status === "ACTIVE" && !isOutOfStock;
             const fallbackGradient =
               item.gradient || DEFAULT_GRADIENTS[index % DEFAULT_GRADIENTS.length];
@@ -343,7 +344,7 @@ export default function StorePage() {
                   cursor: "pointer",
                   transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
                   position: "relative",
-                  opacity: isOutOfStock ? 0.78 : 1,
+                  opacity: isInactive || isOutOfStock ? 0.78 : 1,
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = "translateY(-2px)";
@@ -469,7 +470,23 @@ export default function StorePage() {
 
                 {/* Status Badge */}
                 <div style={{ display: "flex", alignItems: "center" }}>
-                  {isOutOfStock ? (
+                  {isInactive ? (
+                    <span
+                      style={{
+                        background: "#1e293b",
+                        color: "#94a3b8",
+                        border: "1px solid #334155",
+                        fontSize: 10,
+                        fontWeight: 800,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        padding: "3px 8px",
+                        borderRadius: 6,
+                      }}
+                    >
+                      INACTIVE
+                    </span>
+                  ) : isOutOfStock ? (
                     <span
                       style={{
                         background: "#281212",
@@ -485,7 +502,7 @@ export default function StorePage() {
                     >
                       OUT OF STOCK
                     </span>
-                  ) : isActive ? (
+                  ) : (
                     <span
                       style={{
                         background: "#052e16",
@@ -500,22 +517,6 @@ export default function StorePage() {
                       }}
                     >
                       ACTIVE
-                    </span>
-                  ) : (
-                    <span
-                      style={{
-                        background: "#1e293b",
-                        color: "#94a3b8",
-                        border: "1px solid #334155",
-                        fontSize: 10,
-                        fontWeight: 800,
-                        letterSpacing: "0.06em",
-                        textTransform: "uppercase",
-                        padding: "3px 8px",
-                        borderRadius: 6,
-                      }}
-                    >
-                      INACTIVE
                     </span>
                   )}
                 </div>
