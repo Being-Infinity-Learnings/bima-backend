@@ -15,6 +15,7 @@ import GroupsPage from "./pages/groups/GroupsPage.jsx";
 import QuizzesPage from "./pages/quizzes/QuizzesPage.jsx";
 import { NotificationsPage } from "./pages/placeholder/PlaceholderPages.jsx";
 import AnalyticsPage from "./pages/analytics/AnalyticsPage.jsx";
+import StorePage from "./pages/store/StorePage.jsx";
 
 export default function App() {
   return (
@@ -51,6 +52,14 @@ export default function App() {
             />
             <Route path="/groups" element={<GroupsPage />} />
             <Route path="/quizzes" element={<QuizzesPage />} />
+            <Route
+              path="/store"
+              element={
+                <ProtectedRoute allowedRoles={["ADMIN"]}>
+                  <StorePage />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/notifications"
               element={

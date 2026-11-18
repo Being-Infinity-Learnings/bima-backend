@@ -161,6 +161,9 @@ async function getAllStoreItems() {
     orderBy: {
       createdAt: "desc",
     },
+    include: {
+      _count: { select: { redemptions: true } },
+    },
   });
 }
 
