@@ -12,7 +12,7 @@ import {
 } from "../../components/ui/index.jsx";
 import { analyticsApi } from "../../services/api.service.js";
 import APP_CONFIG from "../../config/app.config.js";
-import becoinIcon from "../../config/assets/becoin.webp";
+import biCoinIcon from "../../config/assets/bi-coin.webp";
 import {
   BarChart2,
   Users,
@@ -36,11 +36,11 @@ import {
 
 const T = APP_CONFIG.theme;
 
-function BECoin({ size = 16, style }) {
+function BICoin({ size = 16, style }) {
   return (
     <img
-      src={becoinIcon}
-      alt="BECoin"
+      src={biCoinIcon}
+      alt="BI Coin"
       style={{
         width: size,
         height: size,
@@ -408,7 +408,7 @@ function LeaderboardTable({ entries, questions }) {
                   "Participant",
                   "College / Roll",
                   "Score",
-                  "BECoins",
+                  "BI Coins",
                   "Correct",
                   "Avg Time",
                   "",
@@ -514,7 +514,7 @@ function LeaderboardTable({ entries, questions }) {
                           color: "#f59e0b",
                         }}
                       >
-                        <BECoin size={16} />
+                        <BICoin size={16} />
                         {e.coinsEarned}
                       </span>
                     ) : (
@@ -860,7 +860,7 @@ function ParticipantTrailModal({ open, onClose, participant, questions }) {
           ...(participant.coinsEarned > 0
             ? [
                 {
-                  label: "BECoins",
+                  label: "BI Coins",
                   value: participant.coinsEarned,
                   color: "#f59e0b",
                   icon: true,
@@ -890,7 +890,7 @@ function ParticipantTrailModal({ open, onClose, participant, questions }) {
                 gap: 5,
               }}
             >
-              {item.icon && <BECoin size={16} />}
+              {item.icon && <BICoin size={16} />}
               {item.value}
             </div>
           </div>
@@ -1302,8 +1302,8 @@ function QuizDetailView({ quizId, onBack }) {
         />
         {quiz.coinRewardsEnabled && (
           <StatCard
-            icon={() => <BECoin size={14} />}
-            label="BECoins Awarded"
+            icon={() => <BICoin size={14} />}
+            label="BI Coins Awarded"
             value={summary.coinsMinted}
             sub={`${summary.coinsRewardedCount} rewarded`}
             accent="#f59e0b"
@@ -1447,8 +1447,8 @@ export default function AnalyticsPage() {
             accent={T.info.dot}
           />
           <StatCard
-            icon={() => <BECoin size={14} />}
-            label="BECoins Awarded"
+            icon={() => <BICoin size={14} />}
+            label="BI Coins Awarded"
             value={quizzes.reduce((s, q) => s + (q.coinsMinted ?? 0), 0)}
             accent="#f59e0b"
           />
