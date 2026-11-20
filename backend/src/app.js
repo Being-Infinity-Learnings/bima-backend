@@ -1051,6 +1051,47 @@ const options = {
             },
           },
         },
+
+        // ─── Store ─────────────────────────────────────────────────────────
+        StoreItemUser: {
+          type: "object",
+          description:
+            "Store item as seen by authenticated users (no internal fields).",
+          properties: {
+            id: {
+              type: "string",
+              format: "uuid",
+              example: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            },
+            name: { type: "string", example: "Premium Notebook" },
+            description: {
+              type: "string",
+              nullable: true,
+              example: "A premium spiral-bound notebook",
+            },
+            imageUrl: {
+              type: "string",
+              nullable: true,
+              example: "https://cdn.example.com/store/notebook.png",
+            },
+            coinCost: {
+              type: "integer",
+              description: "BI Coins required to redeem this item",
+              example: 100,
+            },
+            stock: {
+              type: "integer",
+              description:
+                "Available quantity; 0 means out of stock but still visible",
+              example: 25,
+            },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+              example: "2026-10-15T08:00:00.000Z",
+            },
+          },
+        },
       },
     },
   },
@@ -1078,6 +1119,8 @@ const quizCompositionRoutes = require("./modules/quiz-composition/quiz-compositi
 const runtimeRoutes = require("./modules/runtime/runtime.routes");
 
 const analyticsRoutes = require("./modules/analytics/analytics.routes");
+
+const storeRoutes = require("./modules/store/store.routes");
 
 const app = express();
 
@@ -1110,5 +1153,7 @@ app.use("/quiz-composition", quizCompositionRoutes);
 app.use("/runtime", runtimeRoutes);
 
 app.use("/analytics", analyticsRoutes);
+
+app.use("/store", storeRoutes);
 
 module.exports = app;

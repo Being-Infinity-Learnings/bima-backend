@@ -12,7 +12,7 @@ function calculateCoins(scorePercent, min, max) {
 }
 
 /**
- * Award BECoins to all participants of a completed quiz.
+ * Award BI Coins to all participants of a completed quiz.
  *
  * Race-safe and idempotent — the unique constraint on CoinTransaction
  * decides who gets paid, so concurrent workers can't double-award.

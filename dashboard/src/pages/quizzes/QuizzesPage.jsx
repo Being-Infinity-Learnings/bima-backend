@@ -35,7 +35,7 @@ import {
   toast,
 } from "../../components/ui/index.jsx";
 import APP_CONFIG from "../../config/app.config.js";
-import becoinIcon from "../../config/assets/becoin.webp";
+import biCoinIcon from "../../config/assets/bi-coin.webp";
 import BulkUploadQuestionsModal from "./BulkUploadQuestionsModal.jsx";
 
 // The DateTimePicker works with naive "YYYY-MM-DDTHH:MM" strings (no timezone
@@ -68,11 +68,11 @@ function utcIsoToNaiveLocal(iso) {
 
 const T = APP_CONFIG.theme;
 
-function BECoin({ size = 16, style }) {
+function BICoin({ size = 16, style }) {
   return (
     <img
-      src={becoinIcon}
-      alt="BECoin"
+      src={biCoinIcon}
+      alt="BI Coin"
       style={{
         width: size,
         height: size,
@@ -1644,10 +1644,10 @@ function QuizFormModal({ open, onClose, quiz, onSaved }) {
                       gap: 6,
                     }}
                   >
-                    <BECoin size={18} /> BECoin rewards
+                    <BICoin size={18} /> BI Coin rewards
                   </div>
                   <div style={{ fontSize: 12, color: T.textMuted }}>
-                    Award BECoins to participants based on score
+                    Award BI Coins to participants based on score
                   </div>
                 </div>
                 <button
@@ -2694,7 +2694,7 @@ function QuizDetailModal({ open, onClose, quiz, onQuizUpdated, role }) {
                   fontWeight: 600,
                 }}
               >
-                <BECoin size={16} />
+                <BICoin size={16} />
                 {quiz.coinRewardMin}–{quiz.coinRewardMax}
               </span>
             ) : (

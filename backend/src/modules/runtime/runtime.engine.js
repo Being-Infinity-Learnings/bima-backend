@@ -382,7 +382,7 @@ class RuntimeEngine {
 
     const finalResults = await this.buildFinalResults(leaderboard);
 
-    // Award BECoins based on quiz config and score percentage.
+    // Award BI Coins based on quiz config and score percentage.
     const maxPossibleScore =
       this.runtime.questions.length * RuntimeConfig.MAX_SCORE_PER_QUESTION;
 
