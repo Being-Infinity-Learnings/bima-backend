@@ -56,6 +56,16 @@ async function createQuiz(data, userId) {
       status: "DRAFT",
 
       createdById: userId,
+
+      ...(data.coinRewardsEnabled !== undefined && {
+        coinRewardsEnabled: data.coinRewardsEnabled,
+      }),
+      ...(data.coinRewardMin !== undefined && {
+        coinRewardMin: data.coinRewardMin,
+      }),
+      ...(data.coinRewardMax !== undefined && {
+        coinRewardMax: data.coinRewardMax,
+      }),
     },
   });
 }
@@ -119,6 +129,8 @@ async function updateQuiz(id, data) {
     select: {
       status: true,
       scheduledStartTime: true,
+      coinRewardMin: true,
+      coinRewardMax: true,
     },
   });
 
@@ -148,6 +160,25 @@ async function updateQuiz(id, data) {
   }
   if (data.scheduledStartTime !== undefined) {
     updateData.scheduledStartTime = new Date(data.scheduledStartTime);
+  }
+  if (data.coinRewardsEnabled !== undefined) {
+    updateData.coinRewardsEnabled = data.coinRewardsEnabled;
+  }
+  if (data.coinRewardMin !== undefined) {
+    updateData.coinRewardMin = data.coinRewardMin;
+  }
+  if (data.coinRewardMax !== undefined) {
+    updateData.coinRewardMax = data.coinRewardMax;
+  }
+
+  const finalMin = updateData.coinRewardMin ?? existingQuiz.coinRewardMin;
+  const finalMax = updateData.coinRewardMax ?? existingQuiz.coinRewardMax;
+  if (finalMin > finalMax) {
+    const error = new Error(
+      "coinRewardMin cannot be greater than coinRewardMax",
+    );
+    error.statusCode = 400;
+    throw error;
   }
 
   const updated = await prisma.quiz.update({
@@ -541,10 +572,26 @@ async function getMyHistory(user, { page = 1, limit = 10 } = {}) {
     }),
   ]);
 
+  const quizIds = quizzes.map((q) => q.id);
+
+  // Batch-fetch coin transactions for all quizzes in this page.
+  const coinTxns = await prisma.coinTransaction.findMany({
+    where: {
+      userId: user.id,
+      type: "QUIZ_REWARD",
+      referenceType: "QUIZ",
+      referenceId: { in: quizIds },
+    },
+    select: { referenceId: true, amount: true },
+  });
+
+  const coinsByQuiz = new Map();
+  for (const txn of coinTxns) {
+    coinsByQuiz.set(txn.referenceId, txn.amount);
+  }
+
   const results = await Promise.all(
     quizzes.map(async (quiz) => {
-      // All submissions for this quiz — only userId + score are needed to
-      // compute the totals leaderboard, never question/answer content.
       const submissions = await prisma.quizSubmission.findMany({
         where: { quizId: quiz.id },
         select: { userId: true, score: true },
@@ -572,6 +619,7 @@ async function getMyHistory(user, { page = 1, limit = 10 } = {}) {
         totalParticipants: ranked.length,
         score: myIndex === -1 ? 0 : ranked[myIndex].score,
         totalQuestions: quiz._count.quizQuestions,
+        coinsEarned: coinsByQuiz.get(quiz.id) ?? 0,
       };
     }),
   );

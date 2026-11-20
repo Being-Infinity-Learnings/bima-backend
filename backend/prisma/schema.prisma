@@ -155,6 +155,10 @@ model Quiz {
 
   completedAt DateTime?
 
+  coinRewardsEnabled Boolean @default(true)
+  coinRewardMin      Int     @default(5)
+  coinRewardMax      Int     @default(25)
+
   createdById String
 
   createdBy User @relation("QuizCreator", fields: [createdById], references: [id])

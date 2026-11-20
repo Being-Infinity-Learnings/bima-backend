@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Quiz" ADD COLUMN     "coinRewardMax" INTEGER NOT NULL DEFAULT 25,
+ADD COLUMN     "coinRewardMin" INTEGER NOT NULL DEFAULT 5,
+ADD COLUMN     "coinRewardsEnabled" BOOLEAN NOT NULL DEFAULT true;

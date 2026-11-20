@@ -37,6 +37,9 @@ const controller = require("./quiz.controller");
  *             defaultTimer: 30
  *             visibility: "PUBLIC"
  *             scheduledStartTime: "2026-07-01T10:00:00.000Z"
+ *             coinRewardsEnabled: true
+ *             coinRewardMin: 5
+ *             coinRewardMax: 25
  *     responses:
  *       201:
  *         description: Quiz created successfully — status is DRAFT by default
@@ -57,6 +60,9 @@ const controller = require("./quiz.controller");
  *                 scheduledStartTime: "2026-07-01T10:00:00.000Z"
  *                 actualStartTime: null
  *                 completedAt: null
+ *                 coinRewardsEnabled: true
+ *                 coinRewardMin: 5
+ *                 coinRewardMax: 25
  *                 createdById: "3d0dbd70-4104-4a0f-995a-4e9e4e2e3d8b"
  *                 createdAt: "2026-06-24T08:00:00.000Z"
  *                 updatedAt: "2026-06-24T08:00:00.000Z"
@@ -484,6 +490,9 @@ router.get("/:id", auth, allowRoles("ADMIN", "AUTHOR"), controller.getQuizById);
  *             title: "Updated Quiz Title"
  *             defaultTimer: 45
  *             visibility: "RESTRICTED"
+ *             coinRewardsEnabled: true
+ *             coinRewardMin: 10
+ *             coinRewardMax: 50
  *     responses:
  *       200:
  *         description: Quiz updated — returns the updated quiz

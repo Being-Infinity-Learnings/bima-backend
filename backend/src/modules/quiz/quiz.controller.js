@@ -26,6 +26,43 @@ async function createQuiz(req, res) {
       });
     }
 
+    if (
+      req.body.coinRewardsEnabled !== undefined &&
+      typeof req.body.coinRewardsEnabled !== "boolean"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "coinRewardsEnabled must be a boolean",
+      });
+    }
+
+    if (req.body.coinRewardMin !== undefined) {
+      if (!Number.isInteger(req.body.coinRewardMin) || req.body.coinRewardMin < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "coinRewardMin must be a non-negative integer",
+        });
+      }
+    }
+
+    if (req.body.coinRewardMax !== undefined) {
+      if (!Number.isInteger(req.body.coinRewardMax) || req.body.coinRewardMax < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "coinRewardMax must be a non-negative integer",
+        });
+      }
+    }
+
+    const effectiveMin = req.body.coinRewardMin ?? 5;
+    const effectiveMax = req.body.coinRewardMax ?? 25;
+    if (effectiveMin > effectiveMax) {
+      return res.status(400).json({
+        success: false,
+        message: "coinRewardMin cannot be greater than coinRewardMax",
+      });
+    }
+
     const quiz = await quizService.createQuiz(req.body, req.dbUser.id);
 
     return res.status(201).json({
@@ -115,6 +152,45 @@ async function updateQuiz(req, res) {
       });
     }
 
+    if (
+      req.body.coinRewardsEnabled !== undefined &&
+      typeof req.body.coinRewardsEnabled !== "boolean"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "coinRewardsEnabled must be a boolean",
+      });
+    }
+
+    if (req.body.coinRewardMin !== undefined) {
+      if (!Number.isInteger(req.body.coinRewardMin) || req.body.coinRewardMin < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "coinRewardMin must be a non-negative integer",
+        });
+      }
+    }
+
+    if (req.body.coinRewardMax !== undefined) {
+      if (!Number.isInteger(req.body.coinRewardMax) || req.body.coinRewardMax < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "coinRewardMax must be a non-negative integer",
+        });
+      }
+    }
+
+    if (
+      req.body.coinRewardMin !== undefined &&
+      req.body.coinRewardMax !== undefined &&
+      req.body.coinRewardMin > req.body.coinRewardMax
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "coinRewardMin cannot be greater than coinRewardMax",
+      });
+    }
+
     const quiz = await quizService.updateQuiz(id, req.body);
 
     return res.json({
@@ -124,7 +200,7 @@ async function updateQuiz(req, res) {
   } catch (error) {
     console.error(error);
 
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message,
     });

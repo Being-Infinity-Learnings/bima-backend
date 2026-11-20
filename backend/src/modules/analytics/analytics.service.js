@@ -22,6 +22,27 @@ async function getCompletedQuizzes() {
     orderBy: { completedAt: "desc" },
   });
 
+  const quizIds = quizzes.map((q) => q.id);
+
+  const coinAggregates = quizIds.length === 0 ? [] : await prisma.coinTransaction.groupBy({
+    by: ["referenceId"],
+    where: {
+      type: "QUIZ_REWARD",
+      referenceType: "QUIZ",
+      referenceId: { in: quizIds },
+    },
+    _sum: { amount: true },
+    _count: { id: true },
+  });
+
+  const coinsByQuiz = new Map();
+  for (const row of coinAggregates) {
+    coinsByQuiz.set(row.referenceId, {
+      totalCoins: row._sum.amount ?? 0,
+      rewardedCount: row._count.id ?? 0,
+    });
+  }
+
   return quizzes.map((q) => {
     const uniqueParticipants = new Set(q.submissions.map((s) => s.userId)).size;
     const totalScore = q.submissions.reduce((sum, s) => sum + s.score, 0);
@@ -29,6 +50,10 @@ async function getCompletedQuizzes() {
       q.submissions.length > 0
         ? Math.round(totalScore / q.submissions.length)
         : 0;
+    const coinData = coinsByQuiz.get(q.id) ?? {
+      totalCoins: 0,
+      rewardedCount: 0,
+    };
 
     return {
       id: q.id,
@@ -42,6 +67,8 @@ async function getCompletedQuizzes() {
       participantCount: uniqueParticipants,
       avgScore,
       totalSubmissions: q.submissions.length,
+      coinsMinted: coinData.totalCoins,
+      coinsRewardedCount: coinData.rewardedCount,
     };
   });
 }
@@ -114,6 +141,23 @@ async function getQuizAnalytics(quizId) {
 
   const uniqueParticipants = Object.values(participantMap);
 
+  // 3b. Fetch coin transactions for this quiz
+  const coinTxns = await prisma.coinTransaction.findMany({
+    where: {
+      type: "QUIZ_REWARD",
+      referenceType: "QUIZ",
+      referenceId: quizId,
+    },
+    select: { userId: true, amount: true },
+  });
+
+  const coinsByUser = new Map();
+  let totalCoinsMinted = 0;
+  for (const txn of coinTxns) {
+    coinsByUser.set(txn.userId, txn.amount);
+    totalCoinsMinted += txn.amount;
+  }
+
   // 4. Build leaderboard: sort by totalScore desc, then totalElapsedMs asc
   const leaderboard = uniqueParticipants
     .map((p) => ({
@@ -132,7 +176,11 @@ async function getQuizAnalytics(quizId) {
         ? b.totalScore - a.totalScore
         : a.totalElapsedMs - b.totalElapsedMs,
     )
-    .map((p, i) => ({ ...p, rank: i + 1 }));
+    .map((p, i) => ({
+      ...p,
+      rank: i + 1,
+      coinsEarned: coinsByUser.get(p.userId) ?? 0,
+    }));
 
   // 5. Build per-question breakdown
   const questions = quiz.quizQuestions.map(({ question, orderIndex }) => {
@@ -213,6 +261,7 @@ async function getQuizAnalytics(quizId) {
       totalElapsedMs: p.totalElapsedMs,
       correctCount: p.correctCount,
       answeredCount: p.answeredCount,
+      coinsEarned: coinsByUser.get(p.userId) ?? 0,
       trail,
     };
   });
@@ -228,6 +277,9 @@ async function getQuizAnalytics(quizId) {
       actualStartTime: quiz.actualStartTime,
       completedAt: quiz.completedAt,
       defaultTimer: quiz.defaultTimer,
+      coinRewardsEnabled: quiz.coinRewardsEnabled,
+      coinRewardMin: quiz.coinRewardMin,
+      coinRewardMax: quiz.coinRewardMax,
     },
     summary: {
       participantCount: uniqueParticipants.length,
@@ -241,6 +293,8 @@ async function getQuizAnalytics(quizId) {
             )
           : 0,
       topScore: leaderboard[0]?.totalScore ?? 0,
+      coinsMinted: totalCoinsMinted,
+      coinsRewardedCount: coinTxns.length,
     },
     leaderboard,
     questions,
